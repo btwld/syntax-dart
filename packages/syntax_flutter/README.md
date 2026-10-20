@@ -49,7 +49,7 @@ PatchView.fromTexts(
 changes build the `FileDiff`s ahead of time and pass them to
 `PatchView(files: ...)`. The language comes from each file's path unless
 `language` is set. Copying a selection takes only the code, without line
-numbers, markers or headers. Its words come from `PatchViewLabels`;
+numbers, markers or headers. Its words come from `DiffLabels`;
 extend it to translate them. `PatchView` uses Material widgets and icons,
 so it expects a `MaterialApp`.
 

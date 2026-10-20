@@ -177,7 +177,8 @@ final class DiffSegment {
 
 /// The colors a diff view uses, from a theme's `diffEditor.*` and
 /// `editorGutter.*` colors, with fallbacks for themes that leave them out.
-/// Colors are ARGB integers.
+/// Colors are ARGB integers. Line and word backgrounds are translucent, to
+/// paint over the editor background; the chrome colors are opaque.
 final class DiffColors {
   /// Colors given directly. [DiffColors.of] reads them from a theme.
   const DiffColors({
@@ -187,6 +188,11 @@ final class DiffColors {
     required this.removedText,
     required this.inserted,
     required this.removed,
+    required this.fileHeader,
+    required this.hunkHeader,
+    required this.emptySide,
+    required this.divider,
+    required this.muted,
   });
 
   /// Reads the colors from [theme]. A theme without them gets GitHub's
@@ -206,7 +212,17 @@ final class DiffColors {
     final removedText =
         theme.editorColor('diffEditor.removedTextBackground') ??
         _withAlpha(removed, 0x4D);
+    // Chrome is the foreground mixed into the background.
+    int tint(double share) => alphaBlend(
+      (share * 0xFF).round() << 24 | theme.foreground & 0xFFFFFF,
+      theme.background,
+    );
     return DiffColors(
+      fileHeader: tint(0.06),
+      hunkHeader: tint(0.035),
+      emptySide: tint(0.02),
+      divider: tint(0.12),
+      muted: tint(0.62),
       insertedLine:
           theme.editorColor('diffEditor.insertedLineBackground') ??
           _withAlpha(insertedText, _alpha(insertedText) ~/ 2),
@@ -238,6 +254,21 @@ final class DiffColors {
   /// Accent for removals.
   final int removed;
 
+  /// Background of a file's header.
+  final int fileHeader;
+
+  /// Background of `@@` lines, notices and collapsed unchanged lines.
+  final int hunkHeader;
+
+  /// Background of the empty side of a split row.
+  final int emptySide;
+
+  /// Lines between parts, such as the two sides of a split view.
+  final int divider;
+
+  /// Text that matters less than code, such as `@@` lines and notices.
+  final int muted;
+
   @override
   bool operator ==(Object other) =>
       other is DiffColors &&
@@ -246,7 +277,12 @@ final class DiffColors {
       other.insertedText == insertedText &&
       other.removedText == removedText &&
       other.inserted == inserted &&
-      other.removed == removed;
+      other.removed == removed &&
+      other.fileHeader == fileHeader &&
+      other.hunkHeader == hunkHeader &&
+      other.emptySide == emptySide &&
+      other.divider == divider &&
+      other.muted == muted;
 
   @override
   int get hashCode => Object.hash(
@@ -256,6 +292,11 @@ final class DiffColors {
     removedText,
     inserted,
     removed,
+    fileHeader,
+    hunkHeader,
+    emptySide,
+    divider,
+    muted,
   );
 
   static int _alpha(int argb) => (argb >> 24) & 0xFF;

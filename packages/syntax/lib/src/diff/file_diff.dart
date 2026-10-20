@@ -171,6 +171,19 @@ final class FileDiff {
   /// How many lines were removed.
   int get deletions => _count(DiffLineKind.removed);
 
+  /// How many of [blocks] squares a GitHub-style change bar gives to
+  /// additions and to deletions. Each kind of change that happened gets at
+  /// least one square. Without changes, both are 0.
+  ({int added, int removed}) changeBlocks([int blocks = 5]) {
+    final total = additions + deletions;
+    if (total == 0) return (added: 0, removed: 0);
+    final added = (blocks * additions / total).round().clamp(
+      additions > 0 ? 1 : 0,
+      deletions > 0 ? blocks - 1 : blocks,
+    );
+    return (added: added, removed: blocks - added);
+  }
+
   /// The largest line number a view of this diff can show, for sizing a
   /// line-number gutter. With the full texts, that includes every line of
   /// both files, since unchanged lines can be expanded.

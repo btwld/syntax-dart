@@ -478,7 +478,7 @@ new mode 100755
   });
 }
 
-final class _Spanish extends PatchViewLabels {
+final class _Spanish extends DiffLabels {
   const _Spanish();
 
   @override

@@ -127,11 +127,12 @@ colors and UTF-16 offsets. A renderer maps them to its own widgets:
 - `StyledRange` and `TokenizedDocument` for code;
 - `layoutDiff` and `DiffSegment` for diffs;
 - `SyntaxTheme`'s editor colors (`lineNumberForeground`,
-  `selectionBackground`, `cursorForeground`) and `DiffColors` for chrome.
+  `selectionBackground`, `cursorForeground`) and `DiffColors` for chrome;
+- `DiffLabels` for the words, and `alphaBlend` where colors can't blend.
 
 Renderers keep their own interaction state and wording; for example,
 `DiffNotice` says why a file has no lines, and the renderer words it.
-`syntax_flutter` is built this way. See
+`syntax_flutter` and `syntax_noir` are built this way. See
 [ADR-0002](https://github.com/btwld/syntax-dart/blob/main/docs/decisions/0002-renderer-neutral-core.md).
 
 Names such as `Token`, `Language` and `Grammar` are common. If they

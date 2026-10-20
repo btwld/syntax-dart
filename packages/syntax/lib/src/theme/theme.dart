@@ -68,6 +68,21 @@ final class TokenStyle {
       'TokenStyle(${colorToHex(foreground)}, bg: ${background == null ? '-' : colorToHex(background!)}, fontStyle: $fontStyle)';
 }
 
+/// Paints [foreground] over [background] and returns the opaque result,
+/// like Flutter's `Color.alphaBlend`. Both are ARGB integers. For renderers
+/// that can't blend, such as terminals.
+int alphaBlend(int foreground, int background) {
+  final alpha = (foreground >> 24) & 0xFF;
+  if (alpha == 0xFF) return foreground;
+  int channel(int shift) {
+    final f = (foreground >> shift) & 0xFF;
+    final b = (background >> shift) & 0xFF;
+    return (f * alpha + b * (0xFF - alpha) + 0x7F) ~/ 0xFF;
+  }
+
+  return 0xFF000000 | channel(16) << 16 | channel(8) << 8 | channel(0);
+}
+
 /// A VS Code color theme: the JSON of a `*-color-theme.json` file.
 ///
 /// The constructor is `const`, so bundled themes cost nothing until they
