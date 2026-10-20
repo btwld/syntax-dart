@@ -74,6 +74,25 @@ jobs:
         working-directory: packages/syntax_flutter/example
         run: flutter build web --release
 
+  # syntax_noir needs Dart 3.10 for noir, so it resolves on its own instead
+  # of in the workspace.
+  syntax-noir:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/syntax_noir
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.5
+          channel: stable
+          cache: true
+      - run: dart pub get
+      - run: dart format --output=none --set-exit-if-changed .
+      - run: dart analyze --fatal-infos
+      - run: dart test
+
   # The oldest SDKs the pubspecs allow: Dart 3.9 and Flutter 3.35.
   minimum-sdk:
     runs-on: ubuntu-latest

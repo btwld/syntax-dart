@@ -40,65 +40,43 @@ paints and handles interaction.
 | One styled string | `Highlighter.highlightRanges` returning `StyledRange`s |
 | A document being edited | `TokenizedDocument`; unchanged `DocumentLine`s keep their identity, so renderers can cache per line |
 | Diffs | `parsePatch`, `diffTexts`, `FileDiff` |
-| Diff presentation | `layoutDiff` returning `DiffRow`s, `HighlightedDiff.segmentsFor` returning `DiffSegment`s, `DiffColors`, `FileDiff.maxLineNumber` |
+| Diff presentation | `layoutDiff` returning `DiffRow`s, `HighlightedDiff.segmentsFor` returning `DiffSegment`s, `DiffColors` (including opaque chrome colors), `FileDiff.maxLineNumber`, `FileDiff.changeBlocks` |
+| Words | `DiffLabels`, English defaults that renderers extend to translate |
+| Blending | `alphaBlend`, for renderers such as terminals that can't blend |
 
 Renderers own:
 
 - widgets, layout, fonts and spacing;
 - interaction state, such as collapsed files, expanded gaps and selection;
-- every user-facing string. The core reports *why* a file has no lines as
-  a `DiffNotice` value, and renderers choose the wording, so they can
-  localize it.
+- the final wording. The core reports *why* a file has no lines as a
+  `DiffNotice` value, and `DiffLabels` gives English defaults that a
+  renderer, or an app, extends to translate.
 
 `syntax_flutter` now follows this. `PatchView` paints `layoutDiff` rows,
 `SyntaxTextEditingController` keeps a `TokenizedDocument`, and the
 `SyntaxThemeColors` getters wrap the core colors.
 
-### What `syntax_noir` needs
+### `syntax_noir`
 
-The core of the package is an adapter for noir's `CodeHighlighter`. A sketch
-follows. `_style` maps a `TokenStyle`'s ARGB colors and flags to noir's
-`TextStyle`; it is left out because noir's API may still change.
+`packages/syntax_noir` follows this split:
 
-```dart
-import 'package:noir/noir.dart';
-import 'package:syntax/syntax.dart' as syntax;
+- `SyntaxCodeHighlighter` implements noir's `CodeHighlighter` with a
+  `TokenizedDocument` per language, for noir's `CodeView`.
+- Its `PatchView` paints `layoutDiff` rows as one terminal line each.
+- Colors go through `alphaBlend` first, because terminals don't blend.
 
-final class SyntaxCodeHighlighter implements CodeHighlighter {
-  SyntaxCodeHighlighter(this.highlighter, this.theme);
+noir's own `DiffView` can't use syntax's highlighting. It passes the
+highlighter its whole rendered text, including `@@` lines, line numbers and
+`+`/`-` markers, and in split mode both sides on one line. No grammar reads
+that correctly, so `syntax_noir` has its own patch view. If `DiffView`
+passed each line's code instead, it could use `SyntaxCodeHighlighter`
+directly.
 
-  final syntax.Highlighter highlighter;
-  final syntax.SyntaxTheme theme;
-  final _documents = <String, syntax.TokenizedDocument>{};
-
-  @override
-  List<StyledTextRange> highlight(String source, {String? language}) {
-    final lang = language == null ? null : highlighter.language(language);
-    if (lang == null) return const [];
-    final grammar = highlighter.grammar(lang.scopeName);
-    final document = _documents[lang.scopeName] ??=
-        syntax.TokenizedDocument(grammar);
-    document
-      ..grammar = grammar
-      ..update(source); // re-tokenizes only the edited lines
-    return [
-      for (final r in document.ranges(theme))
-        StyledTextRange(start: r.start, end: r.end, style: _style(r.style)),
-    ];
-  }
-}
-```
-
-`StyledRange`s already meet noir's validation: they are sorted,
-non-overlapping and non-empty, within bounds, and never cross a line break.
-
-Noir also exports `DiffLine`, `DiffHunk` and `DiffLineKind`, so the adapter
-imports `syntax` with a prefix, as above.
-
-Noir's `DiffView` has its own diff model. `syntax_noir` can either pass our
-highlighter to it, or paint `layoutDiff` rows for the same features as
-`PatchView`: word-level highlights and expandable unchanged lines. That
-choice belongs to `syntax_noir`. The core supports both.
+noir needs Dart 3.10 while the workspace packages support Dart 3.9, so
+`syntax_noir` resolves on its own, with a dependency override on
+`../syntax` until syntax is published. noir also exports `DiffLine`,
+`DiffHunk` and `DiffLineKind`, so code using both imports syntax with a
+prefix.
 
 ## Options considered
 
