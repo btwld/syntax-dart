@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Builds every package and reports the slowest one.
+set -euo pipefail
+
+readonly root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+packages=("syntax" "syntax_flutter")
+slowest=""
+longest=0
+
+usage() {
+  cat <<EOF
+Usage: $(basename "$0") [--verbose] [package...]
+EOF
+}
+
+build() {
+  local name=$1 started=$SECONDS
+  (cd "$root/packages/$name" && dart analyze --fatal-infos) >/dev/null
+  echo $((SECONDS - started))
+}
+
+case "${1:-}" in
+  -h | --help) usage; exit 0 ;;
+  --verbose) set -x; shift ;;
+esac
+
+for name in "${@:-${packages[@]}}"; do
+  took=$(build "$name")
+  if [[ $took -gt $longest ]]; then
+    longest=$took
+    slowest=$name
+  fi
+  printf '%-16s %3ds\n' "$name" "$took"
+done
+
+echo "Slowest: ${slowest:-none} (${longest}s)" | tee -a build.log

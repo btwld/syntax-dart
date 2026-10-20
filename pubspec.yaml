@@ -1,0 +1,10 @@
+name: syntax_workspace
+publish_to: none
+environment:
+  sdk: ^3.9.0
+workspace:
+  - packages/syntax
+  - packages/syntax_flutter
+  - packages/syntax_flutter/example
+dev_dependencies:
+  lints: ^6.0.0

@@ -1,0 +1,2 @@
+# Only the repository's tests use these, and they are most of the size.
+test/fixtures/

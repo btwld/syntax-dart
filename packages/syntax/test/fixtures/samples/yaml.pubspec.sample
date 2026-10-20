@@ -1,0 +1,37 @@
+name: syntax_example
+description: >-
+  A demo app for the syntax highlighter.
+  Folded across lines.
+publish_to: none
+version: 1.2.3+4
+
+environment:
+  sdk: ^3.9.0
+  flutter: ">=3.35.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  syntax_flutter:
+    path: ../syntax_flutter
+  collection: any # inline comment
+
+dev_dependencies:
+  test: ^1.26.0
+  lints: &lints ^6.0.0
+  other_lints: *lints
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/
+    - "assets/fonts/Font Name.ttf"
+  fonts:
+    - family: Mono
+      fonts:
+        - asset: fonts/Mono.ttf
+          weight: 700
+script: |
+  echo "literal block"
+  exit 0
+flags: [one, two, 'three', 4, true, null, ~]

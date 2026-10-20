@@ -1,0 +1,116 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The workspace includes Flutter packages, so even the pure-Dart
+      # package resolves through the Flutter SDK. The version is pinned so
+      # new lints cannot break CI on their own; bump it on purpose.
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.5
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Check formatting
+        run: >-
+          dart format --output=none --set-exit-if-changed
+          packages/syntax
+          packages/syntax_flutter/lib
+          packages/syntax_flutter/test
+          packages/syntax_flutter/example/lib
+
+      - name: Analyze syntax
+        working-directory: packages/syntax
+        run: dart analyze --fatal-infos
+
+      - name: Analyze syntax_flutter
+        working-directory: packages/syntax_flutter
+        run: flutter analyze --fatal-infos
+
+      - name: Analyze the example
+        working-directory: packages/syntax_flutter/example
+        run: flutter analyze --fatal-infos
+
+      # Includes the conformance suite, which compares every bundled grammar
+      # with Shiki's output recorded in test/fixtures/golden.
+      - name: Test syntax (VM)
+        working-directory: packages/syntax
+        run: dart test
+
+      # The web runs on the browser's RegExp engine, so run the tests that
+      # don't read fixtures with dart:io there too.
+      - name: Test syntax (Chrome)
+        working-directory: packages/syntax
+        run: >-
+          dart test -p chrome
+          test/translator_test.dart
+          test/highlighter_test.dart
+          test/document_test.dart
+
+      - name: Test syntax_flutter
+        working-directory: packages/syntax_flutter
+        run: flutter test
+
+      - name: Build example for web
+        working-directory: packages/syntax_flutter/example
+        run: flutter build web --release
+
+  # The oldest SDKs the pubspecs allow: Dart 3.9 and Flutter 3.35.
+  minimum-sdk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.35.x
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - name: Test syntax
+        working-directory: packages/syntax
+        run: dart test
+      - name: Test syntax_flutter
+        working-directory: packages/syntax_flutter
+        run: flutter test
+
+  # The bundled grammars, themes and NOTICE are generated; regenerating
+  # them must not change anything.
+  generated-files:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: tool/package-lock.json
+      # generate.mjs formats its output with dart format.
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.5
+          channel: stable
+          cache: true
+      - name: Regenerate
+        working-directory: tool
+        run: npm ci && npm run generate
+      - name: Check for differences
+        run: git diff --exit-code -- packages/syntax/lib packages/syntax/NOTICE

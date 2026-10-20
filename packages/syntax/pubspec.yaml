@@ -1,0 +1,19 @@
+name: syntax
+description: >-
+  TextMate-grammar syntax highlighting in pure Dart. Tokenizes code with VS Code
+  grammars and themes and renders tokens, HTML or ANSI. No Flutter required.
+version: 0.1.0-dev
+repository: https://github.com/btwld/syntax-dart/tree/main/packages/syntax
+issue_tracker: https://github.com/btwld/syntax-dart/issues
+publish_to: none
+topics:
+  - syntax-highlighting
+  - textmate
+  - code
+  - highlighter
+environment:
+  sdk: ^3.9.0
+resolution: workspace
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.26.0

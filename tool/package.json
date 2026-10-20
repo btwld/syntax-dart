@@ -1,0 +1,17 @@
+{
+  "name": "syntax-tool",
+  "private": true,
+  "type": "module",
+  "description": "Pulls TextMate grammars/themes into packages/syntax and records Shiki's output as the conformance oracle.",
+  "scripts": {
+    "generate": "node generate.mjs",
+    "samples": "node samples.mjs",
+    "golden": "node golden.mjs",
+    "bench": "node bench_shiki.mjs"
+  },
+  "dependencies": {
+    "shiki": "4.5.0",
+    "tm-grammars": "1.32.22",
+    "tm-themes": "1.12.12"
+  }
+}

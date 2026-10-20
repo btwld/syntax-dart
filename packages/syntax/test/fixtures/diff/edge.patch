@@ -1,0 +1,43 @@
+diff --git "a/caf\303\251.png" "b/caf\303\251.png"
+index f584f40..6bf43ff 100644
+Binary files "a/caf\303\251.png" and "b/caf\303\251.png" differ
+diff --git a/source.txt b/copy.txt
+similarity index 89%
+copy from source.txt
+copy to copy.txt
+index 2aa0461..d745f9c 100644
+--- a/source.txt
++++ b/copy.txt
+@@ -8,3 +8,4 @@ eta
+ theta
+ iota
+ kappa
++lambda
+diff --git a/crlf.txt b/crlf.txt
+index 7330f3a..7bba8c8 100644
+--- a/crlf.txt
++++ b/crlf.txt
+@@ -1,2 +1,2 @@
+-line 1
+-line 2
++line 1
++line 2
+diff --git a/old name.txt "b/nov\303\251 jm\303\251no.txt"
+similarity index 100%
+rename from old name.txt
+rename to "nov\303\251 jm\303\251no.txt"
+diff --git a/run.sh b/run.sh
+old mode 100644
+new mode 100755
+diff --git a/x b/y.txt b/x b/y.txt
+index b00a0f1..be0cc06 100644
+--- a/x b/y.txt	
++++ b/x b/y.txt	
+@@ -1,6 +1,6 @@
+ one
+ two
+-three
++THREE
+ four
+ five
+ six

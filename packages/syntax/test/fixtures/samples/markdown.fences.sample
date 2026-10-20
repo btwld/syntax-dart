@@ -1,0 +1,36 @@
+# Syntax
+
+Syntax highlighting with **TextMate** grammars and _VS Code_ themes. See [the docs](https://example.com "Docs").
+
+- Pure Dart core
+- `inline code` and ~~strike~~
+  1. Nested ordered item
+
+> Quote with `code`.
+
+```dart
+void main() {
+  print('Hello, ${'world'}!');
+}
+```
+
+```yaml
+name: demo
+version: 1.0.0
+```
+
+```json
+{"key": [1, 2.5, true, null]}
+```
+
+```shellscript
+dart pub add syntax --path ../syntax
+```
+
+| Column | Value |
+| ------ | ----: |
+| a      |     1 |
+
+<div align="center">HTML block</div>
+
+---

@@ -1,0 +1,42 @@
+class Counter {
+  line 01 value = 1;
+  line 02 value = 2;
+  line 03 total = 3;
+  line 04 value = 4;
+  line 05 value = 5;
+  line 06 value = 6;
+  line 07 value = 7;
+  line 08 value = 8;
+  line 09 value = 9;
+  // inserted comment
+  line 10 value = 10;
+  line 11 value = 11;
+  line 12 value = 12;
+  line 13 value = 13;
+  line 14 value = 14;
+  line 15 value = 15;
+  line 16 value = 16;
+  line 17 value = 17;
+  line 18 value = 18;
+  line 19 value = 19;
+  line 20 value = 20;
+  line 21 value = 21;
+  line 22 value = 22;
+  line 23 value = 23;
+  line 24 value = 24;
+  line 25 value = 25;
+  line 26 value = 26;
+  line 27 value = 27;
+  line 28 value = 28;
+  line 29 value = 29;
+  line 30 value = 30;
+  line 31 value = 31;
+  line 32 value = 32;
+  line 33 value = 33;
+  line 35 value = 35;
+  line 36 value = 36;
+  line 37 value = 37;
+  line 38 value = 38;
+  line 39 value = 39;
+  line 40 value = 40;
+}

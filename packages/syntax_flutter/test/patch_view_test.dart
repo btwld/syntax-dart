@@ -1,0 +1,488 @@
+import 'dart:math';
+
+import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:syntax/langs/dart.dart';
+import 'package:syntax/themes/github_dark.dart';
+import 'package:syntax/themes/github_light.dart';
+import 'package:syntax_flutter/syntax_flutter.dart';
+
+final highlighter = Highlighter(languages: [dartLanguage]);
+
+const patch = '''
+diff --git a/lib/a.dart b/lib/a.dart
+index 1111111..2222222 100644
+--- a/lib/a.dart
++++ b/lib/a.dart
+@@ -1,3 +1,3 @@ class A {
+ class A {
+-  int count = 0;
++  int total = 0;
+ }
+diff --git a/old.txt b/new.txt
+similarity index 100%
+rename from old.txt
+rename to new.txt
+''';
+
+Future<void> pump(WidgetTester tester, Widget view) => tester.pumpWidget(
+  MaterialApp(
+    home: Scaffold(
+      body: HighlighterScope(highlighter: highlighter, child: view),
+    ),
+  ),
+);
+
+/// The plain text of every Text.rich in the view, in order.
+List<String> texts(WidgetTester tester) => [
+  for (final t in tester.widgetList<Text>(find.byType(Text)))
+    t.textSpan?.toPlainText() ?? t.data ?? '',
+];
+
+/// The line numbers on the same row as [code], left to right.
+List<String> numbersBeside(WidgetTester tester, String code) {
+  final y = tester.getTopLeft(find.text(code)).dy;
+  final numbers = <(double, String)>[];
+  for (final element in find.byType(Text).evaluate()) {
+    final text = (element.widget as Text).data;
+    if (text == null || int.tryParse(text) == null) continue;
+    final at = (element.renderObject! as RenderBox).localToGlobal(Offset.zero);
+    if (at.dy == y) numbers.add((at.dx, text));
+  }
+  numbers.sort((a, b) => a.$1.compareTo(b.$1));
+  return [for (final (_, n) in numbers) n];
+}
+
+/// The color of the first span whose text is [word].
+Color? colorOf(WidgetTester tester, String word) => tester
+    .widgetList<Text>(find.byType(Text))
+    .map((t) => t.textSpan)
+    .whereType<TextSpan>()
+    .expand((s) => s.children ?? const <InlineSpan>[])
+    .whereType<TextSpan>()
+    .firstWhere((s) => s.text == word)
+    .style
+    ?.color;
+
+String lines(int from, int to) =>
+    [for (var i = from; i <= to; i++) 'final v$i = $i;'].join('\n');
+
+void main() {
+  testWidgets('unified view shows headers, counts and both line kinds', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      const PatchView.fromPatch(patch, theme: githubDarkTheme),
+    );
+    final all = texts(tester);
+    expect(all, contains('lib/a.dart'));
+    expect(all, contains('+1'));
+    expect(all, contains('−1'));
+    expect(all, contains('Renamed'));
+    expect(all, contains('File renamed without changes'));
+    expect(all, contains('  int count = 0;'));
+    expect(all, contains('  int total = 0;'));
+    expect(all.any((t) => t.startsWith('@@ -1,3 +1,3 @@')), isTrue);
+  });
+
+  testWidgets('changed words get a stronger background', (tester) async {
+    await pump(
+      tester,
+      const PatchView.fromPatch(patch, theme: githubDarkTheme),
+    );
+    final colors = DiffColors.of(githubDarkTheme);
+    final total = tester
+        .widgetList<Text>(find.byType(Text))
+        .map((t) => t.textSpan)
+        .whereType<TextSpan>()
+        .expand((s) => s.children ?? const <InlineSpan>[])
+        .whereType<TextSpan>()
+        .firstWhere((s) => s.text == 'total');
+    expect(total.style!.backgroundColor, Color(colors.insertedText));
+  });
+
+  testWidgets('split view puts old and new lines side by side', (tester) async {
+    await pump(
+      tester,
+      const PatchView.fromPatch(
+        patch,
+        theme: githubDarkTheme,
+        mode: DiffMode.split,
+      ),
+    );
+    final count = tester.getTopLeft(find.text('  int count = 0;'));
+    final total = tester.getTopLeft(find.text('  int total = 0;'));
+    expect(count.dy, total.dy);
+    expect(count.dx, lessThan(total.dx));
+  });
+
+  testWidgets('tapping a file header collapses and expands it', (tester) async {
+    await pump(
+      tester,
+      const PatchView.fromPatch(patch, theme: githubDarkTheme),
+    );
+    expect(find.text('  int total = 0;'), findsOneWidget);
+    await tester.tap(find.text('lib/a.dart'));
+    await tester.pump();
+    expect(find.text('  int total = 0;'), findsNothing);
+    await tester.tap(find.text('lib/a.dart'));
+    await tester.pump();
+    expect(find.text('  int total = 0;'), findsOneWidget);
+  });
+
+  testWidgets('fromTexts can expand the unchanged lines', (tester) async {
+    final before = [for (var i = 1; i <= 20; i++) 'final v$i = $i;'].join('\n');
+    final after = before.replaceFirst('v10 = 10', 'v10 = 100');
+    await pump(
+      tester,
+      PatchView.fromTexts(
+        oldText: before,
+        newText: after,
+        path: 'values.dart',
+        theme: githubLightTheme,
+      ),
+    );
+    expect(find.text('Show 6 unchanged lines'), findsOneWidget);
+    expect(find.text('Show 7 unchanged lines'), findsOneWidget);
+    expect(find.text('final v1 = 1;'), findsNothing);
+    await tester.tap(find.text('Show 6 unchanged lines'));
+    await tester.pump();
+    expect(find.text('final v1 = 1;'), findsOneWidget);
+    expect(find.text('Show 6 unchanged lines'), findsNothing);
+  });
+
+  testWidgets('expanded lines keep both line numbers and fit the gutter', (
+    tester,
+  ) async {
+    // Removing four lines leaves old numbers wider than any new one.
+    await pump(
+      tester,
+      PatchView.fromTexts(
+        oldText: lines(1, 12),
+        newText: lines(5, 12),
+        path: 'values.dart',
+        theme: githubDarkTheme,
+      ),
+    );
+    await tester.tap(find.text('Show 5 unchanged lines'));
+    await tester.pump();
+    expect(numbersBeside(tester, 'final v12 = 12;'), ['12', '8']);
+    expect(
+      tester.getSize(find.text('12')).height,
+      tester.getSize(find.text('final v12 = 12;')).height,
+    );
+  });
+
+  testWidgets('expanding every gap shows both files in order', (tester) async {
+    // Tall enough that every row is built at once.
+    tester.view.physicalSize = const Size(1200, 12000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final random = Random(3);
+    String text() => [
+      for (var i = 0; i < 30; i++) ['a', 'b', 'c', '}'][random.nextInt(4)],
+    ].join('\n');
+    for (var run = 0; run < 4; run++) {
+      final before = text();
+      final edited = before.split('\n')
+        ..removeRange(4, 6)
+        ..insert(12, 'new')
+        ..[20] = 'changed';
+      final after = edited.join('\n') + (run.isEven ? '\n' : '');
+      await pump(
+        tester,
+        PatchView.fromTexts(
+          oldText: before,
+          newText: after,
+          path: 'f.txt',
+          contextLines: run % 4,
+          theme: githubDarkTheme,
+        ),
+      );
+      while (find.textContaining('unchanged line').evaluate().isNotEmpty) {
+        await tester.tap(find.textContaining('unchanged line').first);
+        await tester.pump();
+      }
+
+      // Each code line follows its old number, new number and marker.
+      final paragraphs = [
+        for (final e in find.byType(RichText).evaluate())
+          e.renderObject! as RenderParagraph,
+      ];
+      final rows = [
+        for (var i = 3; i < paragraphs.length; i++)
+          if (paragraphs[i].registrar != null)
+            [
+              for (final p in paragraphs.sublist(i - 3, i + 1))
+                p.text.toPlainText(),
+            ],
+      ];
+      final oldSide = [
+        for (final [n, _, marker, code] in rows)
+          if (marker != '+') '$n $code',
+      ];
+      final newSide = [
+        for (final [_, n, marker, code] in rows)
+          if (marker != '−') '$n $code',
+      ];
+      List<String> numbered(String s) => [
+        for (final (i, line) in s.split('\n').indexed)
+          if (i < s.split('\n').length - 1 || line.isNotEmpty) '${i + 1} $line',
+      ];
+      expect(oldSide, numbered(before), reason: 'run $run');
+      expect(newSide, numbered(after), reason: 'run $run');
+      expect(find.textContaining('@@'), findsNothing, reason: 'run $run');
+    }
+  });
+
+  testWidgets('without context, the line before a deletion is kept', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      PatchView.fromTexts(
+        oldText: lines(1, 6),
+        newText: lines(1, 6).replaceFirst('final v5 = 5;\n', ''),
+        contextLines: 0,
+        theme: githubDarkTheme,
+      ),
+    );
+    expect(find.text('Show 4 unchanged lines'), findsOneWidget);
+    expect(find.text('Show 1 unchanged line'), findsOneWidget);
+    await tester.tap(find.text('Show 4 unchanged lines'));
+    await tester.pump();
+    expect(numbersBeside(tester, 'final v4 = 4;'), ['4', '4']);
+  });
+
+  testWidgets('only code is selectable', (tester) async {
+    await pump(
+      tester,
+      const PatchView.fromPatch(patch, theme: githubDarkTheme),
+    );
+    // A paragraph without a registrar can't be part of a selection, so
+    // headers, line numbers and markers stay out of copied text.
+    final selectable = [
+      for (final element in find.byType(RichText).evaluate())
+        if (element.renderObject case final RenderParagraph p
+            when p.registrar != null)
+          p.text.toPlainText(),
+    ];
+    expect(selectable, [
+      'class A {',
+      '  int count = 0;',
+      '  int total = 0;',
+      '}',
+    ]);
+  });
+
+  testWidgets('split view leaves a blank side for unpaired lines', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      PatchView.fromTexts(
+        oldText: 'keep\nold one\nold two\n',
+        newText: 'keep\nnew one\n',
+        theme: githubDarkTheme,
+        mode: DiffMode.split,
+      ),
+    );
+    final oldOne = tester.getTopLeft(find.text('old one'));
+    final newOne = tester.getTopLeft(find.text('new one'));
+    final oldTwo = tester.getTopLeft(find.text('old two'));
+    expect(oldOne.dy, newOne.dy);
+    expect(oldTwo.dy, greaterThan(oldOne.dy));
+    expect(numbersBeside(tester, 'old two'), ['3']);
+  });
+
+  testWidgets('a theme change re-highlights', (tester) async {
+    await pump(
+      tester,
+      const PatchView.fromPatch(patch, theme: githubDarkTheme),
+    );
+    final dark = colorOf(tester, 'class');
+    await pump(
+      tester,
+      const PatchView.fromPatch(patch, theme: githubLightTheme),
+    );
+    expect(colorOf(tester, 'class'), isNot(dark));
+  });
+
+  testWidgets('language overrides the path', (tester) async {
+    await pump(
+      tester,
+      PatchView.fromTexts(
+        oldText: 'var a;\n',
+        newText: 'final a = 1;\n',
+        language: 'dart',
+        theme: githubDarkTheme,
+      ),
+    );
+    expect(colorOf(tester, 'final'), isNot(githubDarkTheme.foregroundColor));
+  });
+
+  testWidgets('notices for empty, binary and mode-only changes', (
+    tester,
+  ) async {
+    await pump(tester, const PatchView.fromPatch('', theme: githubDarkTheme));
+    expect(find.text('No changes'), findsOneWidget);
+    await pump(
+      tester,
+      const PatchView.fromPatch('''
+diff --git a/logo.png b/logo.png
+index 1111111..2222222 100644
+Binary files a/logo.png and b/logo.png differ
+diff --git a/run.sh b/run.sh
+old mode 100644
+new mode 100755
+''', theme: githubDarkTheme),
+    );
+    expect(find.text('Binary file not shown'), findsOneWidget);
+    expect(find.text('No content changes'), findsOneWidget);
+    await pump(
+      tester,
+      PatchView.fromTexts(oldText: 'a', newText: 'a', theme: githubDarkTheme),
+    );
+    expect(find.text('No changes'), findsOneWidget);
+  });
+
+  testWidgets('a missing final newline is marked', (tester) async {
+    await pump(
+      tester,
+      PatchView.fromTexts(oldText: 'a\n', newText: 'b', theme: githubDarkTheme),
+    );
+    expect(find.byTooltip('No newline at end of file'), findsOneWidget);
+  });
+
+  testWidgets('headers fit narrow widths', (tester) async {
+    for (final width in [120.0, 240.0, 320.0]) {
+      await pump(
+        tester,
+        Center(
+          child: SizedBox(
+            width: width,
+            child: const PatchView.fromPatch(patch, theme: githubDarkTheme),
+          ),
+        ),
+      );
+      expect(tester.takeException(), isNull, reason: 'width $width');
+    }
+  });
+
+  testWidgets('the same files list keeps state; a new list resets it', (
+    tester,
+  ) async {
+    final files = parsePatch(patch);
+    await pump(tester, PatchView(files: files, theme: githubDarkTheme));
+    await tester.tap(find.text('lib/a.dart'));
+    await tester.pump();
+    expect(find.text('  int total = 0;'), findsNothing);
+    await pump(tester, PatchView(files: files, theme: githubLightTheme));
+    expect(find.text('  int total = 0;'), findsNothing);
+    await pump(tester, PatchView(files: [...files], theme: githubLightTheme));
+    expect(find.text('  int total = 0;'), findsOneWidget);
+  });
+
+  testWidgets('Enter on a focused file header collapses it', (tester) async {
+    await pump(
+      tester,
+      const PatchView.fromPatch(patch, theme: githubDarkTheme),
+    );
+    Focus.of(tester.element(find.text('lib/a.dart'))).requestFocus();
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+    expect(find.text('  int total = 0;'), findsNothing);
+  });
+
+  testWidgets('headers and changed lines are announced', (tester) async {
+    final semantics = tester.ensureSemantics();
+    await pump(
+      tester,
+      const PatchView.fromPatch(patch, theme: githubDarkTheme),
+    );
+    expect(
+      find.bySemanticsLabel('Modified, lib/a.dart, 1 addition, 1 deletion'),
+      findsOneWidget,
+    );
+    expect(
+      find.bySemanticsLabel(
+        'Renamed, old.txt to new.txt, 0 additions, '
+        '0 deletions',
+      ),
+      findsOneWidget,
+    );
+    expect(find.bySemanticsLabel(RegExp('^Added line 2')), findsOneWidget);
+    semantics.dispose();
+  });
+
+  testWidgets('code reads left to right in a right-to-left app', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      const Directionality(
+        textDirection: TextDirection.rtl,
+        child: PatchView.fromPatch(
+          patch,
+          theme: githubDarkTheme,
+          mode: DiffMode.split,
+        ),
+      ),
+    );
+    // The old side stays on the left.
+    expect(
+      tester.getTopLeft(find.text('  int count = 0;')).dx,
+      lessThan(tester.getTopLeft(find.text('  int total = 0;')).dx),
+    );
+  });
+
+  testWidgets('labels can be replaced, for example to translate them', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      PatchView.fromTexts(
+        oldText: lines(1, 12),
+        newText: lines(1, 12).replaceFirst('v8 = 8', 'v8 = 80'),
+        theme: githubDarkTheme,
+        labels: const _Spanish(),
+      ),
+    );
+    expect(find.text('Mostrar 4 líneas sin cambios'), findsOneWidget);
+    expect(find.text('Mostrar 1 línea sin cambios'), findsOneWidget);
+  });
+
+  testWidgets('a new source resets collapsed files', (tester) async {
+    await pump(
+      tester,
+      const PatchView.fromPatch(patch, theme: githubDarkTheme),
+    );
+    await tester.tap(find.text('lib/a.dart'));
+    await tester.pump();
+    expect(find.text('  int total = 0;'), findsNothing);
+    await pump(
+      tester,
+      PatchView.fromTexts(
+        oldText: 'a\n',
+        newText: 'b\n',
+        path: 'x.dart',
+        theme: githubDarkTheme,
+      ),
+    );
+    expect(find.text('x.dart'), findsOneWidget);
+    expect(find.text('b'), findsOneWidget);
+  });
+}
+
+final class _Spanish extends PatchViewLabels {
+  const _Spanish();
+
+  @override
+  String showUnchangedLines(int count) => count == 1
+      ? 'Mostrar 1 línea sin cambios'
+      : 'Mostrar $count líneas sin cambios';
+}

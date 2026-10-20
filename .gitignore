@@ -1,0 +1,17 @@
+.dart_tool/
+build/
+pubspec.lock
+pubspec_overrides.yaml
+coverage/
+.pub-cache/
+tool/node_modules/
+
+# Local editor and agent settings
+.DS_Store
+.idea/
+*.iml
+.vscode/
+.claude/
+
+# Private planning notes
+docs/internal/

@@ -1,0 +1,17 @@
+name: syntax_example
+description: Live editor and preview for syntax_flutter.
+publish_to: none
+version: 1.0.0+1
+environment:
+  sdk: ^3.9.0
+resolution: workspace
+dependencies:
+  flutter:
+    sdk: flutter
+  google_fonts: ^9.0.0
+  syntax: ^0.1.0-dev
+  syntax_flutter: ^0.1.0-dev
+dev_dependencies:
+  flutter_lints: ^6.0.0
+flutter:
+  uses-material-design: true

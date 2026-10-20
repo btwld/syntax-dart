@@ -1,0 +1,51 @@
+// Dart 3 features: records, patterns, class modifiers, extension types.
+library;
+
+import 'dart:async' show Future, Stream;
+import 'package:meta/meta.dart' as meta;
+
+/// A [Shape] is sealed, so `switch` is exhaustive.
+sealed class Shape<T extends num> {
+  const Shape();
+}
+
+final class Circle extends Shape<double> {
+  const Circle(this.radius);
+  final double radius;
+}
+
+base mixin class Named {
+  String get name => runtimeType.toString();
+}
+
+extension type const Meters(double value) implements double {}
+
+enum Status with Named { active, paused; bool get isOn => this == active; }
+
+String describe(Shape shape) => switch (shape) {
+      Circle(:final radius) when radius > 0 =>
+        'circle r=${radius.toStringAsFixed(2)} ($radius)',
+      _ => r'raw $notInterpolated \n',
+    };
+
+(int, {String label}) pair() => (42, label: 'answer');
+
+Future<void> main(List<String> args) async {
+  final (count, :label) = pair();
+  var [first, ...rest] = [1, 2, 3];
+  const multi = '''
+Line one ${count + 1}
+  "quoted" and 'single'
+''';
+  final map = <String, Object?>{'a': 0xFF, 'b': 1.5e-3, 'c': null};
+  late final int lazy;
+  await for (final value in Stream.fromIterable([1, 2])) {
+    if (value case int v when v.isEven) print('even $v');
+  }
+  print("$label $first $rest ${map['a']} $multi");
+  @meta.visibleForTesting
+  int? nullable = args.isEmpty ? null : int.tryParse(args.first) ?? -1;
+  nullable ??= 0;
+  assert(nullable >= 0, 'non-negative');
+  /* block /* nested */ comment */
+}

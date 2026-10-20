@@ -1,0 +1,28 @@
+diff --git a/lib.dart b/lib.dart
+index 927bdd4..0da4969 100644
+--- a/lib.dart
++++ b/lib.dart
+@@ -1,13 +1,14 @@
+ class Counter {
+   line 01 value = 1;
+   line 02 value = 2;
+-  line 03 value = 3;
++  line 03 total = 3;
+   line 04 value = 4;
+   line 05 value = 5;
+   line 06 value = 6;
+   line 07 value = 7;
+   line 08 value = 8;
+   line 09 value = 9;
++  // inserted comment
+   line 10 value = 10;
+   line 11 value = 11;
+   line 12 value = 12;
+@@ -32,7 +33,6 @@ class Counter {
+   line 31 value = 31;
+   line 32 value = 32;
+   line 33 value = 33;
+-  line 34 value = 34;
+   line 35 value = 35;
+   line 36 value = 36;
+   line 37 value = 37;
