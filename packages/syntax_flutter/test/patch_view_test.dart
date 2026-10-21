@@ -311,6 +311,35 @@ void main() {
     expect(colorOf(tester, 'class'), isNot(dark));
   });
 
+  testWidgets('a language added later is used on the next build', (
+    tester,
+  ) async {
+    final late = Highlighter();
+    // A new widget each time, so the second pump rebuilds the view, as a
+    // parent rebuilding would. Highlighter doesn't notify on its own.
+    Widget view() => HighlighterScope(
+      highlighter: late,
+      // ignore: prefer_const_constructors
+      child: PatchView.fromPatch(patch, theme: githubDarkTheme),
+    );
+    // Highlighted, `class` is a span of its own in a keyword color.
+    Iterable<TextSpan> classSpans() => tester
+        .widgetList<Text>(find.byType(Text))
+        .map((t) => t.textSpan)
+        .whereType<TextSpan>()
+        .expand((s) => s.children ?? const <InlineSpan>[])
+        .whereType<TextSpan>()
+        .where((s) => s.text == 'class');
+    await pump(tester, view());
+    expect(classSpans(), isEmpty);
+    late.addLanguage(dartLanguage);
+    await pump(tester, view());
+    expect(
+      classSpans().single.style!.color,
+      isNot(githubDarkTheme.foregroundColor),
+    );
+  });
+
   testWidgets('language overrides the path', (tester) async {
     await pump(
       tester,

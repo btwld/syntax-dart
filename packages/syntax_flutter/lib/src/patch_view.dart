@@ -142,7 +142,7 @@ class _PatchViewState extends State<PatchView> {
   final Set<DiffGapId> _expandedGaps = {};
 
   Object? _highlightKey;
-  final Map<int, HighlightedDiff> _highlights = {};
+  final Map<int, (Grammar?, HighlightedDiff)> _highlights = {};
   final Map<int, WordChanges> _words = {};
   _Palette? _palette;
 
@@ -171,12 +171,27 @@ class _PatchViewState extends State<PatchView> {
       _highlightKey = key;
       _highlights.clear();
     }
-    return _highlights[file] ??= HighlightedDiff.of(
+    // Highlight again if the file's grammar changed, as after
+    // Highlighter.addLanguage.
+    final grammar = HighlightedDiff.grammarFor(
+      _files[file],
+      highlighter: highlighter,
+      language: widget.language,
+    );
+    if (_highlights[file] case (
+      final cached,
+      final highlighted,
+    ) when identical(cached, grammar)) {
+      return highlighted;
+    }
+    final highlighted = HighlightedDiff.of(
       _files[file],
       highlighter: highlighter,
       theme: widget.theme,
       language: widget.language,
     );
+    _highlights[file] = (grammar, highlighted);
+    return highlighted;
   }
 
   _Palette _paletteFor(BuildContext context) {

@@ -38,7 +38,7 @@ final class PatchPainter {
   final syntax.DiffLabels labels;
 
   final syntax.DiffColors _colors;
-  final Map<int, syntax.HighlightedDiff> _highlights = {};
+  final Map<int, (syntax.Grammar?, syntax.HighlightedDiff)> _highlights = {};
   final Map<int, syntax.WordChanges> _words = {};
 
   int get _background => theme.background;
@@ -179,12 +179,7 @@ final class PatchPainter {
   }
 
   void _code(_LineBuilder out, int file, syntax.DiffLine line) {
-    final highlighted = _highlights[file] ??= syntax.HighlightedDiff.of(
-      files[file],
-      highlighter: highlighter,
-      theme: theme,
-      language: language,
-    );
+    final highlighted = _highlightFor(file);
     final words = _words[file] ??= syntax.WordChanges.of(files[file]);
     final base = _lineBackground(line.kind);
     final word = switch (line.kind) {
@@ -193,21 +188,51 @@ final class PatchPainter {
       syntax.DiffLineKind.context => null,
     };
     for (final segment in highlighted.segmentsFor(line, words)) {
-      final background = segment.changed && word != null
-          ? syntax.alphaBlend(word, base)
-          : base;
+      final changed = segment.changed && word != null;
+      // A changed word's emphasis replaces the token's own background.
+      final style = changed
+          ? syntax.TokenStyle(
+              foreground: segment.style.foreground,
+              fontStyle: segment.style.fontStyle,
+            )
+          : segment.style;
+      final background = changed ? syntax.alphaBlend(word, base) : base;
       out.add(
         // Tabs have no fixed width in a terminal.
         segment.text.replaceAll('\t', '    '),
-        noirTextStyle(segment.style, background: background).copyWith(
+        noirTextStyle(style, background: background).copyWith(
           backgroundColor: noirColor(
-            segment.style.background ?? background,
+            style.background ?? background,
             over: background,
           ),
         ),
       );
     }
     if (line.noNewlineAtEnd) out.add(' ⊘', _muted(base));
+  }
+
+  /// The file's highlighting, redone when its grammar changes, such as
+  /// after `Highlighter.addLanguage`.
+  syntax.HighlightedDiff _highlightFor(int file) {
+    final grammar = syntax.HighlightedDiff.grammarFor(
+      files[file],
+      highlighter: highlighter,
+      language: language,
+    );
+    if (_highlights[file] case (
+      final cached,
+      final highlighted,
+    ) when identical(cached, grammar)) {
+      return highlighted;
+    }
+    final highlighted = syntax.HighlightedDiff.of(
+      files[file],
+      highlighter: highlighter,
+      theme: theme,
+      language: language,
+    );
+    _highlights[file] = (grammar, highlighted);
+    return highlighted;
   }
 
   int _lineBackground(syntax.DiffLineKind kind) => switch (kind) {

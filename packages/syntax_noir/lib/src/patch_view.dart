@@ -111,6 +111,10 @@ class _PatchViewState extends State<PatchView> {
   final Set<syntax.DiffGapId> _expanded = {};
   int _selected = 0;
 
+  /// Bumped when the files change; the painter's caches depend on them.
+  int _sourceVersion = 0;
+
+  /// Bumped when the files, collapsed files or expanded gaps change.
   int _layoutVersion = 0;
   Object? _rowsKey;
   List<syntax.DiffRow> _rows = const [];
@@ -133,6 +137,7 @@ class _PatchViewState extends State<PatchView> {
     _collapsed.clear();
     _expanded.clear();
     _selected = 0;
+    _sourceVersion++;
     _layoutVersion++;
   }
 
@@ -149,8 +154,10 @@ class _PatchViewState extends State<PatchView> {
   }
 
   PatchPainter _painterFor() {
+    // Not the layout version: collapsing a file or expanding lines must
+    // keep the files already highlighted.
     final key = (
-      _layoutVersion,
+      _sourceVersion,
       widget.highlighter,
       widget.theme,
       widget.language,

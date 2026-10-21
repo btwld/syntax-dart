@@ -27,10 +27,11 @@ final class HighlightedDiff {
     required SyntaxTheme theme,
     String? language,
   }) {
-    final lang = language != null
-        ? highlighter.language(language)
-        : highlighter.languageForPath(diff.path);
-    final grammar = lang == null ? null : highlighter.grammar(lang.scopeName);
+    final grammar = grammarFor(
+      diff,
+      highlighter: highlighter,
+      language: language,
+    );
 
     final old = <int, List<ThemedToken>>{};
     final newer = <int, List<ThemedToken>>{};
@@ -85,6 +86,20 @@ final class HighlightedDiff {
       newer,
       TokenStyle(foreground: theme.foreground),
     );
+  }
+
+  /// The grammar [HighlightedDiff.of] would use for [diff], or `null` for
+  /// plain text. [Highlighter.addLanguage] can change it, so a view that
+  /// caches a [HighlightedDiff] can compare this to know when to redo it.
+  static Grammar? grammarFor(
+    FileDiff diff, {
+    required Highlighter highlighter,
+    String? language,
+  }) {
+    final lang = language != null
+        ? highlighter.language(language)
+        : highlighter.languageForPath(diff.path);
+    return lang == null ? null : highlighter.grammar(lang.scopeName);
   }
 
   static final ScopeStack _plainScopes = ScopeStack.root('text.plain');

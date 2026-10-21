@@ -777,6 +777,25 @@ rename to new.txt
       expect(withCounts(99, 1).changeBlocks(), (added: 4, removed: 1));
       expect(withCounts(1, 99).changeBlocks(), (added: 1, removed: 4));
       expect(withCounts(2, 2).changeBlocks(), (added: 3, removed: 2));
+      // Too few squares for both kinds: the larger kind gets the one.
+      expect(withCounts(3, 1).changeBlocks(1), (added: 1, removed: 0));
+      expect(withCounts(1, 3).changeBlocks(1), (added: 0, removed: 1));
+      expect(withCounts(3, 1).changeBlocks(0), (added: 0, removed: 0));
+      expect(() => withCounts(1, 1).changeBlocks(-1), throwsRangeError);
+    });
+
+    test('grammarFor follows languages added later', () {
+      final highlighter = Highlighter();
+      final diff = diffTexts('a\n', 'b\n', path: 'a.dart');
+      expect(
+        HighlightedDiff.grammarFor(diff, highlighter: highlighter),
+        isNull,
+      );
+      highlighter.addLanguage(dartLanguage);
+      expect(
+        HighlightedDiff.grammarFor(diff, highlighter: highlighter),
+        same(highlighter.grammar('dart')),
+      );
     });
 
     test('labels default to English with plurals', () {

@@ -172,15 +172,21 @@ final class FileDiff {
   int get deletions => _count(DiffLineKind.removed);
 
   /// How many of [blocks] squares a GitHub-style change bar gives to
-  /// additions and to deletions. Each kind of change that happened gets at
-  /// least one square. Without changes, both are 0.
+  /// additions and to deletions. When there is room, each kind of change
+  /// that happened gets at least one square; a single square goes to the
+  /// larger kind. Without changes, both are 0. Throws a [RangeError] if
+  /// [blocks] is negative.
   ({int added, int removed}) changeBlocks([int blocks = 5]) {
+    RangeError.checkNotNegative(blocks, 'blocks');
     final total = additions + deletions;
-    if (total == 0) return (added: 0, removed: 0);
-    final added = (blocks * additions / total).round().clamp(
-      additions > 0 ? 1 : 0,
-      deletions > 0 ? blocks - 1 : blocks,
-    );
+    if (total == 0 || blocks == 0) return (added: 0, removed: 0);
+    var added = (blocks * additions / total).round();
+    if (blocks >= 2) {
+      added = added.clamp(
+        additions > 0 ? 1 : 0,
+        deletions > 0 ? blocks - 1 : blocks,
+      );
+    }
     return (added: added, removed: blocks - added);
   }
 

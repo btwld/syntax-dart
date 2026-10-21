@@ -129,6 +129,63 @@ void main() {
     );
   });
 
+  test('changed words replace a token background', () {
+    // A theme that gives every Dart token a background.
+    final shaded = syntax.SyntaxTheme.fromJson({
+      'type': 'dark',
+      'colors': {
+        'editor.background': '#000000',
+        'editor.foreground': '#ffffff',
+      },
+      'tokenColors': [
+        {
+          'scope': 'source.dart',
+          'settings': {'background': '#202020'},
+        },
+      ],
+    });
+    final painter = PatchPainter(
+      files: files,
+      highlighter: highlighter,
+      theme: shaded,
+    );
+    final added = syntax
+        .layoutDiff(files)
+        .whereType<syntax.DiffLineRow>()
+        .firstWhere((r) => r.line.kind == syntax.DiffLineKind.added);
+    final spans = spansOf(painter.paint(added, width: 60));
+    final colors = syntax.DiffColors.of(shaded);
+    final line = syntax.alphaBlend(colors.insertedLine, shaded.background);
+    expect(
+      spans.firstWhere((s) => s.text == 'total').style!.backgroundColor,
+      noirColor(syntax.alphaBlend(colors.insertedText, line)),
+    );
+    // Unchanged words keep the token's own background.
+    expect(
+      spans
+          .firstWhere((s) => s.text?.contains('int') ?? false)
+          .style!
+          .backgroundColor,
+      noirColor(0xFF202020),
+    );
+  });
+
+  test('a language added later is used on the next paint', () {
+    final late = syntax.Highlighter();
+    final painter = PatchPainter(
+      files: files,
+      highlighter: late,
+      theme: githubDarkTheme,
+    );
+    final row = syntax.layoutDiff(files)[2];
+    Color? colorOf(String word) => spansOf(
+      painter.paint(row, width: 60),
+    ).firstWhere((s) => s.text?.contains(word) ?? false).style!.color;
+    final plain = colorOf('class');
+    late.addLanguage(dartLanguage);
+    expect(colorOf('class'), isNot(plain));
+  });
+
   test('a selected row is marked; long lines are cut', () {
     final painter = painterFor(files);
     final row = syntax.layoutDiff(files)[2];

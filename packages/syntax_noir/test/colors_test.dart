@@ -16,6 +16,15 @@ void main() {
     expect(c.r, closeTo(0.5, 0.01));
   });
 
+  test('a translucent foreground is mixed with the token background', () {
+    final style = noirTextStyle(
+      const syntax.TokenStyle(foreground: 0x80FFFFFF, background: 0xFF000000),
+      background: 0xFFFFFFFF,
+    );
+    expect(style.color, noirColor(0xFF808080));
+    expect(style.backgroundColor, noirColor(0xFF000000));
+  });
+
   test('token styles keep their flags and only their own background', () {
     const background = 0xFF0D1117;
     final plain = noirTextStyle(

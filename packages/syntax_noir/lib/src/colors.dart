@@ -22,11 +22,13 @@ TextStyle noirTextStyle(syntax.TokenStyle style, {required int background}) {
     if (style.strikethrough) TextDecoration.lineThrough,
   ];
   final tokenBackground = style.background;
+  // The text is painted over the token's own background when it has one.
+  final behind = tokenBackground == null
+      ? background
+      : syntax.alphaBlend(tokenBackground, background);
   return TextStyle(
-    color: noirColor(style.foreground, over: background),
-    backgroundColor: tokenBackground == null
-        ? null
-        : noirColor(tokenBackground, over: background),
+    color: noirColor(style.foreground, over: behind),
+    backgroundColor: tokenBackground == null ? null : noirColor(behind),
     fontWeight: style.bold ? FontWeight.bold : null,
     fontStyle: style.italic ? FontStyle.italic : null,
     decoration: decorations.isEmpty
