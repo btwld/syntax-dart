@@ -43,7 +43,7 @@ PatchView.fromTexts(
 );
 ```
 
-Each row is one terminal line; long lines are cut. Arrow keys move the
+Each row is one terminal line; long lines end in `…`. Arrow keys move the
 selection, and Enter collapses a file or shows hidden unchanged lines. The
 rows come from syntax's `layoutDiff`, so they match `syntax_flutter`'s
 `PatchView`. To build your own view, `PatchPainter` paints any row as a

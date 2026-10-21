@@ -9,7 +9,8 @@ import 'colors.dart';
 /// line per row.
 ///
 /// Every line is cut or padded to exactly the given width, so line
-/// backgrounds fill the row. In split mode each side gets half. Colors are
+/// backgrounds fill the row. A cut line ends in `…`, colored like a changed
+/// word when it hides one. In split mode each side gets half. Colors are
 /// opaque, painted over the theme's background, and control characters
 /// are shown as `�` so diff text can't send escape sequences to the
 /// terminal.
@@ -212,6 +213,7 @@ final class PatchPainter {
             over: background,
           ),
         ),
+        changed: changed,
       );
     }
     if (line.noNewlineAtEnd) out.add(' ⊘', _muted(base));
@@ -238,7 +240,8 @@ final class PatchPainter {
 /// C0 and C1 control characters, which a terminal may act on.
 final RegExp _control = RegExp('[\\x00-\\x1F\\x7F-\\x9F]');
 
-/// Collects spans up to a fixed number of terminal cells.
+/// Collects spans up to a fixed number of terminal cells. Text that doesn't
+/// fit is cut, and the last cell shows `…` instead.
 final class _LineBuilder {
   _LineBuilder(this.width);
 
@@ -246,19 +249,36 @@ final class _LineBuilder {
   final List<InlineSpan> _spans = [];
   int _used = 0;
 
-  /// Set once text was cut, so nothing later shows past the cut.
-  bool _full = false;
+  /// Where `…` is in [_spans] once text was cut. Nothing shows after it.
+  int? _cut;
+  bool _cutChanged = false;
 
-  /// Adds [text], cut at the width.
-  void add(String text, TextStyle style) {
-    if (text.isEmpty || _full) return;
+  /// Adds [text], cut at the width. `…` takes the style of the text it
+  /// cut, or of the first [changed] text after it, so a change past the
+  /// cut still shows.
+  void add(String text, TextStyle style, {bool changed = false}) {
+    if (text.isEmpty) return;
+    if (_cut case final cut?) {
+      if (changed && !_cutChanged) {
+        _spans[cut] = TextSpan(text: '…', style: style);
+        _cutChanged = true;
+      }
+      return;
+    }
     final safe = text.replaceAll(_control, '�');
-    final fits = sliceByCells(safe, width - _used);
-    // A wide character that doesn't fit in the last cell ends the line too.
-    if (fits.length < safe.length) _full = true;
-    if (fits.isEmpty) return;
-    _spans.add(TextSpan(text: fits, style: style));
-    _used += terminalStringWidth(fits);
+    // The last cell is kept for `…`.
+    final fits = sliceByCells(safe, width - 1 - _used);
+    if (fits.isNotEmpty) {
+      _spans.add(TextSpan(text: fits, style: style));
+      _used += terminalStringWidth(fits);
+    }
+    // A wide character that doesn't fit cuts the line too.
+    if (fits.length < safe.length && _used < width) {
+      _cut = _spans.length;
+      _cutChanged = changed;
+      _spans.add(TextSpan(text: '…', style: style));
+      _used++;
+    }
   }
 
   /// Adds the spans of [other], which must fit.

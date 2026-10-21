@@ -14,7 +14,7 @@ import 'patch_painter.dart';
 /// `PatchView`: file headers with change counts, `@@` lines, old and new
 /// line numbers, highlighted changed words, and collapsed unchanged lines.
 ///
-/// Each row is one terminal line; long lines are cut, not wrapped. Arrow
+/// Each row is one terminal line; long lines end in `…`, not wrapped. Arrow
 /// keys move the selection, and Enter on a file header collapses or
 /// expands the file, or on collapsed lines shows them.
 class PatchView extends StatefulWidget {

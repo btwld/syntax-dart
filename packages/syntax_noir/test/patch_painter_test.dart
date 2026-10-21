@@ -169,17 +169,49 @@ void main() {
   });
 
   test('nothing shows past a wide character that is cut', () {
-    // The gutter and marker take 7 cells, `x ` 2 more, leaving one cell
-    // that `漢` doesn't fit. The changed `z` after it must not appear.
+    // The gutter and marker take 7 cells, `x ` 2 more, and the last cell is
+    // kept for `…`, so `漢` doesn't fit. The changed `z` after it must not
+    // appear.
     final diff = syntax.diffTexts('x 漢 y\n', 'x 漢 z\n');
     final added = syntax
         .layoutDiff([diff])
         .whereType<syntax.DiffLineRow>()
         .firstWhere((r) => r.line.kind == syntax.DiffLineKind.added);
-    final text = painterFor([diff]).paint(added, width: 10).toPlainText();
-    expect(terminalStringWidth(text), 10);
-    expect(text, endsWith('x  '));
+    final text = painterFor([diff]).paint(added, width: 11).toPlainText();
+    expect(terminalStringWidth(text), 11);
+    expect(text, endsWith('x … '));
     expect(text, isNot(contains('z')));
+  });
+
+  test('a cut line ends in …, colored by a change it hides', () {
+    final diff = syntax.diffTexts(
+      'final keep = 0;\nfinal value = 1;\n',
+      'final keep = 0;\nfinal value = 2;\n',
+    );
+    final rows = syntax.layoutDiff([diff]).whereType<syntax.DiffLineRow>();
+    final painter = painterFor([diff]);
+    // 7 cells of gutter leave room for `final ` and `…`.
+    TextSpan cutOf(syntax.DiffLineKind kind) => spansOf(
+      painter.paint(rows.firstWhere((r) => r.line.kind == kind), width: 14),
+    ).last;
+    final colors = syntax.DiffColors.of(githubDarkTheme);
+    final line = syntax.alphaBlend(
+      colors.insertedLine,
+      githubDarkTheme.background,
+    );
+
+    final added = cutOf(syntax.DiffLineKind.added);
+    expect(added.text, '…');
+    expect(
+      added.style!.backgroundColor,
+      noirColor(syntax.alphaBlend(colors.insertedText, line)),
+    );
+    final context = cutOf(syntax.DiffLineKind.context);
+    expect(context.text, '…');
+    expect(
+      context.style!.backgroundColor,
+      noirColor(githubDarkTheme.background),
+    );
   });
 
   test('control characters never reach the terminal', () {

@@ -7,6 +7,7 @@
   - unified and split modes;
   - file headers with change counts;
   - word-level highlights;
-  - expandable unchanged lines and collapsible files.
+  - expandable unchanged lines and collapsible files;
+  - long lines end in `…`, colored like a changed word when they hide one.
 - `PatchPainter` to paint diff rows for custom views.
 - `noirColor` and `noirTextStyle` to convert syntax's colors and styles.

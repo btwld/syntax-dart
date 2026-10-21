@@ -91,6 +91,8 @@ jobs:
       - run: dart pub get
       - run: dart format --output=none --set-exit-if-changed .
       - run: dart analyze --fatal-infos
+      # Includes test/driver, which runs PatchView as a real noir app with
+      # noir_driver and checks what it painted.
       - run: dart test
 
   # The oldest SDKs the pubspecs allow: Dart 3.9 and Flutter 3.35.
