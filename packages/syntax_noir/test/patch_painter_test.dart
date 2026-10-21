@@ -169,18 +169,34 @@ void main() {
   });
 
   test('nothing shows past a wide character that is cut', () {
-    // The gutter and marker take 7 cells, `x ` 2 more, and the last cell is
-    // kept for `…`, so `漢` doesn't fit. The changed `z` after it must not
-    // appear.
+    // The gutter and marker take 7 cells, `x ` 2 more, leaving one cell
+    // that `漢` doesn't fit, so `…` takes it. The changed `z` after it must
+    // not appear.
     final diff = syntax.diffTexts('x 漢 y\n', 'x 漢 z\n');
     final added = syntax
         .layoutDiff([diff])
         .whereType<syntax.DiffLineRow>()
         .firstWhere((r) => r.line.kind == syntax.DiffLineKind.added);
-    final text = painterFor([diff]).paint(added, width: 11).toPlainText();
-    expect(terminalStringWidth(text), 11);
-    expect(text, endsWith('x … '));
+    final text = painterFor([diff]).paint(added, width: 10).toPlainText();
+    expect(terminalStringWidth(text), 10);
+    expect(text, endsWith('x …'));
     expect(text, isNot(contains('z')));
+  });
+
+  test('text that exactly fits is not cut', () {
+    final painter = painterFor(files);
+    expect(painter.empty(width: 11).toPlainText(), ' No changes');
+    expect(painter.empty(width: 10).toPlainText(), ' No chang…');
+    // A full line gives its last cell to `…` when more text comes.
+    final header = syntax.layoutDiff(files).first;
+    expect(
+      painter.paint(header, width: 26).toPlainText(),
+      ' ▾ lib/a.dart  +1 −1 ■■■■■',
+    );
+    expect(
+      painter.paint(header, width: 25).toPlainText(),
+      ' ▾ lib/a.dart  +1 −1 ■■■…',
+    );
   });
 
   test('a cut line ends in …, colored by a change it hides', () {

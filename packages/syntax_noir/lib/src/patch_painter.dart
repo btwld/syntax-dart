@@ -246,7 +246,7 @@ final class _LineBuilder {
   _LineBuilder(this.width);
 
   final int width;
-  final List<InlineSpan> _spans = [];
+  final List<TextSpan> _spans = [];
   int _used = 0;
 
   /// Where `…` is in [_spans] once text was cut. Nothing shows after it.
@@ -266,19 +266,32 @@ final class _LineBuilder {
       return;
     }
     final safe = text.replaceAll(_control, '�');
-    // The last cell is kept for `…`.
-    final fits = sliceByCells(safe, width - 1 - _used);
+    final fits = sliceByCells(safe, width - _used);
     if (fits.isNotEmpty) {
       _spans.add(TextSpan(text: fits, style: style));
       _used += terminalStringWidth(fits);
     }
     // A wide character that doesn't fit cuts the line too.
-    if (fits.length < safe.length && _used < width) {
-      _cut = _spans.length;
-      _cutChanged = changed;
-      _spans.add(TextSpan(text: '…', style: style));
-      _used++;
+    if (fits.length < safe.length) _cutWith(style, changed: changed);
+  }
+
+  /// Ends the line with `…`, taking its cell back from the text before it.
+  void _cutWith(TextStyle style, {required bool changed}) {
+    while (_used >= width && _spans.isNotEmpty) {
+      final last = _spans.removeLast();
+      final text = last.text!;
+      _used -= terminalStringWidth(text);
+      final kept = sliceByCells(text, width - 1 - _used);
+      if (kept.isNotEmpty) {
+        _spans.add(TextSpan(text: kept, style: last.style));
+        _used += terminalStringWidth(kept);
+      }
     }
+    if (_used >= width) return;
+    _cut = _spans.length;
+    _cutChanged = changed;
+    _spans.add(TextSpan(text: '…', style: style));
+    _used++;
   }
 
   /// Adds the spans of [other], which must fit.
