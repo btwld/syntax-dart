@@ -25,6 +25,7 @@ export 'src/grammar/grammar.dart'
         Token,
         splitLines;
 export 'src/diff/diff_highlight.dart';
+export 'src/diff/diff_labels.dart';
 export 'src/diff/diff_layout.dart';
 export 'src/diff/diff_texts.dart';
 export 'src/diff/file_diff.dart';
@@ -43,4 +44,10 @@ export 'src/regex/engine.dart'
 export 'src/regex/onig_translator.dart' show UnsupportedPatternException;
 export 'src/render.dart';
 export 'src/theme/theme.dart'
-    show TokenFontStyle, SyntaxTheme, TokenStyle, colorToHex, parseHexColor;
+    show
+        TokenFontStyle,
+        SyntaxTheme,
+        TokenStyle,
+        alphaBlend,
+        colorToHex,
+        parseHexColor;

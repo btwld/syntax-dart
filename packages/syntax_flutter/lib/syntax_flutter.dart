@@ -15,6 +15,5 @@ export 'package:syntax/syntax.dart';
 export 'src/highlighted_code.dart';
 export 'src/highlighter_scope.dart';
 export 'src/patch_view.dart';
-export 'src/patch_view_labels.dart';
 export 'src/styles.dart';
 export 'src/syntax_text_controller.dart';

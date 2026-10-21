@@ -27,10 +27,7 @@ final class HighlightedDiff {
     required SyntaxTheme theme,
     String? language,
   }) {
-    final lang = language != null
-        ? highlighter.language(language)
-        : highlighter.languageForPath(diff.path);
-    final grammar = lang == null ? null : highlighter.grammar(lang.scopeName);
+    final grammar = _grammarFor(diff, highlighter, language);
 
     final old = <int, List<ThemedToken>>{};
     final newer = <int, List<ThemedToken>>{};
@@ -85,6 +82,18 @@ final class HighlightedDiff {
       newer,
       TokenStyle(foreground: theme.foreground),
     );
+  }
+
+  /// The grammar for [diff], or `null` for plain text.
+  static Grammar? _grammarFor(
+    FileDiff diff,
+    Highlighter highlighter,
+    String? language,
+  ) {
+    final lang = language != null
+        ? highlighter.language(language)
+        : highlighter.languageForPath(diff.path);
+    return lang == null ? null : highlighter.grammar(lang.scopeName);
   }
 
   static final ScopeStack _plainScopes = ScopeStack.root('text.plain');
@@ -146,6 +155,60 @@ final class HighlightedDiff {
   }
 }
 
+/// The highlighting and word changes a diff view needs per file, computed
+/// the first time a file is asked for.
+///
+/// A file is highlighted again when its grammar changes, as after
+/// [Highlighter.addLanguage]. Create a new cache when the highlighter,
+/// theme or language changes. Files are matched by identity.
+final class DiffHighlightCache {
+  /// A cache that highlights with [highlighter] in [theme], in [language]
+  /// or the language of each file's path.
+  DiffHighlightCache({
+    required this.highlighter,
+    required this.theme,
+    this.language,
+  });
+
+  /// Provides the grammars.
+  final Highlighter highlighter;
+
+  /// Provides the colors.
+  final SyntaxTheme theme;
+
+  /// The language of every file, or `null` to guess from each path.
+  final String? language;
+
+  final Map<FileDiff, (Grammar?, HighlightedDiff)> _highlights = Map.identity();
+  final Map<FileDiff, WordChanges> _words = Map.identity();
+
+  /// [file]'s highlighting.
+  HighlightedDiff highlighted(FileDiff file) {
+    final grammar = HighlightedDiff._grammarFor(file, highlighter, language);
+    if (_highlights[file] case (
+      final cached,
+      final highlighted,
+    ) when identical(cached, grammar)) {
+      return highlighted;
+    }
+    final highlighted = HighlightedDiff.of(
+      file,
+      highlighter: highlighter,
+      theme: theme,
+      language: language,
+    );
+    _highlights[file] = (grammar, highlighted);
+    return highlighted;
+  }
+
+  /// [file]'s changed words.
+  WordChanges words(FileDiff file) => _words[file] ??= WordChanges.of(file);
+
+  /// [line] of [file] as styled segments, with its changed words marked.
+  List<DiffSegment> segmentsFor(FileDiff file, DiffLine line) =>
+      highlighted(file).segmentsFor(line, words(file));
+}
+
 /// A piece of a diff line with one style. [changed] marks the words that
 /// differ from the paired line, which views give a stronger background.
 final class DiffSegment {
@@ -177,7 +240,8 @@ final class DiffSegment {
 
 /// The colors a diff view uses, from a theme's `diffEditor.*` and
 /// `editorGutter.*` colors, with fallbacks for themes that leave them out.
-/// Colors are ARGB integers.
+/// Colors are ARGB integers. Line and word backgrounds are translucent, to
+/// paint over the editor background; the chrome colors are opaque.
 final class DiffColors {
   /// Colors given directly. [DiffColors.of] reads them from a theme.
   const DiffColors({
@@ -187,6 +251,11 @@ final class DiffColors {
     required this.removedText,
     required this.inserted,
     required this.removed,
+    required this.fileHeader,
+    required this.hunkHeader,
+    required this.emptySide,
+    required this.divider,
+    required this.muted,
   });
 
   /// Reads the colors from [theme]. A theme without them gets GitHub's
@@ -206,7 +275,17 @@ final class DiffColors {
     final removedText =
         theme.editorColor('diffEditor.removedTextBackground') ??
         _withAlpha(removed, 0x4D);
+    // Chrome is the foreground mixed into the background.
+    int tint(double share) => alphaBlend(
+      (share * 0xFF).round() << 24 | theme.foreground & 0xFFFFFF,
+      theme.background,
+    );
     return DiffColors(
+      fileHeader: tint(0.06),
+      hunkHeader: tint(0.035),
+      emptySide: tint(0.02),
+      divider: tint(0.12),
+      muted: tint(0.62),
       insertedLine:
           theme.editorColor('diffEditor.insertedLineBackground') ??
           _withAlpha(insertedText, _alpha(insertedText) ~/ 2),
@@ -238,6 +317,21 @@ final class DiffColors {
   /// Accent for removals.
   final int removed;
 
+  /// Background of a file's header.
+  final int fileHeader;
+
+  /// Background of `@@` lines, notices and collapsed unchanged lines.
+  final int hunkHeader;
+
+  /// Background of the empty side of a split row.
+  final int emptySide;
+
+  /// Lines between parts, such as the two sides of a split view.
+  final int divider;
+
+  /// Text that matters less than code, such as `@@` lines and notices.
+  final int muted;
+
   @override
   bool operator ==(Object other) =>
       other is DiffColors &&
@@ -246,7 +340,12 @@ final class DiffColors {
       other.insertedText == insertedText &&
       other.removedText == removedText &&
       other.inserted == inserted &&
-      other.removed == removed;
+      other.removed == removed &&
+      other.fileHeader == fileHeader &&
+      other.hunkHeader == hunkHeader &&
+      other.emptySide == emptySide &&
+      other.divider == divider &&
+      other.muted == muted;
 
   @override
   int get hashCode => Object.hash(
@@ -256,6 +355,11 @@ final class DiffColors {
     removedText,
     inserted,
     removed,
+    fileHeader,
+    hunkHeader,
+    emptySide,
+    divider,
+    muted,
   );
 
   static int _alpha(int argb) => (argb >> 24) & 0xFF;

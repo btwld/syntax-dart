@@ -10,10 +10,10 @@ sample, its tokens and colors match Shiki's exactly; see
 | [`packages/syntax`](packages/syntax) | Pure Dart, zero dependencies. Contains the tokenizer, themes, HTML/ANSI rendering, diff tools (patch parsing, line diffs, word-level changes), and the renderer-neutral pieces other renderers build on. It runs on the VM, AOT, the web and inside Flutter. |
 | [`packages/syntax_flutter`](packages/syntax_flutter) | Contains `HighlightedCode`, `SyntaxTextEditingController` (an incremental, as-you-type controller), `PatchView` (a highlighted diff or patch, unified or split) and `HighlighterScope`. |
 | [`packages/syntax_flutter/example`](packages/syntax_flutter/example) | A live editor and preview with a picker for every bundled language and theme. |
+| [`packages/syntax_noir`](packages/syntax_noir) | Terminal widgets on [noir](https://github.com/btwld/noir): a `CodeHighlighter` for noir's `CodeView` and a `PatchView`. Needs Dart 3.10, so it sits outside the workspace. |
 
-Neither package is published yet. Renderers paint what the core lays
-out; a renderer for [noir](https://github.com/btwld/noir) is planned, see
-[ADR-0002](docs/decisions/0002-renderer-neutral-core.md).
+None of the packages is published yet. Renderers paint what the core lays
+out, see [ADR-0002](docs/decisions/0002-renderer-neutral-core.md).
 
 ## Why another highlighter
 

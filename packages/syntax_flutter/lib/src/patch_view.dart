@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:syntax/syntax.dart';
 
 import 'highlighter_scope.dart';
-import 'patch_view_labels.dart';
 import 'styles.dart';
 
 /// A syntax-highlighted view of code changes.
@@ -45,7 +44,7 @@ class PatchView extends StatefulWidget {
     this.shrinkWrap = false,
     this.physics,
     this.padding = const EdgeInsets.all(12),
-    this.labels = const PatchViewLabels(),
+    this.labels = const DiffLabels(),
   }) : _files = files,
        _patch = null,
        _texts = null;
@@ -63,7 +62,7 @@ class PatchView extends StatefulWidget {
     this.shrinkWrap = false,
     this.physics,
     this.padding = const EdgeInsets.all(12),
-    this.labels = const PatchViewLabels(),
+    this.labels = const DiffLabels(),
   }) : _files = null,
        _patch = patch,
        _texts = null;
@@ -87,7 +86,7 @@ class PatchView extends StatefulWidget {
     this.shrinkWrap = false,
     this.physics,
     this.padding = const EdgeInsets.all(12),
-    this.labels = const PatchViewLabels(),
+    this.labels = const DiffLabels(),
   }) : _files = null,
        _patch = null,
        _texts = (oldText, newText, path, contextLines);
@@ -128,9 +127,9 @@ class PatchView extends StatefulWidget {
   /// Space around the files, inside the scroll view.
   final EdgeInsetsGeometry padding;
 
-  /// The words the view shows and announces. Extend [PatchViewLabels] to
+  /// The words the view shows and announces. Extend [DiffLabels] to
   /// translate them.
-  final PatchViewLabels labels;
+  final DiffLabels labels;
 
   @override
   State<PatchView> createState() => _PatchViewState();
@@ -143,8 +142,7 @@ class _PatchViewState extends State<PatchView> {
   final Set<DiffGapId> _expandedGaps = {};
 
   Object? _highlightKey;
-  final Map<int, HighlightedDiff> _highlights = {};
-  final Map<int, WordChanges> _words = {};
+  DiffHighlightCache? _highlights;
   _Palette? _palette;
 
   void _syncSource() {
@@ -161,23 +159,21 @@ class _PatchViewState extends State<PatchView> {
     };
     _collapsed.clear();
     _expandedGaps.clear();
-    _highlights.clear();
-    _words.clear();
+    _highlights = null;
     _layoutVersion++;
   }
 
-  HighlightedDiff _highlightFor(int file, Highlighter highlighter) {
+  DiffHighlightCache _highlightsFor(Highlighter highlighter) {
     final key = (widget.theme, highlighter, widget.language);
-    if (key != _highlightKey) {
+    if (key != _highlightKey || _highlights == null) {
       _highlightKey = key;
-      _highlights.clear();
+      _highlights = DiffHighlightCache(
+        highlighter: highlighter,
+        theme: widget.theme,
+        language: widget.language,
+      );
     }
-    return _highlights[file] ??= HighlightedDiff.of(
-      _files[file],
-      highlighter: highlighter,
-      theme: widget.theme,
-      language: widget.language,
-    );
+    return _highlights!;
   }
 
   _Palette _paletteFor(BuildContext context) {
@@ -191,9 +187,6 @@ class _PatchViewState extends State<PatchView> {
     }
     return _palette = _Palette(widget.theme, textStyle, scaler);
   }
-
-  WordChanges _wordsFor(int file) =>
-      _words[file] ??= WordChanges.of(_files[file]);
 
   /// Bumped whenever the files, collapsed files or expanded gaps change.
   int _layoutVersion = 0;
@@ -266,7 +259,7 @@ class _PatchViewState extends State<PatchView> {
     DiffRow row,
     _Palette palette,
     Highlighter highlighter,
-    PatchViewLabels labels,
+    DiffLabels labels,
   ) {
     switch (row) {
       // Headers and notices are not code, so they stay out of selections.
@@ -344,10 +337,9 @@ class _PatchViewState extends State<PatchView> {
       DiffLineKind.context => null,
     };
     return [
-      for (final segment in _highlightFor(
-        file,
+      for (final segment in _highlightsFor(
         highlighter,
-      ).segmentsFor(line, _wordsFor(file)))
+      ).segmentsFor(_files[file], line))
         TextSpan(
           text: segment.text,
           style: segment.changed && emphasis != null
@@ -371,6 +363,11 @@ final class _Palette {
     removedLine = Color(diff.removedLine);
     insertedText = Color(diff.insertedText);
     removedText = Color(diff.removedText);
+    headerBackground = Color(diff.fileHeader);
+    hunkBackground = Color(diff.hunkHeader);
+    emptySide = Color(diff.emptySide);
+    divider = Color(diff.divider);
+    label = Color(diff.muted);
   }
 
   final SyntaxTheme theme;
@@ -383,24 +380,23 @@ final class _Palette {
   late final Color removedLine;
   late final Color insertedText;
   late final Color removedText;
+  late final Color headerBackground;
+  late final Color hunkBackground;
+  late final Color emptySide;
+  late final Color divider;
+
+  /// Labels such as hunk headers need more contrast than line numbers.
+  late final Color label;
 
   Color get background => theme.backgroundColor;
   Color get foreground => theme.foregroundColor;
   Color get muted => theme.lineNumberColor;
-  Color _tint(double alpha) =>
-      Color.alphaBlend(foreground.withValues(alpha: alpha), background);
-  late final Color headerBackground = _tint(0.06);
-  late final Color hunkBackground = _tint(0.035);
-  late final Color emptySide = _tint(0.02);
-  late final Color divider = _tint(0.12);
 
   TextStyle get code => styles.base;
 
   /// Line numbers use the theme's line-number color.
   late final TextStyle numberText = code.copyWith(color: muted);
 
-  /// Labels such as hunk headers need more contrast than line numbers.
-  late final Color label = foreground.withValues(alpha: 0.62);
   late final TextStyle mutedText = code.copyWith(color: label);
 
   /// Painted over the line background, so a changed line's gutter is
@@ -452,7 +448,7 @@ class _FileHeaderBar extends StatelessWidget {
   final FileDiff file;
   final bool collapsed;
   final _Palette palette;
-  final PatchViewLabels labels;
+  final DiffLabels labels;
   final VoidCallback onToggle;
 
   @override
@@ -522,11 +518,7 @@ class _FileHeaderBar extends StatelessWidget {
                     ],
                     if (counts && width >= 400) ...[
                       const SizedBox(width: 8),
-                      _DiffStat(
-                        additions: additions,
-                        deletions: deletions,
-                        palette: palette,
-                      ),
+                      _DiffStat(file: file, palette: palette),
                     ],
                   ],
                 );
@@ -539,9 +531,6 @@ class _FileHeaderBar extends StatelessWidget {
   }
 }
 
-bool _isMove(FileDiff file) =>
-    file.kind == FileDiffKind.renamed || file.kind == FileDiffKind.copied;
-
 class _PathText extends StatelessWidget {
   const _PathText({required this.file, required this.palette});
 
@@ -551,7 +540,7 @@ class _PathText extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final style = palette.code.copyWith(fontWeight: FontWeight.w600);
-    if (!_isMove(file)) {
+    if (!file.isRenameOrCopy) {
       return Text(
         file.path,
         style: style,
@@ -627,31 +616,18 @@ class _Badge extends StatelessWidget {
 
 /// Five blocks showing the share of additions and deletions, like GitHub.
 class _DiffStat extends StatelessWidget {
-  const _DiffStat({
-    required this.additions,
-    required this.deletions,
-    required this.palette,
-  });
+  const _DiffStat({required this.file, required this.palette});
 
-  final int additions;
-  final int deletions;
+  final FileDiff file;
   final _Palette palette;
 
   @override
   Widget build(BuildContext context) {
-    final total = additions + deletions;
-    // Each kind of change that happened gets at least one block.
-    final added = total == 0
-        ? 0
-        : (5 * additions / total).round().clamp(
-            additions > 0 ? 1 : 0,
-            deletions > 0 ? 4 : 5,
-          );
-    final removed = total == 0 ? 0 : 5 - added;
+    final (:added, :removed) = file.changeBlocks();
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        for (var i = 0; i < 5; i++)
+        for (var i = 0; i < FileDiff.changeBarSize; i++)
           Container(
             width: 7,
             height: 7,
@@ -749,7 +725,7 @@ class _Gutter extends StatelessWidget {
   final DiffLineKind kind;
   final double width;
   final _Palette palette;
-  final PatchViewLabels labels;
+  final DiffLabels labels;
 
   @override
   Widget build(BuildContext context) {
@@ -813,7 +789,7 @@ class _UnifiedLine extends StatelessWidget {
   final List<InlineSpan> spans;
   final double gutterWidth;
   final _Palette palette;
-  final PatchViewLabels labels;
+  final DiffLabels labels;
 
   @override
   Widget build(BuildContext context) => ColoredBox(
@@ -860,7 +836,7 @@ class _SplitLine extends StatelessWidget {
   final List<InlineSpan>? rightSpans;
   final double gutterWidth;
   final _Palette palette;
-  final PatchViewLabels labels;
+  final DiffLabels labels;
 
   Widget _side(DiffLine? line, List<InlineSpan>? spans, {required bool old}) {
     if (line == null) return ColoredBox(color: palette.emptySide);
@@ -914,7 +890,7 @@ class _Code extends StatelessWidget {
   final DiffLine line;
   final List<InlineSpan> spans;
   final _Palette palette;
-  final PatchViewLabels labels;
+  final DiffLabels labels;
 
   @override
   Widget build(BuildContext context) {

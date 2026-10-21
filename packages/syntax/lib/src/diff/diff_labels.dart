@@ -1,13 +1,13 @@
-import 'package:syntax/syntax.dart';
+import 'diff_layout.dart';
+import 'file_diff.dart';
 
-/// The words a `PatchView` shows and announces to screen readers.
+/// The words a diff view shows, and announces to screen readers.
 ///
-/// Every label has an English default. To translate the view, extend this
-/// class, override what you need, and pass an instance as
-/// `PatchView.labels`.
-class PatchViewLabels {
+/// Every label has an English default. To translate a view, extend this
+/// class, override what you need, and pass an instance to the view.
+class DiffLabels {
   /// The English labels.
-  const PatchViewLabels();
+  const DiffLabels();
 
   /// Shown when there are no files at all.
   String get noFiles => 'No changes';
@@ -37,13 +37,14 @@ class PatchViewLabels {
 
   /// What screen readers announce for a file's header.
   String fileHeader(FileDiff file) {
-    final moved =
-        file.kind == FileDiffKind.renamed || file.kind == FileDiffKind.copied;
     final additions = file.additions;
     final deletions = file.deletions;
     return [
       status(file.kind) ?? 'Modified',
-      if (moved) '${file.oldPath} to ${file.newPath}' else file.path,
+      if (file.isRenameOrCopy)
+        '${file.oldPath} to ${file.newPath}'
+      else
+        file.path,
       if (file.isBinary)
         'binary'
       else ...[

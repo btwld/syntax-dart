@@ -410,7 +410,7 @@ final class _Emitter {
 
   void _emitSubroutine(int index) {
     if (_expansionDepth >= _subroutineDepthLimit) {
-      _out.write('(?!)');
+      _out.write(neverMatch);
       return;
     }
     final target = index == 0 ? ast.root : ast.groups[index]?.body;
@@ -573,7 +573,7 @@ final class _Emitter {
       }
     }
     final parts = [if (flat.isNotEmpty) '[$flat]', ...complex];
-    if (parts.isEmpty) return '(?!)';
+    if (parts.isEmpty) return neverMatch;
     return parts.length == 1 ? parts.single : '(?:${parts.join('|')})';
   }
 }

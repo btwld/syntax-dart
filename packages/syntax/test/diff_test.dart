@@ -767,6 +767,53 @@ rename to new.txt
       );
     });
 
+    test('change blocks give each kind of change at least one', () {
+      FileDiff withCounts(int added, int removed) => diffTexts(
+        [for (var i = 0; i < removed; i++) 'old $i'].join('\n'),
+        [for (var i = 0; i < added; i++) 'new $i'].join('\n'),
+      );
+      expect(withCounts(0, 0).changeBlocks(), (added: 0, removed: 0));
+      expect(withCounts(3, 0).changeBlocks(), (added: 5, removed: 0));
+      expect(withCounts(99, 1).changeBlocks(), (added: 4, removed: 1));
+      expect(withCounts(1, 99).changeBlocks(), (added: 1, removed: 4));
+      expect(withCounts(2, 2).changeBlocks(), (added: 3, removed: 2));
+    });
+
+    test('the highlight cache reuses files and follows new languages', () {
+      final highlighter = Highlighter();
+      final cache = DiffHighlightCache(
+        highlighter: highlighter,
+        theme: githubDarkTheme,
+      );
+      final diff = diffTexts('final a;\n', 'final b;\n', path: 'a.dart');
+      final plain = cache.highlighted(diff);
+      expect(cache.highlighted(diff), same(plain));
+      expect(cache.words(diff), same(cache.words(diff)));
+
+      highlighter.addLanguage(dartLanguage);
+      final highlighted = cache.highlighted(diff);
+      expect(highlighted, isNot(same(plain)));
+      final added = diff.hunks.single.lines.last;
+      expect(highlighted.tokensFor(added).first.text, 'final');
+      expect(
+        cache.segmentsFor(diff, added).map((s) => '$s').join(),
+        'final [b];',
+      );
+    });
+
+    test('labels default to English with plurals', () {
+      const labels = DiffLabels();
+      final file = diffTexts('a\n', 'b\n', path: 'a.txt');
+      expect(
+        labels.fileHeader(file),
+        'Modified, a.txt, 1 addition, 1 deletion',
+      );
+      expect(labels.showUnchangedLines(1), 'Show 1 unchanged line');
+      expect(labels.showUnchangedLines(3), 'Show 3 unchanged lines');
+      expect(labels.notice(DiffNotice.binary), 'Binary file not shown');
+      expect(labels.status(FileDiffKind.modified), isNull);
+    });
+
     test('maxLineNumber covers both files', () {
       final diff = diffTexts(
         [for (var i = 0; i < 12; i++) 'x$i'].join('\n'),
@@ -810,6 +857,22 @@ rename to new.txt
   });
 
   group('DiffColors', () {
+    test('chrome colors are opaque mixes of the theme colors', () {
+      final colors = DiffColors.of(githubDarkTheme);
+      for (final c in [
+        colors.fileHeader,
+        colors.hunkHeader,
+        colors.emptySide,
+        colors.divider,
+        colors.muted,
+      ]) {
+        expect(c >> 24 & 0xFF, 0xFF);
+      }
+      expect(alphaBlend(0x80FFFFFF, 0xFF000000), 0xFF808080);
+      expect(alphaBlend(0xFF123456, 0xFF000000), 0xFF123456);
+      expect(alphaBlend(0x00FFFFFF, 0xFF102030), 0xFF102030);
+    });
+
     test('equal colors compare equal', () {
       expect(DiffColors.of(githubDarkTheme), DiffColors.of(githubDarkTheme));
       expect(

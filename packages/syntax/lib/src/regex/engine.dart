@@ -202,7 +202,7 @@ final class _CompiledPattern {
       if (t.hasA) {
         src = src.replaceAll(
           aMarker,
-          variant & _allowABit != 0 ? r'(?<![\s\S])' : '(?!)',
+          variant & _allowABit != 0 ? r'(?<![\s\S])' : neverMatch,
         );
       }
       if (t.hasG) {
@@ -210,7 +210,7 @@ final class _CompiledPattern {
           variant & _allowGBit != 0,
           t.leadingG,
         )) {
-          (false, _) => '(?!)',
+          (false, _) => neverMatch,
           (true, true) => '',
           // Exactly `position` code points before the current index.
           (true, false) =>
@@ -507,9 +507,9 @@ final class _CombinedScanner implements Scanner {
       groups += alt.groupCount;
       var src = alt.source;
       if (t.hasA) {
-        src = src.replaceAll(aMarker, allowA ? r'(?<![\s\S])' : '(?!)');
+        src = src.replaceAll(aMarker, allowA ? r'(?<![\s\S])' : neverMatch);
       }
-      if (t.hasG) src = src.replaceAll(gMarker, '(?!)');
+      if (t.hasG) src = src.replaceAll(gMarker, neverMatch);
       alternatives.add('($src)');
       wrappers.add(wrapper);
     }

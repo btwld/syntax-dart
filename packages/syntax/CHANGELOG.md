@@ -12,14 +12,17 @@
   - `TokenizedDocument` for incremental highlighting;
   - `StyledRange` and `Highlighter.highlightRanges` for styling a whole
     string;
-  - editor colors on `SyntaxTheme`.
+  - editor colors on `SyntaxTheme`, and `alphaBlend`.
 - Diff tools:
   - `parsePatch` for unified diffs and `git diff` output, including
     renames, copies, binary files and quoted paths;
   - `diffTexts`, a Myers line diff that groups changes the way git does;
   - `WordChanges`;
-  - `HighlightedDiff`, with a `language` override and `segmentsFor`;
+  - `HighlightedDiff`, with a `language` override and `segmentsFor`, and
+    `DiffHighlightCache` to keep it per file;
   - `layoutDiff`, which lays out the rows of a diff view;
+  - `DiffLabels`, the English words a diff view shows;
+  - `FileDiff.changeBlocks` for a GitHub-style change bar;
   - `DiffColors`, read from VS Code themes;
   - `Highlighter.languageForPath`.
 - Lines over 20,000 characters are left untokenized by default, as in
