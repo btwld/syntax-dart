@@ -37,13 +37,14 @@ class DiffLabels {
 
   /// What screen readers announce for a file's header.
   String fileHeader(FileDiff file) {
-    final moved =
-        file.kind == FileDiffKind.renamed || file.kind == FileDiffKind.copied;
     final additions = file.additions;
     final deletions = file.deletions;
     return [
       status(file.kind) ?? 'Modified',
-      if (moved) '${file.oldPath} to ${file.newPath}' else file.path,
+      if (file.isRenameOrCopy)
+        '${file.oldPath} to ${file.newPath}'
+      else
+        file.path,
       if (file.isBinary)
         'binary'
       else ...[

@@ -27,11 +27,7 @@ final class HighlightedDiff {
     required SyntaxTheme theme,
     String? language,
   }) {
-    final grammar = grammarFor(
-      diff,
-      highlighter: highlighter,
-      language: language,
-    );
+    final grammar = _grammarFor(diff, highlighter, language);
 
     final old = <int, List<ThemedToken>>{};
     final newer = <int, List<ThemedToken>>{};
@@ -88,14 +84,12 @@ final class HighlightedDiff {
     );
   }
 
-  /// The grammar [HighlightedDiff.of] would use for [diff], or `null` for
-  /// plain text. [Highlighter.addLanguage] can change it, so a view that
-  /// caches a [HighlightedDiff] can compare this to know when to redo it.
-  static Grammar? grammarFor(
-    FileDiff diff, {
-    required Highlighter highlighter,
+  /// The grammar for [diff], or `null` for plain text.
+  static Grammar? _grammarFor(
+    FileDiff diff,
+    Highlighter highlighter,
     String? language,
-  }) {
+  ) {
     final lang = language != null
         ? highlighter.language(language)
         : highlighter.languageForPath(diff.path);
@@ -159,6 +153,60 @@ final class HighlightedDiff {
     }
     return segments;
   }
+}
+
+/// The highlighting and word changes a diff view needs per file, computed
+/// the first time a file is asked for.
+///
+/// A file is highlighted again when its grammar changes, as after
+/// [Highlighter.addLanguage]. Create a new cache when the highlighter,
+/// theme or language changes. Files are matched by identity.
+final class DiffHighlightCache {
+  /// A cache that highlights with [highlighter] in [theme], in [language]
+  /// or the language of each file's path.
+  DiffHighlightCache({
+    required this.highlighter,
+    required this.theme,
+    this.language,
+  });
+
+  /// Provides the grammars.
+  final Highlighter highlighter;
+
+  /// Provides the colors.
+  final SyntaxTheme theme;
+
+  /// The language of every file, or `null` to guess from each path.
+  final String? language;
+
+  final Map<FileDiff, (Grammar?, HighlightedDiff)> _highlights = Map.identity();
+  final Map<FileDiff, WordChanges> _words = Map.identity();
+
+  /// [file]'s highlighting.
+  HighlightedDiff highlighted(FileDiff file) {
+    final grammar = HighlightedDiff._grammarFor(file, highlighter, language);
+    if (_highlights[file] case (
+      final cached,
+      final highlighted,
+    ) when identical(cached, grammar)) {
+      return highlighted;
+    }
+    final highlighted = HighlightedDiff.of(
+      file,
+      highlighter: highlighter,
+      theme: theme,
+      language: language,
+    );
+    _highlights[file] = (grammar, highlighted);
+    return highlighted;
+  }
+
+  /// [file]'s changed words.
+  WordChanges words(FileDiff file) => _words[file] ??= WordChanges.of(file);
+
+  /// [line] of [file] as styled segments, with its changed words marked.
+  List<DiffSegment> segmentsFor(FileDiff file, DiffLine line) =>
+      highlighted(file).segmentsFor(line, words(file));
 }
 
 /// A piece of a diff line with one style. [changed] marks the words that

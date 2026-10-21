@@ -111,14 +111,13 @@ class _PatchViewState extends State<PatchView> {
   final Set<syntax.DiffGapId> _expanded = {};
   int _selected = 0;
 
-  /// Bumped when the files change; the painter's caches depend on them.
-  int _sourceVersion = 0;
-
   /// Bumped when the files, collapsed files or expanded gaps change.
   int _layoutVersion = 0;
   Object? _rowsKey;
   List<syntax.DiffRow> _rows = const [];
 
+  Object? _highlightsKey;
+  syntax.DiffHighlightCache? _highlights;
   Object? _painterKey;
   PatchPainter? _painter;
 
@@ -137,7 +136,6 @@ class _PatchViewState extends State<PatchView> {
     _collapsed.clear();
     _expanded.clear();
     _selected = 0;
-    _sourceVersion++;
     _layoutVersion++;
   }
 
@@ -154,33 +152,40 @@ class _PatchViewState extends State<PatchView> {
   }
 
   PatchPainter _painterFor() {
-    // Not the layout version: collapsing a file or expanding lines must
-    // keep the files already highlighted.
-    final key = (
-      _sourceVersion,
+    // Keyed on the files, not the layout, so collapsing a file or showing
+    // lines keeps what was already highlighted. Labels only renew the
+    // painter, not the highlighting.
+    final highlightsKey = (
+      _files,
       widget.highlighter,
       widget.theme,
       widget.language,
-      widget.labels,
     );
-    if (key == _painterKey && _painter != null) return _painter!;
-    _painterKey = key;
-    return _painter = PatchPainter(
-      files: _files,
-      highlighter: widget.highlighter,
-      theme: widget.theme,
-      language: widget.language,
-      labels: widget.labels,
-    );
+    if (highlightsKey != _highlightsKey || _highlights == null) {
+      _highlightsKey = highlightsKey;
+      _highlights = syntax.DiffHighlightCache(
+        highlighter: widget.highlighter,
+        theme: widget.theme,
+        language: widget.language,
+      );
+    }
+    final painterKey = (_highlights, widget.labels);
+    if (painterKey != _painterKey || _painter == null) {
+      _painterKey = painterKey;
+      _painter = PatchPainter(
+        files: _files,
+        highlights: _highlights!,
+        labels: widget.labels,
+      );
+    }
+    return _painter!;
   }
 
   void _activate(syntax.DiffRow row) {
     switch (row) {
       case syntax.DiffFileHeaderRow(:final file):
         setState(() {
-          _collapsed.contains(file)
-              ? _collapsed.remove(file)
-              : _collapsed.add(file);
+          if (!_collapsed.remove(file)) _collapsed.add(file);
           _layoutVersion++;
         });
       case syntax.DiffGapRow(:final id):

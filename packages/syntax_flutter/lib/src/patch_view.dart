@@ -142,8 +142,7 @@ class _PatchViewState extends State<PatchView> {
   final Set<DiffGapId> _expandedGaps = {};
 
   Object? _highlightKey;
-  final Map<int, (Grammar?, HighlightedDiff)> _highlights = {};
-  final Map<int, WordChanges> _words = {};
+  DiffHighlightCache? _highlights;
   _Palette? _palette;
 
   void _syncSource() {
@@ -160,38 +159,21 @@ class _PatchViewState extends State<PatchView> {
     };
     _collapsed.clear();
     _expandedGaps.clear();
-    _highlights.clear();
-    _words.clear();
+    _highlights = null;
     _layoutVersion++;
   }
 
-  HighlightedDiff _highlightFor(int file, Highlighter highlighter) {
+  DiffHighlightCache _highlightsFor(Highlighter highlighter) {
     final key = (widget.theme, highlighter, widget.language);
-    if (key != _highlightKey) {
+    if (key != _highlightKey || _highlights == null) {
       _highlightKey = key;
-      _highlights.clear();
+      _highlights = DiffHighlightCache(
+        highlighter: highlighter,
+        theme: widget.theme,
+        language: widget.language,
+      );
     }
-    // Highlight again if the file's grammar changed, as after
-    // Highlighter.addLanguage.
-    final grammar = HighlightedDiff.grammarFor(
-      _files[file],
-      highlighter: highlighter,
-      language: widget.language,
-    );
-    if (_highlights[file] case (
-      final cached,
-      final highlighted,
-    ) when identical(cached, grammar)) {
-      return highlighted;
-    }
-    final highlighted = HighlightedDiff.of(
-      _files[file],
-      highlighter: highlighter,
-      theme: widget.theme,
-      language: widget.language,
-    );
-    _highlights[file] = (grammar, highlighted);
-    return highlighted;
+    return _highlights!;
   }
 
   _Palette _paletteFor(BuildContext context) {
@@ -205,9 +187,6 @@ class _PatchViewState extends State<PatchView> {
     }
     return _palette = _Palette(widget.theme, textStyle, scaler);
   }
-
-  WordChanges _wordsFor(int file) =>
-      _words[file] ??= WordChanges.of(_files[file]);
 
   /// Bumped whenever the files, collapsed files or expanded gaps change.
   int _layoutVersion = 0;
@@ -358,10 +337,9 @@ class _PatchViewState extends State<PatchView> {
       DiffLineKind.context => null,
     };
     return [
-      for (final segment in _highlightFor(
-        file,
+      for (final segment in _highlightsFor(
         highlighter,
-      ).segmentsFor(line, _wordsFor(file)))
+      ).segmentsFor(_files[file], line))
         TextSpan(
           text: segment.text,
           style: segment.changed && emphasis != null
@@ -553,9 +531,6 @@ class _FileHeaderBar extends StatelessWidget {
   }
 }
 
-bool _isMove(FileDiff file) =>
-    file.kind == FileDiffKind.renamed || file.kind == FileDiffKind.copied;
-
 class _PathText extends StatelessWidget {
   const _PathText({required this.file, required this.palette});
 
@@ -565,7 +540,7 @@ class _PathText extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final style = palette.code.copyWith(fontWeight: FontWeight.w600);
-    if (!_isMove(file)) {
+    if (!file.isRenameOrCopy) {
       return Text(
         file.path,
         style: style,
@@ -652,7 +627,7 @@ class _DiffStat extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        for (var i = 0; i < 5; i++)
+        for (var i = 0; i < FileDiff.changeBarSize; i++)
           Container(
             width: 7,
             height: 7,

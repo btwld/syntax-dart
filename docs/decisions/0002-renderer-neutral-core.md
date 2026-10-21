@@ -40,7 +40,7 @@ paints and handles interaction.
 | One styled string | `Highlighter.highlightRanges` returning `StyledRange`s |
 | A document being edited | `TokenizedDocument`; unchanged `DocumentLine`s keep their identity, so renderers can cache per line |
 | Diffs | `parsePatch`, `diffTexts`, `FileDiff` |
-| Diff presentation | `layoutDiff` returning `DiffRow`s, `HighlightedDiff.segmentsFor` returning `DiffSegment`s, `DiffColors` (including opaque chrome colors), `FileDiff.maxLineNumber`, `FileDiff.changeBlocks` |
+| Diff presentation | `layoutDiff` returning `DiffRow`s, `DiffHighlightCache` and `HighlightedDiff.segmentsFor` returning `DiffSegment`s, `DiffColors` (including opaque chrome colors), `FileDiff.maxLineNumber`, `FileDiff.changeBlocks` |
 | Words | `DiffLabels`, English defaults that renderers extend to translate |
 | Blending | `alphaBlend`, for renderers such as terminals that can't blend |
 

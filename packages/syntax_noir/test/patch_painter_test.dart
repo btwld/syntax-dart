@@ -25,11 +25,15 @@ rename to new.txt
 
 PatchPainter painterFor(
   List<syntax.FileDiff> files, {
+  syntax.Highlighter? using,
+  syntax.SyntaxTheme theme = githubDarkTheme,
   syntax.DiffLabels labels = const syntax.DiffLabels(),
 }) => PatchPainter(
   files: files,
-  highlighter: highlighter,
-  theme: githubDarkTheme,
+  highlights: syntax.DiffHighlightCache(
+    highlighter: using ?? highlighter,
+    theme: theme,
+  ),
   labels: labels,
 );
 
@@ -107,28 +111,6 @@ void main() {
     expect(pairs.firstWhere((l) => l.contains('count')), contains('total'));
   });
 
-  test('changed words get the stronger background', () {
-    final painter = painterFor(files);
-    final added = syntax
-        .layoutDiff(files)
-        .whereType<syntax.DiffLineRow>()
-        .firstWhere((r) => r.line.kind == syntax.DiffLineKind.added);
-    final spans = spansOf(painter.paint(added, width: 60));
-    final colors = syntax.DiffColors.of(githubDarkTheme);
-    final line = syntax.alphaBlend(
-      colors.insertedLine,
-      githubDarkTheme.background,
-    );
-    expect(
-      spans.firstWhere((s) => s.text == 'total').style!.backgroundColor,
-      noirColor(syntax.alphaBlend(colors.insertedText, line)),
-    );
-    expect(
-      spans.firstWhere((s) => s.text == 'int').style!.backgroundColor,
-      noirColor(line),
-    );
-  });
-
   test('changed words replace a token background', () {
     // A theme that gives every Dart token a background.
     final shaded = syntax.SyntaxTheme.fromJson({
@@ -144,11 +126,7 @@ void main() {
         },
       ],
     });
-    final painter = PatchPainter(
-      files: files,
-      highlighter: highlighter,
-      theme: shaded,
-    );
+    final painter = painterFor(files, theme: shaded);
     final added = syntax
         .layoutDiff(files)
         .whereType<syntax.DiffLineRow>()
@@ -172,11 +150,7 @@ void main() {
 
   test('a language added later is used on the next paint', () {
     final late = syntax.Highlighter();
-    final painter = PatchPainter(
-      files: files,
-      highlighter: late,
-      theme: githubDarkTheme,
-    );
+    final painter = painterFor(files, using: late);
     final row = syntax.layoutDiff(files)[2];
     Color? colorOf(String word) => spansOf(
       painter.paint(row, width: 60),
@@ -186,17 +160,34 @@ void main() {
     expect(colorOf('class'), isNot(plain));
   });
 
-  test('a selected row is marked; long lines are cut', () {
-    final painter = painterFor(files);
+  test('a selected row is marked', () {
     final row = syntax.layoutDiff(files)[2];
     expect(
-      painter.paint(row, width: 30, selected: true).toPlainText(),
+      painterFor(files).paint(row, width: 30, selected: true).toPlainText(),
       startsWith('▌'),
     );
-    final long = syntax.diffTexts('a\n', '${'x' * 200}\n');
-    for (final line in paintAll([long], width: 30)) {
-      expect(terminalStringWidth(line), 30);
-    }
+  });
+
+  test('nothing shows past a wide character that is cut', () {
+    // The gutter and marker take 7 cells, `x ` 2 more, leaving one cell
+    // that `漢` doesn't fit. The changed `z` after it must not appear.
+    final diff = syntax.diffTexts('x 漢 y\n', 'x 漢 z\n');
+    final added = syntax
+        .layoutDiff([diff])
+        .whereType<syntax.DiffLineRow>()
+        .firstWhere((r) => r.line.kind == syntax.DiffLineKind.added);
+    final text = painterFor([diff]).paint(added, width: 10).toPlainText();
+    expect(terminalStringWidth(text), 10);
+    expect(text, endsWith('x  '));
+    expect(text, isNot(contains('z')));
+  });
+
+  test('control characters never reach the terminal', () {
+    final diff = syntax.diffTexts('a\n', 'b\x1b[31mred\x07\n');
+    final text = paintAll([diff]).join('\n');
+    expect(text, isNot(contains('\x1b')));
+    expect(text, isNot(contains('\x07')));
+    expect(text, contains('b\uFFFD[31mred\uFFFD'));
   });
 
   test('labels, empty state and a missing final newline', () {

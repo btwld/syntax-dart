@@ -171,23 +171,25 @@ final class FileDiff {
   /// How many lines were removed.
   int get deletions => _count(DiffLineKind.removed);
 
-  /// How many of [blocks] squares a GitHub-style change bar gives to
-  /// additions and to deletions. When there is room, each kind of change
-  /// that happened gets at least one square; a single square goes to the
-  /// larger kind. Without changes, both are 0. Throws a [RangeError] if
-  /// [blocks] is negative.
-  ({int added, int removed}) changeBlocks([int blocks = 5]) {
-    RangeError.checkNotNegative(blocks, 'blocks');
+  /// Whether the file was renamed or copied, so it has an old and a new
+  /// path to show.
+  bool get isRenameOrCopy =>
+      kind == FileDiffKind.renamed || kind == FileDiffKind.copied;
+
+  /// The number of squares in a GitHub-style change bar.
+  static const int changeBarSize = 5;
+
+  /// How many of the [changeBarSize] squares go to additions and to
+  /// deletions. Each kind of change that happened gets at least one.
+  /// Without changes, both are 0.
+  ({int added, int removed}) changeBlocks() {
     final total = additions + deletions;
-    if (total == 0 || blocks == 0) return (added: 0, removed: 0);
-    var added = (blocks * additions / total).round();
-    if (blocks >= 2) {
-      added = added.clamp(
-        additions > 0 ? 1 : 0,
-        deletions > 0 ? blocks - 1 : blocks,
-      );
-    }
-    return (added: added, removed: blocks - added);
+    if (total == 0) return (added: 0, removed: 0);
+    final added = (changeBarSize * additions / total).round().clamp(
+      additions > 0 ? 1 : 0,
+      deletions > 0 ? changeBarSize - 1 : changeBarSize,
+    );
+    return (added: added, removed: changeBarSize - added);
   }
 
   /// The largest line number a view of this diff can show, for sizing a
