@@ -128,6 +128,9 @@ jobs:
           flutter-version: 3.47.5
           channel: stable
           cache: true
+      # dart format reads the packages' language version from the package
+      # config; without it, it formats for the newest version instead.
+      - run: flutter pub get
       - name: Regenerate
         working-directory: tool
         run: npm ci && npm run generate
