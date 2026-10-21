@@ -283,6 +283,19 @@ void main() {
     });
   });
 
+  test(
+    'recursion past the depth limit never matches, in a quantifiable way',
+    () {
+      // Older engines reject `(?:(?!))*`, so the cut-off must be a class.
+      final source = translateOnigPattern(
+        r'(?<p>\((?:[^()]|\g<p>)*\))',
+      ).searchSource(unicodeWords: false);
+      expect(source, contains(neverMatch));
+      expect(source, isNot(contains('(?!)')));
+      expect(scan(r'(?<p>\((?:[^()]|\g<p>)*\))', '(((x)))'), isNotNull);
+    },
+  );
+
   test('unsupported constructs are reported, not mistranslated', () {
     expect(
       () => translateOnigPattern(r'(?(1)a|b)'),

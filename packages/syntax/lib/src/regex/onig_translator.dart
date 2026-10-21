@@ -43,6 +43,11 @@ const String aMarker = '\uE001';
 /// Oniguruma guarantees and a plain lookbehind does not.
 const String keepMarker = '\uE004';
 
+/// A pattern that never matches. An empty class, not `(?!)`, because some
+/// engines reject a quantifier on a group holding only a lookaround, such
+/// as `(?:(?!))*`, and a never-matching part can end up quantified.
+const String neverMatch = '[]';
+
 const String _backrefOpen = '\uE002';
 const String _backrefClose = '\uE003';
 
