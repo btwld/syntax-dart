@@ -5,6 +5,10 @@ grammars and VS Code themes as VS Code, Shiki and GitHub. On every bundled
 sample, its tokens and colors match Shiki's exactly; see
 [Verified against Shiki](#verified-against-shiki).
 
+Try it in the browser: the [live demo](https://btwld.github.io/syntax-dart/)
+has an editor, a diff view and a patch view for every bundled language and
+theme.
+
 | Package | What it is |
 |---|---|
 | [`packages/syntax`](packages/syntax) | Pure Dart, zero dependencies. Contains the tokenizer, themes, HTML/ANSI rendering, diff tools (patch parsing, line diffs, word-level changes), and the renderer-neutral pieces other renderers build on. It runs on the VM, AOT, the web and inside Flutter. |
