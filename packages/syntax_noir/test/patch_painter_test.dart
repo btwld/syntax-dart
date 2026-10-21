@@ -181,6 +181,17 @@ void main() {
     expect(terminalStringWidth(text), 10);
     expect(text, endsWith('x …'));
     expect(text, isNot(contains('z')));
+
+    // `漢` fills the line, then gives its two cells back to a space and `…`,
+    // so `…` stays in the last cell.
+    final full = syntax.diffTexts('x\n', '漢 y\n');
+    final row = syntax
+        .layoutDiff([full])
+        .whereType<syntax.DiffLineRow>()
+        .firstWhere((r) => r.line.kind == syntax.DiffLineKind.added);
+    final cut = painterFor([full]).paint(row, width: 9).toPlainText();
+    expect(terminalStringWidth(cut), 9);
+    expect(cut, endsWith('+  …'));
   });
 
   test('text that exactly fits is not cut', () {

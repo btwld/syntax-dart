@@ -275,11 +275,14 @@ final class _LineBuilder {
     if (fits.length < safe.length) _cutWith(style, changed: changed);
   }
 
-  /// Ends the line with `…`, taking its cell back from the text before it.
+  /// Ends the line with `…` in its last cell, taking the cell back from the
+  /// text before it.
   void _cutWith(TextStyle style, {required bool changed}) {
+    var gapStyle = style;
     while (_used >= width && _spans.isNotEmpty) {
       final last = _spans.removeLast();
       final text = last.text!;
+      gapStyle = last.style ?? style;
       _used -= terminalStringWidth(text);
       final kept = sliceByCells(text, width - 1 - _used);
       if (kept.isNotEmpty) {
@@ -288,6 +291,11 @@ final class _LineBuilder {
       }
     }
     if (_used >= width) return;
+    // Taking back a wide character frees two cells.
+    if (_used < width - 1) {
+      _spans.add(TextSpan(text: ' ' * (width - 1 - _used), style: gapStyle));
+      _used = width - 1;
+    }
     _cut = _spans.length;
     _cutChanged = changed;
     _spans.add(TextSpan(text: '…', style: style));
