@@ -178,3 +178,21 @@ Supply a shared worker pool to move grammar work off the UI isolate. The
 optional `onVisibleLinesChanged(startLine, endLine)` callback reports visible
 zero-based lines without overscan. Recompile browser-worker assets when
 upgrading; the application and worker must use the same package version.
+
+## Review interaction options
+
+`PatchController(foldableHunks: true)` keeps section headers available for
+`toggleHunk(fileId, index)` and `setHunksCollapsed(bool)`. `revealLine` opens a
+folded target. `collapseContext` restores context gaps without replacing review
+state. Labels come from `DiffHunk.section`.
+
+`DiffSelection` accepts an optional `activeSide` for ranges crossing old/new
+sources. Existing positional construction keeps its same-side behavior. Use
+`isLineSelected` for renderer membership and `selectedText` for source-only copy.
+`EditorController.selectLines` selects complete zero-based lines in either
+direction.
+
+Both patch renderers accept `indicators`, `showLineNumbers`, and
+`hunkSeparatorStyle`; previous defaults remain available. Flutter additionally
+accepts `tokenTooltip`, with keyboard activation through `onTokenTap`. Logical
+line dragging starts in the gutter, leaving code text selection to Flutter.

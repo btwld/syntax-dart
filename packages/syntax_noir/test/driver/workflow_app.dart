@@ -38,7 +38,7 @@ class _WorkflowAppState extends State<WorkflowApp> {
       path: 'a.dart',
       id: 'a',
     ),
-  ]);
+  ], foldableHunks: widget.mode == 'fold');
   final merge = syntax.MergeController(
     const syntax.SourceFile(
       id: 'm',
@@ -122,6 +122,11 @@ class _WorkflowAppState extends State<WorkflowApp> {
           ),
         ),
       ],
+      if (widget.mode == 'fold')
+        Button(
+          label: 'Reveal selected line',
+          onPressed: () => patch.revealLine('a', 2),
+        ),
       if (widget.mode == 'restore')
         Button(
           label: visible ? 'Hide editor' : 'Show editor',
@@ -136,7 +141,7 @@ class _WorkflowAppState extends State<WorkflowApp> {
                   highlighter: highlighter,
                   theme: githubDarkTheme,
                 ),
-                'patch' || 'long-review' => PatchView.controlled(
+                'patch' || 'long-review' || 'fold' => PatchView.controlled(
                   controller: patch,
                   highlighter: highlighter,
                   theme: githubDarkTheme,

@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'editor.dart';
 import 'indexed_viewport.dart';
 import 'horizontal_scroll.dart';
+import 'line_selection.dart';
 import 'package:syntax/syntax.dart';
 
 import 'highlighter_scope.dart';
@@ -55,6 +56,10 @@ class PatchView extends StatefulWidget {
     this.wrap = true,
     this.showBackgrounds = true,
     this.showChangeIndicators = true,
+    this.indicators = DiffIndicators.classic,
+    this.showLineNumbers = true,
+    this.hunkSeparatorStyle = HunkSeparatorStyle.lineInfo,
+    this.tokenTooltip,
     this.stickyHeaders = false,
     this.showReviewActions = false,
     this.headerBuilder,
@@ -88,6 +93,10 @@ class PatchView extends StatefulWidget {
     this.wrap = true,
     this.showBackgrounds = true,
     this.showChangeIndicators = true,
+    this.indicators = DiffIndicators.classic,
+    this.showLineNumbers = true,
+    this.hunkSeparatorStyle = HunkSeparatorStyle.lineInfo,
+    this.tokenTooltip,
     this.stickyHeaders = false,
     this.showReviewActions = false,
     this.headerBuilder,
@@ -127,6 +136,10 @@ class PatchView extends StatefulWidget {
     this.wrap = true,
     this.showBackgrounds = true,
     this.showChangeIndicators = true,
+    this.indicators = DiffIndicators.classic,
+    this.showLineNumbers = true,
+    this.hunkSeparatorStyle = HunkSeparatorStyle.lineInfo,
+    this.tokenTooltip,
     this.stickyHeaders = false,
     this.showReviewActions = false,
     this.headerBuilder,
@@ -159,6 +172,10 @@ class PatchView extends StatefulWidget {
     this.wrap = true,
     this.showBackgrounds = true,
     this.showChangeIndicators = true,
+    this.indicators = DiffIndicators.classic,
+    this.showLineNumbers = true,
+    this.hunkSeparatorStyle = HunkSeparatorStyle.lineInfo,
+    this.tokenTooltip,
     this.stickyHeaders = false,
     this.showReviewActions = false,
     this.headerBuilder,
@@ -187,6 +204,18 @@ class PatchView extends StatefulWidget {
 
   /// Displays addition and removal markers in gutters.
   final bool showChangeIndicators;
+
+  /// Marker style; [showChangeIndicators] can disable every marker.
+  final DiffIndicators indicators;
+
+  /// Shows old/new source numbers in gutters.
+  final bool showLineNumbers;
+
+  /// Built-in styling for unchanged gaps and section metadata.
+  final HunkSeparatorStyle hunkSeparatorStyle;
+
+  /// Optional hover help. Tokens also expose the tooltip to keyboard focus.
+  final String? Function(FileDiff, DiffLine, DiffSegment)? tokenTooltip;
 
   /// Keeps the current file header visible above the scroll viewport.
   final bool stickyHeaders;
@@ -335,7 +364,11 @@ class _PatchViewState extends State<PatchView> {
             p.scaler == scaler &&
             p.wrap == widget.wrap &&
             p.backgrounds == widget.showBackgrounds &&
-            p.indicators == widget.showChangeIndicators) {
+            p.indicators ==
+                (widget.showChangeIndicators
+                    ? widget.indicators
+                    : DiffIndicators.none) &&
+            p.lineNumbers == widget.showLineNumbers) {
       return p;
     }
     return _palette = _Palette(
@@ -344,7 +377,10 @@ class _PatchViewState extends State<PatchView> {
       scaler,
       wrap: widget.wrap,
       backgrounds: widget.showBackgrounds,
-      indicators: widget.showChangeIndicators,
+      indicators: widget.showChangeIndicators
+          ? widget.indicators
+          : DiffIndicators.none,
+      lineNumbers: widget.showLineNumbers,
       onTokenTap: widget.onTokenTap,
     );
   }
@@ -451,6 +487,7 @@ class _PatchViewState extends State<PatchView> {
       if (key.$2 == 'old' || key.$2 == 'new') {
         return rows.rowForLine(file, key.$3, oldSide: key.$2 == 'old');
       }
+      if (key.$2 == 'hunk') return rows.rowForSection(file, key.$3);
       return rows.rowForFile(file);
     }
 
@@ -490,6 +527,8 @@ class _PatchViewState extends State<PatchView> {
               }
             },
           );
+
+    list = LineSelectionRegion(controller: _scroll, child: list);
 
     if (widget.stickyHeaders && _files.isNotEmpty) {
       final index = _stickyFile.clamp(0, _files.length - 1);
@@ -566,17 +605,29 @@ class _PatchViewState extends State<PatchView> {
         );
       case DiffNoticeRow(:final notice):
         return _notice(labels.notice(notice), palette);
-      case DiffHunkHeaderRow(:final hunk):
+      case DiffHunkHeaderRow(:final hunk, :final collapsed):
         if (widget.hunkBuilder case final builder?) {
           return builder(context, _files[row.file], hunk);
         }
         return SelectionContainer.disabled(
-          child: _HunkHeaderBar(hunk: hunk, palette: palette),
+          child: _HunkHeaderBar(
+            hunk: hunk,
+            palette: palette,
+            collapsed: collapsed,
+            style: widget.hunkSeparatorStyle,
+            onToggle: widget.controller?.foldableHunks == true
+                ? () => widget.controller!.toggleHunk(
+                    _files[row.file].id,
+                    _files[row.file].hunks.indexOf(hunk),
+                  )
+                : null,
+          ),
         );
       case DiffGapRow(:final id, :final count):
         return SelectionContainer.disabled(
           child: _GapBar(
             text: labels.showUnchangedLines(count),
+            style: widget.hunkSeparatorStyle,
             palette: palette,
             onExpand: () {
               if (widget.controller case final c?) {
@@ -718,34 +769,57 @@ class _PatchViewState extends State<PatchView> {
     };
     if (lines.isNotEmpty) {
       final lineChild = child;
-      child = LayoutBuilder(
-        builder: (context, constraints) => GestureDetector(
-          behavior: HitTestBehavior.translucent,
-          onTapUp: (event) {
-            final (line, side) =
-                lines.length > 1 &&
-                    event.localPosition.dx >= constraints.maxWidth / 2
-                ? lines.last
-                : lines.first;
-            final number = (side == DiffSide.old
-                ? line.oldNumber
-                : line.newNumber)!;
-            final old = controller?.selection;
-            final extend =
-                HardwareKeyboard.instance.isShiftPressed &&
-                old?.fileId == file.id &&
-                old?.side == side;
-            controller?.select(
-              DiffSelection(
-                file.id,
-                side,
-                extend ? old!.anchor : number,
-                number,
-              ),
-            );
-            widget.onLineTap?.call(file, side, number);
-          },
-          child: lineChild,
+      void selectAt(double x, double width, bool extend) {
+        final (line, side) = lines.length > 1 && x >= width / 2
+            ? lines.last
+            : lines.first;
+        final number = (side == DiffSide.old
+            ? line.oldNumber
+            : line.newNumber)!;
+        final old = controller?.selection;
+        final keepAnchor = extend && old?.fileId == file.id;
+        controller?.select(
+          DiffSelection(
+            file.id,
+            keepAnchor ? old!.side : side,
+            keepAnchor ? old!.anchor : number,
+            number,
+            activeSide: side,
+          ),
+        );
+        widget.onLineTap?.call(file, side, number);
+      }
+
+      final gutter =
+          (widget.showLineNumbers
+              ? palette.gutterWidth(file) * (row is DiffPairRow ? 1 : 2)
+              : 0) +
+          20;
+      child = LineSelectionTarget(
+        isGutter: (x, width) =>
+            x < gutter ||
+            (row is DiffPairRow && x >= width / 2 && x < width / 2 + gutter),
+        onSelect: selectAt,
+        child: LayoutBuilder(
+          builder: (context, constraints) => GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onTapUp: (event) {
+              final x = event.localPosition.dx;
+              // Gutter pointer events are already handled by the drag coordinator.
+              if (x < gutter ||
+                  (row is DiffPairRow &&
+                      x >= constraints.maxWidth / 2 &&
+                      x < constraints.maxWidth / 2 + gutter)) {
+                return;
+              }
+              selectAt(
+                x,
+                constraints.maxWidth,
+                HardwareKeyboard.instance.isShiftPressed,
+              );
+            },
+            child: lineChild,
+          ),
         ),
       );
       for (final (line, side) in lines) {
@@ -770,14 +844,12 @@ class _PatchViewState extends State<PatchView> {
           }
         }
         final selection = controller?.selection;
-        if (selection?.fileId == file.id &&
-            selection?.side == side &&
-            number >= selection!.start &&
-            number <= selection.end) {
+        if (controller?.isLineSelected(file.id, side, number) == true) {
           if (controller != null &&
               widget.showReviewActions &&
               !file.isPartial &&
-              number == selection.active) {
+              number == selection!.active &&
+              side == selection.activeSide) {
             final change = controller.changeAt(file.id, number, side: side);
             if (change != null) {
               additions.add(
@@ -802,13 +874,36 @@ class _PatchViewState extends State<PatchView> {
               );
             }
           }
-          child = DecoratedBox(
-            decoration: BoxDecoration(
-              border: Border(
-                left: BorderSide(width: 3, color: widget.theme.selectionColor),
+          child = Stack(
+            children: [
+              child,
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: Align(
+                    alignment: row is DiffPairRow && side == DiffSide.old
+                        ? Alignment.centerLeft
+                        : Alignment.centerRight,
+                    child: FractionallySizedBox(
+                      widthFactor: row is DiffPairRow ? .5 : 1,
+                      heightFactor: 1,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: widget.theme.selectionColor.withValues(
+                            alpha: .15,
+                          ),
+                          border: Border(
+                            left: BorderSide(
+                              width: 3,
+                              color: widget.theme.selectionColor,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               ),
-            ),
-            child: child,
+            ],
           );
         }
       }
@@ -883,14 +978,24 @@ class _PatchViewState extends State<PatchView> {
       for (final segment in _highlightsFor(
         highlighter,
       ).segmentsFor(_files[file], line))
-        if (widget.onTokenTap != null)
+        if (widget.onTokenTap != null || widget.tokenTooltip != null)
           WidgetSpan(
-            child: GestureDetector(
-              onTap: () => widget.onTokenTap!(_files[file], line, segment),
-              child: Text(
-                segment.text,
-                style: palette.styles[segment.style].copyWith(
-                  backgroundColor: segment.changed ? emphasis : null,
+            alignment: PlaceholderAlignment.baseline,
+            baseline: TextBaseline.alphabetic,
+            child: Tooltip(
+              message:
+                  widget.tokenTooltip?.call(_files[file], line, segment) ??
+                  segment.text,
+              child: InkWell(
+                onTap: () =>
+                    widget.onTokenTap?.call(_files[file], line, segment),
+                child: Text(
+                  segment.text,
+                  style: palette.code
+                      .merge(palette.styles[segment.style])
+                      .copyWith(
+                        backgroundColor: segment.changed ? emphasis : null,
+                      ),
                 ),
               ),
             ),
@@ -916,7 +1021,8 @@ final class _Palette {
     this.scaler, {
     this.wrap = true,
     this.backgrounds = true,
-    this.indicators = true,
+    this.indicators = DiffIndicators.classic,
+    this.lineNumbers = true,
     this.onTokenTap,
   }) : styles = TokenTextStyles(theme, base: textStyle) {
     final diff = DiffColors.of(theme);
@@ -933,7 +1039,8 @@ final class _Palette {
     label = Color(diff.muted);
   }
 
-  final bool wrap, backgrounds, indicators;
+  final bool wrap, backgrounds, lineNumbers;
+  final DiffIndicators indicators;
   final void Function(FileDiff, DiffLine, DiffSegment)? onTokenTap;
   final SyntaxTheme theme;
   final TextStyle textStyle;
@@ -1214,32 +1321,69 @@ class _DiffStat extends StatelessWidget {
 }
 
 class _HunkHeaderBar extends StatelessWidget {
-  const _HunkHeaderBar({required this.hunk, required this.palette});
+  const _HunkHeaderBar({
+    required this.hunk,
+    required this.palette,
+    this.collapsed = false,
+    this.onToggle,
+    this.style = HunkSeparatorStyle.lineInfo,
+  });
+  final bool collapsed;
+  final VoidCallback? onToggle;
+  final HunkSeparatorStyle style;
 
   final DiffHunk hunk;
   final _Palette palette;
 
   @override
   Widget build(BuildContext context) {
-    final style = palette.mutedText;
     final header = hunk.header;
-    // The section, such as the enclosing function, ends the header.
-    final sectionStart = header.length - hunk.section.length;
-    return Container(
+    final text =
+        onToggle == null ||
+            style == HunkSeparatorStyle.metadata ||
+            hunk.section.isEmpty
+        ? header
+        : hunk.section;
+    return Material(
       color: palette.hunkBackground,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
-      child: Text.rich(
-        TextSpan(
-          children: [
-            TextSpan(text: header.substring(0, sectionStart), style: style),
-            TextSpan(
-              text: header.substring(sectionStart),
-              style: style.copyWith(color: palette.foreground),
+      child: InkWell(
+        onTap: onToggle,
+        child: Semantics(
+          button: onToggle != null,
+          excludeSemantics: onToggle != null,
+          onTap: onToggle,
+          label: onToggle == null
+              ? null
+              : '${collapsed ? 'Expand' : 'Collapse'} section ${hunk.section.isEmpty ? hunk.header : hunk.section}',
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: style == HunkSeparatorStyle.compact ? 2 : 6,
             ),
-          ],
+            child: Row(
+              children: [
+                if (onToggle != null) ...[
+                  Icon(
+                    collapsed ? Icons.chevron_right : Icons.expand_more,
+                    size: 16,
+                    color: palette.muted,
+                  ),
+                  const SizedBox(width: 6),
+                ],
+                Expanded(
+                  child: Text(
+                    text,
+                    style: palette.mutedText,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (collapsed)
+                  Text('${hunk.lines.length} lines', style: palette.numberText),
+              ],
+            ),
+          ),
         ),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
       ),
     );
   }
@@ -1250,8 +1394,10 @@ class _GapBar extends StatelessWidget {
     required this.text,
     required this.palette,
     required this.onExpand,
+    this.style = HunkSeparatorStyle.lineInfo,
   });
 
+  final HunkSeparatorStyle style;
   final String text;
   final _Palette palette;
   final VoidCallback onExpand;
@@ -1264,12 +1410,20 @@ class _GapBar extends StatelessWidget {
       child: InkWell(
         onTap: onExpand,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          padding: EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: style == HunkSeparatorStyle.compact ? 1 : 4,
+          ),
           child: Row(
             children: [
               Icon(Icons.unfold_more, size: 16, color: palette.muted),
               const SizedBox(width: 8),
-              Text(text, style: palette.mutedText),
+              Flexible(
+                child: Text(
+                  style == HunkSeparatorStyle.minimal ? '⋯' : text,
+                  style: palette.mutedText,
+                ),
+              ),
             ],
           ),
         ),
@@ -1317,22 +1471,28 @@ class _Gutter extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              for (final n in numbers)
-                SizedBox(
-                  width: width,
-                  child: Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: Text(
-                      n?.toString() ?? '',
-                      textAlign: TextAlign.right,
-                      style: style,
+              if (palette.lineNumbers)
+                for (final n in numbers)
+                  SizedBox(
+                    width: width,
+                    child: Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: Text(
+                        n?.toString() ?? '',
+                        textAlign: TextAlign.right,
+                        style: style,
+                      ),
                     ),
                   ),
-                ),
               SizedBox(
                 width: 20,
                 child: Text(
-                  palette.indicators ? marker : ' ',
+                  palette.indicators == DiffIndicators.classic
+                      ? marker
+                      : palette.indicators == DiffIndicators.bars &&
+                            kind != DiffLineKind.context
+                      ? '┃'
+                      : ' ',
                   textAlign: TextAlign.center,
                   style: style.copyWith(color: markerColor),
                 ),

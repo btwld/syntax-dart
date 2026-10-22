@@ -17,6 +17,16 @@ Future<NoirDriver> launch([String mode = 'editor']) async {
 
 Matcher containsText(String text) => DriverFrameMatchers.containsText(text);
 void main() {
+  test('keyboard folds a section and reveal restores its lines', () async {
+    final driver = await launch('fold');
+    expect(await driver.capture(), containsText('new'));
+    await driver.sendKey('down');
+    await driver.sendKey('enter');
+    expect(await driver.capture(), isNot(containsText('new')));
+    await driver.clickLocator(DriverLocator.byText('Reveal selected line'));
+    expect(await driver.capture(), containsText('new'));
+  });
+
   test(
     'custom annotation heights update when terminal width changes',
     () async {

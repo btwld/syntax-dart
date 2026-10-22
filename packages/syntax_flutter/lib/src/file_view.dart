@@ -5,6 +5,7 @@ import 'editor.dart';
 import 'styles.dart';
 import 'indexed_viewport.dart';
 import 'horizontal_scroll.dart';
+import 'line_selection.dart';
 
 /// A virtualized highlighted file with source-only line selection and copy.
 class SyntaxFileView extends StatefulWidget {
@@ -154,14 +155,13 @@ class _SyntaxFileViewState extends State<SyntaxFileView> {
     }
   }
 
-  void _selectLine(int line) {
+  void _selectLine(int line, {bool? extend}) {
     final doc = editor.document;
-    final start = doc.lineStart(line), end = start + doc.lineText(line).length;
     final existing = editor.selections.first;
-    final extend = HardwareKeyboard.instance.isShiftPressed;
-    editor.setSelections([
-      DocumentSelection(extend ? existing.anchor : start, end),
-    ]);
+    final anchor = (extend ?? HardwareKeyboard.instance.isShiftPressed)
+        ? doc.positionAt(existing.anchor).line
+        : line;
+    editor.selectLines(anchor, line);
     widget.onLineTap?.call(line);
   }
 
@@ -207,162 +207,193 @@ class _SyntaxFileViewState extends State<SyntaxFileView> {
                       ],
                     ),
               Expanded(
-                child: IndexedCodeViewport(
+                child: LineSelectionRegion(
                   controller: _scroll,
-                  count: doc.lineCount,
-                  layoutKey: (
-                    doc.id,
-                    doc.revision,
-                    widget.wrap,
-                    widget.textStyle,
-                    MediaQuery.textScalerOf(context),
-                    widget.executor,
-                    widget.highlighter.revision,
-                    editor.annotations,
-                    editor.diagnostics,
-                    editor.carets,
-                  ),
-                  identity: doc.lineIdentity,
-                  indexOf: doc.lineForIdentity,
-                  estimatedHeight: _height.ceilToDouble(),
-                  fixedHeight:
-                      !widget.wrap &&
-                      editor.annotations.isEmpty &&
-                      editor.diagnostics.isEmpty &&
-                      editor.carets.isEmpty &&
-                      widget.onTokenTap == null,
-                  onVisibleRange: _viewportChanged,
-                  revealRow: editor.revealTarget?.start.line,
-                  revealRequest: editor.revealRequest,
-                  builder: (context, line) {
-                    final tokens = _presentation?.line(line);
-                    final text = doc.lineText(line);
-                    final start = doc.lineStart(line),
-                        end = start + text.length;
-                    final selected = editor.selections.any(
-                      (s) => s.start <= end && s.end > start,
-                    );
-                    Widget code = Text.rich(
-                      TextSpan(
-                        style: styles.base,
-                        children: tokens == null
-                            ? [TextSpan(text: text)]
-                            : [
-                                for (final token in tokens)
-                                  if (widget.onTokenTap == null)
-                                    TextSpan(
-                                      text: token.text,
-                                      style: styles[token.style],
-                                    )
-                                  else
-                                    WidgetSpan(
-                                      child: GestureDetector(
-                                        onTap: () =>
-                                            widget.onTokenTap!(line, token),
-                                        child: Text(
-                                          token.text,
-                                          style: styles[token.style],
-                                        ),
-                                      ),
-                                    ),
-                              ],
-                      ),
-                      softWrap: widget.wrap,
-                    );
-                    if (!widget.wrap) {
-                      code = HorizontalCode(group: _horizontal, child: code);
-                    }
-                    code = SelectionArea(child: code);
-                    return KeyedSubtree(
-                      key: ValueKey(doc.lineIdentity(line)),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Semantics(
-                            label: 'Line ${line + 1}',
-                            selected: selected,
-                            child: ColoredBox(
-                              color: selected
-                                  ? widget.theme.selectionColor
-                                  : widget.theme.backgroundColor,
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  if (widget.showLineNumbers)
-                                    SelectionContainer.disabled(
-                                      child: GestureDetector(
-                                        onTap: () => _selectLine(line),
-                                        child: SizedBox(
-                                          width:
-                                              doc.lineCount.toString().length *
-                                                  (styles.base.fontSize ?? 14) +
-                                              20,
-                                          child: Padding(
-                                            padding: const EdgeInsets.only(
-                                              right: 12,
-                                            ),
-                                            child: Text(
-                                              '${line + 1}',
-                                              textAlign: TextAlign.right,
-                                              style: styles.base.copyWith(
-                                                color: widget
-                                                    .theme
-                                                    .lineNumberColor,
-                                              ),
+                  child: IndexedCodeViewport(
+                    controller: _scroll,
+                    count: doc.lineCount,
+                    layoutKey: (
+                      doc.id,
+                      doc.revision,
+                      widget.wrap,
+                      widget.textStyle,
+                      MediaQuery.textScalerOf(context),
+                      widget.executor,
+                      widget.highlighter.revision,
+                      editor.annotations,
+                      editor.diagnostics,
+                      editor.carets,
+                    ),
+                    identity: doc.lineIdentity,
+                    indexOf: doc.lineForIdentity,
+                    estimatedHeight: _height.ceilToDouble(),
+                    fixedHeight:
+                        !widget.wrap &&
+                        editor.annotations.isEmpty &&
+                        editor.diagnostics.isEmpty &&
+                        editor.carets.isEmpty &&
+                        widget.onTokenTap == null,
+                    onVisibleRange: _viewportChanged,
+                    revealRow: editor.revealTarget?.start.line,
+                    revealRequest: editor.revealRequest,
+                    builder: (context, line) {
+                      final tokens = _presentation?.line(line);
+                      final text = doc.lineText(line);
+                      final start = doc.lineStart(line),
+                          end = start + text.length;
+                      final selected = editor.selections.any(
+                        (s) => s.start <= end && s.end > start,
+                      );
+                      Widget code = Text.rich(
+                        TextSpan(
+                          style: styles.base,
+                          children: tokens == null
+                              ? [TextSpan(text: text)]
+                              : [
+                                  for (final token in tokens)
+                                    if (widget.onTokenTap == null)
+                                      TextSpan(
+                                        text: token.text,
+                                        style: styles[token.style],
+                                      )
+                                    else
+                                      WidgetSpan(
+                                        alignment:
+                                            PlaceholderAlignment.baseline,
+                                        baseline: TextBaseline.alphabetic,
+                                        child: GestureDetector(
+                                          onTap: () =>
+                                              widget.onTokenTap!(line, token),
+                                          child: Text(
+                                            token.text,
+                                            style: styles.base.merge(
+                                              styles[token.style],
                                             ),
                                           ),
                                         ),
                                       ),
-                                    ),
-                                  if (widget.gutterActionBuilder != null)
-                                    SelectionContainer.disabled(
-                                      child: widget.gutterActionBuilder!(
-                                        context,
-                                        line,
-                                      ),
-                                    ),
-                                  Expanded(child: code),
                                 ],
+                        ),
+                        softWrap: widget.wrap,
+                      );
+                      if (!widget.wrap) {
+                        code = HorizontalCode(group: _horizontal, child: code);
+                      }
+                      code = SelectionArea(child: code);
+                      return KeyedSubtree(
+                        key: ValueKey(doc.lineIdentity(line)),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            LineSelectionTarget(
+                              isGutter: (x, _) =>
+                                  widget.showLineNumbers &&
+                                  x <
+                                      doc.lineCount.toString().length *
+                                              (styles.base.fontSize ?? 14) +
+                                          20,
+                              onSelect: (_, _, extend) =>
+                                  _selectLine(line, extend: extend),
+                              child: Semantics(
+                                label: 'Line ${line + 1}',
+                                selected: selected,
+                                child: ColoredBox(
+                                  color: selected
+                                      ? widget.theme.selectionColor
+                                      : widget.theme.backgroundColor,
+                                  child: Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      if (widget.showLineNumbers)
+                                        SelectionContainer.disabled(
+                                          child: Semantics(
+                                            button: true,
+                                            label: 'Select line ${line + 1}',
+                                            onTap: () => _selectLine(line),
+                                            excludeSemantics: true,
+                                            child: MouseRegion(
+                                              cursor: SystemMouseCursors.click,
+                                              child: SizedBox(
+                                                width:
+                                                    doc.lineCount
+                                                            .toString()
+                                                            .length *
+                                                        (styles.base.fontSize ??
+                                                            14) +
+                                                    20,
+                                                child: Padding(
+                                                  padding:
+                                                      const EdgeInsets.only(
+                                                        right: 12,
+                                                      ),
+                                                  child: Text(
+                                                    '${line + 1}',
+                                                    textAlign: TextAlign.right,
+                                                    style: styles.base.copyWith(
+                                                      color: widget
+                                                          .theme
+                                                          .lineNumberColor,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      if (widget.gutterActionBuilder != null)
+                                        SelectionContainer.disabled(
+                                          child: widget.gutterActionBuilder!(
+                                            context,
+                                            line,
+                                          ),
+                                        ),
+                                      Expanded(child: code),
+                                    ],
+                                  ),
+                                ),
                               ),
                             ),
-                          ),
-                          for (final d in editor.diagnostics)
-                            if (d.start < end + 1 && d.end >= start)
-                              SelectionContainer.disabled(
-                                child: Text(
-                                  d.message,
-                                  style: const TextStyle(color: Colors.red),
+                            for (final d in editor.diagnostics)
+                              if (d.start < end + 1 && d.end >= start)
+                                SelectionContainer.disabled(
+                                  child: Text(
+                                    d.message,
+                                    style: const TextStyle(color: Colors.red),
+                                  ),
                                 ),
-                              ),
-                          for (final a in editor.annotations)
-                            if (a.start >= start &&
-                                (a.start < end + 1 ||
-                                    line == doc.lineCount - 1))
-                              SelectionContainer.disabled(
-                                child:
-                                    widget.annotationBuilder?.call(
-                                      context,
-                                      a,
-                                    ) ??
-                                    Padding(
-                                      padding: const EdgeInsets.all(8),
-                                      child: Text('${a.data}'),
-                                    ),
-                              ),
-                          for (final caret in editor.carets)
-                            if (caret.selection.active >= start &&
-                                caret.selection.active <= end)
-                              SelectionContainer.disabled(
-                                child: Text(
-                                  caret.label.isEmpty ? caret.id : caret.label,
-                                  style: TextStyle(color: Color(caret.color)),
+                            for (final a in editor.annotations)
+                              if (a.start >= start &&
+                                  (a.start < end + 1 ||
+                                      line == doc.lineCount - 1))
+                                SelectionContainer.disabled(
+                                  child:
+                                      widget.annotationBuilder?.call(
+                                        context,
+                                        a,
+                                      ) ??
+                                      Padding(
+                                        padding: const EdgeInsets.all(8),
+                                        child: Text('${a.data}'),
+                                      ),
                                 ),
-                              ),
-                        ],
-                      ),
-                    );
-                  },
+                            for (final caret in editor.carets)
+                              if (caret.selection.active >= start &&
+                                  caret.selection.active <= end)
+                                SelectionContainer.disabled(
+                                  child: Text(
+                                    caret.label.isEmpty
+                                        ? caret.id
+                                        : caret.label,
+                                    style: TextStyle(color: Color(caret.color)),
+                                  ),
+                                ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
                 ),
               ),
             ],

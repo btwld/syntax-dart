@@ -16,8 +16,7 @@ Application-supplied `SourceFile.id` identifies a document independently of
 its display path or position in a collection. Content revisions increase
 on every transaction, including undo/redo. Asynchronous loads and proposals
 must match both their source identity and current revision before being
-installed. A display path can inform language detection; it is not a path
-management API. File trees and filesystem operations are outside the scope.
+installed. A display path can inform language detection.
 
 | Responsibility | Core contract |
 | --- | --- |

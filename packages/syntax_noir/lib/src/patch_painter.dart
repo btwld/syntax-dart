@@ -23,6 +23,9 @@ final class PatchPainter {
     this.labels = const syntax.DiffLabels(),
     this.showBackgrounds = true,
     this.showChangeIndicators = true,
+    this.indicators = syntax.DiffIndicators.classic,
+    this.showLineNumbers = true,
+    this.hunkSeparatorStyle = syntax.HunkSeparatorStyle.lineInfo,
   }) : _colors = syntax.DiffColors.of(highlights.theme) {
     final background = theme.background;
     _addedLine = syntax.alphaBlend(_colors.insertedLine, background);
@@ -45,6 +48,15 @@ final class PatchPainter {
 
   /// Whether gutters display addition and deletion markers.
   final bool showChangeIndicators;
+
+  /// Marker style independent of line backgrounds.
+  final syntax.DiffIndicators indicators;
+
+  /// Shows source line numbers in gutters.
+  final bool showLineNumbers;
+
+  /// Presentation of gaps and section metadata.
+  final syntax.HunkSeparatorStyle hunkSeparatorStyle;
 
   final syntax.DiffColors _colors;
   late final int _addedLine;
@@ -84,8 +96,13 @@ final class PatchPainter {
         _fileHeader(out, files[file], collapsed);
       case syntax.DiffNoticeRow(:final notice):
         out.add(labels.notice(notice), _muted(base));
-      case syntax.DiffHunkHeaderRow(:final hunk):
-        final header = hunk.header;
+      case syntax.DiffHunkHeaderRow(:final hunk, :final collapsed):
+        if (collapsed) out.add('▸ ', _muted(base));
+        final header =
+            hunkSeparatorStyle != syntax.HunkSeparatorStyle.compact ||
+                hunk.section.isEmpty
+            ? hunk.header
+            : hunk.section;
         final sectionStart = header.length - hunk.section.length;
         out
           ..add(header.substring(0, sectionStart), _muted(base))
@@ -97,7 +114,12 @@ final class PatchPainter {
             ),
           );
       case syntax.DiffGapRow(:final count):
-        out.add('⋯ ${labels.showUnchangedLines(count)}', _muted(base));
+        out.add(
+          hunkSeparatorStyle == syntax.HunkSeparatorStyle.minimal
+              ? '⋯'
+              : '⋯ ${labels.showUnchangedLines(count)}',
+          _muted(base),
+        );
       case syntax.DiffLineRow(:final file, :final line):
         _gutter(out, file, line, [line.oldNumber, line.newNumber]);
         _code(out, file, line, codeOffset);
@@ -194,7 +216,7 @@ final class PatchPainter {
       color: noirColor(theme.lineNumberForeground, over: base),
       backgroundColor: noirColor(base),
     );
-    for (final n in numbers) {
+    for (final n in showLineNumbers ? numbers : <int?>[]) {
       out.add('${(n?.toString() ?? '').padLeft(digits)} ', numberStyle);
     }
     final (marker, color) = switch (line.kind) {
@@ -202,7 +224,15 @@ final class PatchPainter {
       syntax.DiffLineKind.removed => ('−', _colors.removed),
       syntax.DiffLineKind.context => (' ', _colors.muted),
     };
-    out.add(showChangeIndicators ? '$marker ' : '  ', _bold(color, base));
+    out.add(
+      !showChangeIndicators || indicators == syntax.DiffIndicators.none
+          ? '  '
+          : indicators == syntax.DiffIndicators.bars &&
+                line.kind != syntax.DiffLineKind.context
+          ? '┃ '
+          : '$marker ',
+      _bold(color, base),
+    );
   }
 
   void _code(_LineBuilder out, int file, syntax.DiffLine line, int codeOffset) {

@@ -12,6 +12,33 @@ enum DiffMode {
   split,
 }
 
+/// Change markers independent of line background colors.
+enum DiffIndicators {
+  /// Plus and minus symbols.
+  classic,
+
+  /// Colored vertical bars.
+  bars,
+
+  /// No change marker.
+  none,
+}
+
+/// Built-in presentation of context gaps and section metadata.
+enum HunkSeparatorStyle {
+  /// Context count with a comfortably spaced separator.
+  lineInfo,
+
+  /// Compact context count and controls.
+  compact,
+
+  /// Complete patch coordinates and section metadata.
+  metadata,
+
+  /// A minimal gap indicator.
+  minimal,
+}
+
 /// The unchanged lines before hunk `hunk` of file `file`, or after the
 /// file's last hunk when `hunk` equals its hunk count.
 typedef DiffGapId = ({int file, int hunk});
@@ -74,10 +101,13 @@ final class DiffNoticeRow extends DiffRow {
 /// The `@@` line that starts a hunk.
 final class DiffHunkHeaderRow extends DiffRow {
   /// The header that starts [hunk].
-  const DiffHunkHeaderRow(super.file, this.hunk);
+  const DiffHunkHeaderRow(super.file, this.hunk, {this.collapsed = false});
 
   /// The hunk this header starts; its [DiffHunk.header] is the text.
   final DiffHunk hunk;
+
+  /// Whether this section's source lines are hidden.
+  final bool collapsed;
 
   @override
   String toString() => 'DiffHunkHeaderRow($file, ${hunk.header})';
@@ -178,6 +208,8 @@ final class DiffLayout extends ListBase<DiffRow> {
     Map<DiffGapId, GapExpansion> expansions = const {},
     int contextThreshold = 0,
     bool expandAll = false,
+    Set<DiffGapId> collapsedHunks = const {},
+    bool showHunkHeaders = false,
   }) {
     RangeError.checkNotNegative(contextThreshold, 'contextThreshold');
     for (var f = 0; f < files.length; f++) {
@@ -204,10 +236,15 @@ final class DiffLayout extends ListBase<DiffRow> {
           contextThreshold,
         );
         if (h == file.hunks.length) break;
-        if (gapHidden || (!full && expansions[id] == null)) {
-          _one(DiffHunkHeaderRow(f, file.hunks[h]));
+        final folded = collapsedHunks.contains(id);
+        if (folded ||
+            showHunkHeaders ||
+            gapHidden ||
+            (!full && expansions[id] == null)) {
+          _hunkHeaders[(f, file.hunks[h].newStart)] = _length;
+          _one(DiffHunkHeaderRow(f, file.hunks[h], collapsed: folded));
         }
-        _hunk(f, file.hunks[h]);
+        if (!folded) _hunk(f, file.hunks[h]);
       }
     }
   }
@@ -215,6 +252,7 @@ final class DiffLayout extends ListBase<DiffRow> {
   /// Unified or side-by-side presentation of changed source lines.
   final DiffMode mode;
   final List<_RowBlock> _blocks = [];
+  final Map<(int, int), int> _hunkHeaders = {};
   int _length = 0;
 
   /// Number of compact row runs retained by this layout.
@@ -288,6 +326,9 @@ final class DiffLayout extends ListBase<DiffRow> {
     }
     return null;
   }
+
+  /// Finds a visible section header by its file index and new-side start line.
+  int? rowForSection(int file, int newStart) => _hunkHeaders[(file, newStart)];
 
   bool _gap(
     FileDiff file,

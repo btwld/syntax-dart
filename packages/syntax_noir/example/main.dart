@@ -75,6 +75,32 @@ class _WorkflowsDemoState extends State<WorkflowsDemo> {
       return (oldText: before, newText: after);
     },
   );
+  late final interactionPatch = syntax.PatchController([
+    (() {
+      final diff = syntax.diffTexts(
+        before,
+        after,
+        path: 'greeting.dart',
+        id: 'greeting',
+      );
+      final h = diff.hunks.single;
+      return diff.copyWith(
+        hunks: [
+          syntax.DiffHunk(
+            oldStart: h.oldStart,
+            oldCount: h.oldCount,
+            newStart: h.newStart,
+            newCount: h.newCount,
+            lines: h.lines,
+            section: 'main()',
+          ),
+        ],
+      );
+    })(),
+  ], foldableHunks: true);
+  syntax.DiffIndicators markers = syntax.DiffIndicators.classic;
+  syntax.HunkSeparatorStyle separators = syntax.HunkSeparatorStyle.lineInfo;
+  bool numbers = true;
   final merge = syntax.MergeController(
     const syntax.SourceFile(
       id: 'merge',
@@ -167,6 +193,7 @@ class _WorkflowsDemoState extends State<WorkflowsDemo> {
               'Conflicts',
               'Stream',
               'Large',
+              'Interactions',
             ].indexed)
               Button(label: name, onPressed: () => setState(() => tab = index)),
           ],
@@ -235,6 +262,85 @@ class _WorkflowsDemoState extends State<WorkflowsDemo> {
               ),
           ],
         ),
+        if (tab == 6) ...[
+          Row(
+            children: [
+              Button(
+                label: 'Select lines 1–3',
+                onPressed: () => interactionPatch.select(
+                  const syntax.DiffSelection(
+                    'greeting',
+                    syntax.DiffSide.newer,
+                    1,
+                    3,
+                  ),
+                ),
+              ),
+              Button(
+                label: 'Across sides',
+                onPressed: () => interactionPatch.select(
+                  const syntax.DiffSelection(
+                    'greeting',
+                    syntax.DiffSide.old,
+                    2,
+                    2,
+                    activeSide: syntax.DiffSide.newer,
+                  ),
+                ),
+              ),
+              Button(
+                label: 'Clear',
+                onPressed: () => interactionPatch.select(null),
+              ),
+            ],
+          ),
+          Row(
+            children: [
+              Button(
+                label: 'Fold main()',
+                onPressed: () => interactionPatch.toggleHunk('greeting', 0),
+              ),
+              Button(
+                label: 'Reveal line 2',
+                onPressed: () => interactionPatch.revealLine('greeting', 2),
+              ),
+              Button(
+                label: 'Split/unified',
+                onPressed: () => interactionPatch.mode =
+                    interactionPatch.mode == syntax.DiffMode.split
+                    ? syntax.DiffMode.unified
+                    : syntax.DiffMode.split,
+              ),
+            ],
+          ),
+          Row(
+            children: [
+              Button(
+                label: 'Markers: ${markers.name}',
+                onPressed: () => setState(
+                  () => markers =
+                      syntax.DiffIndicators.values[(markers.index + 1) %
+                          syntax.DiffIndicators.values.length],
+                ),
+              ),
+              Button(
+                label: 'Numbers',
+                onPressed: () => setState(() => numbers = !numbers),
+              ),
+              Button(
+                label: 'Separator: ${separators.name}',
+                onPressed: () => setState(
+                  () => separators =
+                      syntax.HunkSeparatorStyle.values[(separators.index + 1) %
+                          syntax.HunkSeparatorStyle.values.length],
+                ),
+              ),
+            ],
+          ),
+          const Text(
+            'Enter folds a section. Shift+arrows extends selection. Ctrl+C copies. Alt+Enter inspects tokens.',
+          ),
+        ],
         Expanded(
           child: switch (tab) {
             0 => SyntaxEditor(
@@ -252,6 +358,22 @@ class _WorkflowsDemoState extends State<WorkflowsDemo> {
               wrap: wrap,
               editable: true,
               onComplete: complete,
+            ),
+            6 => PatchView.controlled(
+              controller: interactionPatch,
+              highlighter: highlighter,
+              theme: theme,
+              wrap: wrap,
+              indicators: markers,
+              showLineNumbers: numbers,
+              hunkSeparatorStyle: separators,
+              onCopy: (text) => setState(
+                () => message = 'Copied: ${text.replaceAll('\n', ' | ')}',
+              ),
+              onToken: (file, line, token) => setState(
+                () => message =
+                    'Token: ${token.text} · ${token.changed ? 'changed' : 'unchanged'}',
+              ),
             ),
             2 => PatchView.controlled(
               controller: patch,
@@ -301,6 +423,7 @@ class _WorkflowsDemoState extends State<WorkflowsDemo> {
     files.dispose();
     large.dispose();
     patch.dispose();
+    interactionPatch.dispose();
     merge.dispose();
     stream.dispose();
     pool.dispose();

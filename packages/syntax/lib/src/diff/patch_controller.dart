@@ -19,16 +19,28 @@ enum ExpansionDirection {
   both,
 }
 
-/// A directed, one-based line range on one side of one file.
+/// A directed, one-based line range in one file, optionally crossing sides.
 final class DiffSelection {
   /// Selects an inclusive source-line interval while retaining its direction.
-  const DiffSelection(this.fileId, this.side, this.anchor, this.active);
+  const DiffSelection(
+    this.fileId,
+    this.side,
+    this.anchor,
+    this.active, {
+    DiffSide? activeSide,
+  }) : activeSide = activeSide ?? side;
 
   /// Stable application-supplied identity of the associated file.
   final String fileId;
 
   /// Source side addressed by this value.
   final DiffSide side;
+
+  /// Source side at the moving endpoint. Defaults to [side].
+  final DiffSide activeSide;
+
+  /// Whether the selection crosses from one source to the other.
+  bool get crossesSides => side != activeSide;
 
   /// Fixed and moving endpoints of the directed selection.
   final int anchor, active;
@@ -74,6 +86,7 @@ final class PatchController extends SyntaxObservable {
     this.expansionLineCount = 100,
     this.contentsLoader,
     this.sessionLimit = 32,
+    this.foldableHunks = false,
   }) : _mode = mode {
     RangeError.checkNotNegative(sessionLimit, 'sessionLimit');
     setFiles(files);
@@ -101,9 +114,13 @@ final class PatchController extends SyntaxObservable {
   /// Default number of unchanged lines revealed by one expansion action.
   final int expansionLineCount;
 
+  /// Keeps section headers visible and enables named section folding controls.
+  final bool foldableHunks;
+
   /// Application callback providing both complete sources for a partial patch.
   final DiffContentsLoader? contentsLoader;
   final Set<String> _collapsed = {};
+  final Set<(String, int)> _collapsedHunks = {};
   final Map<(String, int), GapExpansion> _expanded = {};
   final Map<String, CancellationToken> _loading = {};
   final Map<String, Future<bool>> _loadResults = {};
@@ -145,6 +162,12 @@ final class PatchController extends SyntaxObservable {
     _files,
     mode: mode,
     contextThreshold: contextThreshold,
+    showHunkHeaders: foldableHunks,
+    collapsedHunks: {
+      for (var i = 0; i < files.length; i++)
+        for (var h = 0; h < files[i].hunks.length; h++)
+          if (_collapsedHunks.contains((files[i].id, h))) (file: i, hunk: h),
+    },
     collapsed: {
       for (var i = 0; i < files.length; i++)
         if (_collapsed.contains(files[i].id)) i,
@@ -158,6 +181,7 @@ final class PatchController extends SyntaxObservable {
 
   void _changed() {
     _layout = null;
+    _selectionLayout = null;
     notifyListeners();
   }
 
@@ -192,6 +216,7 @@ final class PatchController extends SyntaxObservable {
         _loading.remove(old.id)?.cancel();
         _loadResults.remove(old.id);
         _expanded.removeWhere((key, _) => key.$1 == old.id);
+        _collapsedHunks.removeWhere((key) => key.$1 == old.id);
         loadErrors.remove(old.id);
       }
     }
@@ -236,6 +261,41 @@ final class PatchController extends SyntaxObservable {
   void toggleFile(String id) {
     file(id);
     if (!_collapsed.remove(id)) _collapsed.add(id);
+    _changed();
+  }
+
+  /// Whether a zero-based hunk is folded. State belongs to this source revision.
+  bool isHunkCollapsed(String id, int hunk) =>
+      _collapsedHunks.contains((id, hunk));
+
+  /// Folds a section without losing selections, annotations, or edit sessions.
+  void toggleHunk(String id, int hunk) {
+    checkAlive();
+    RangeError.checkValidIndex(hunk, file(id).hunks, 'hunk');
+    if (!_collapsedHunks.remove((id, hunk))) _collapsedHunks.add((id, hunk));
+    _changed();
+  }
+
+  /// Folds or expands every named section, optionally in a single file.
+  void setHunksCollapsed(bool collapsed, [String? id]) {
+    checkAlive();
+    for (final source in files) {
+      if (id != null && source.id != id) continue;
+      for (var h = 0; h < source.hunks.length; h++) {
+        if (collapsed) {
+          _collapsedHunks.add((source.id, h));
+        } else {
+          _collapsedHunks.remove((source.id, h));
+        }
+      }
+    }
+    _changed();
+  }
+
+  /// Restores the original context gaps without replacing files or review state.
+  void collapseContext([String? id]) {
+    checkAlive();
+    _expanded.removeWhere((key, _) => id == null || key.$1 == id);
     _changed();
   }
 
@@ -340,6 +400,16 @@ final class PatchController extends SyntaxObservable {
     final generation = ++_navigationGeneration;
     if (index < 0) throw ArgumentError('Unknown file');
     _collapsed.remove(id);
+    // Reveal only the folded section containing the target source line.
+    final source = files[index];
+    for (var h = 0; h < source.hunks.length; h++) {
+      final section = source.hunks[h];
+      final start = side == DiffSide.old ? section.oldStart : section.newStart;
+      final count = side == DiffSide.old ? section.oldCount : section.newCount;
+      if (line >= start && line < start + count) {
+        _collapsedHunks.remove((id, h));
+      }
+    }
     _layout = null;
     var row = layout.rowForLine(index, line, oldSide: side == DiffSide.old);
     if (row == null && file(id).isPartial) {
@@ -372,6 +442,46 @@ final class PatchController extends SyntaxObservable {
     notifyListeners();
   }
 
+  DiffLayout? _selectionLayout;
+  DiffLayout get _allSelectionRows =>
+      _selectionLayout ??= DiffLayout(files, expandAll: true);
+
+  (int, int)? _selectionRows(DiffSelection selected) {
+    final index = files.indexWhere((f) => f.id == selected.fileId);
+    final a = _allSelectionRows.rowForLine(
+      index,
+      selected.anchor,
+      oldSide: selected.side == DiffSide.old,
+    );
+    final b = _allSelectionRows.rowForLine(
+      index,
+      selected.active,
+      oldSide: selected.activeSide == DiffSide.old,
+    );
+    if (a == null || b == null) return null;
+    return a < b ? (a, b) : (b, a);
+  }
+
+  /// Tests a source line against the selection in either display mode.
+  bool isLineSelected(String id, DiffSide side, int number) {
+    final selected = selection;
+    if (selected == null || selected.fileId != id) return false;
+    if (!selected.crossesSides) {
+      return selected.side == side &&
+          number >= selected.start &&
+          number <= selected.end;
+    }
+    final bounds = _selectionRows(selected);
+    if (bounds == null) return false;
+    final index = files.indexWhere((f) => f.id == id);
+    final row = _allSelectionRows.rowForLine(
+      index,
+      number,
+      oldSide: side == DiffSide.old,
+    );
+    return row != null && row >= bounds.$1 && row <= bounds.$2;
+  }
+
   /// Replaces annotations and notifies mounted renderers.
   void setAnnotations(Iterable<ReviewAnnotation<Object?>> value) {
     annotations = List.unmodifiable(value);
@@ -382,6 +492,41 @@ final class PatchController extends SyntaxObservable {
   String selectedText() {
     final selected = selection;
     if (selected == null) return '';
+    if (selected.crossesSides) {
+      final bounds = _selectionRows(selected);
+      if (bounds == null) return '';
+      final lines = <DiffLine>[];
+      for (var i = bounds.$1; i <= bounds.$2; i++) {
+        if (_allSelectionRows[i] case DiffLineRow(:final line)) lines.add(line);
+      }
+      final source = file(selected.fileId);
+      final old = source.oldText == null ? null : TextDocument(source.oldText!);
+      final newer = source.newText == null
+          ? null
+          : TextDocument(source.newText!);
+      try {
+        String ending(DiffLine line) {
+          final document = line.kind == DiffLineKind.removed ? old : newer;
+          final number = line.kind == DiffLineKind.removed
+              ? line.oldNumber
+              : line.newNumber;
+          if (document != null && number != null) {
+            final text = document.lineText(number - 1, includeTerminator: true);
+            final eol = text.substring(document.lineText(number - 1).length);
+            return eol.isEmpty ? '\n' : eol;
+          }
+          return line.sourceLineEnding.isEmpty ? '\n' : line.sourceLineEnding;
+        }
+
+        return [
+          for (var i = 0; i < lines.length; i++)
+            '${lines[i].text}${i + 1 == lines.length ? '' : ending(lines[i])}',
+        ].join();
+      } finally {
+        old?.dispose();
+        newer?.dispose();
+      }
+    }
     final source = file(selected.fileId);
     final lines = selected.side == DiffSide.old
         ? source.oldLines

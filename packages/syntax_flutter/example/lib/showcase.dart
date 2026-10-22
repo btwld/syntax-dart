@@ -10,6 +10,7 @@ import 'package:syntax/themes/github_light.dart';
 import 'package:syntax_flutter/syntax_flutter.dart';
 
 import 'catalog.dart';
+import 'interaction_examples.dart';
 import 'showcase_samples.dart';
 import 'workflows.dart';
 
@@ -128,6 +129,42 @@ const _examples = [
     'Large files',
     'Go straight to the interesting part.',
     '100,000 lines, a small visible window. Drag the scrollbar or jump directly to a line.',
+  ),
+  (
+    Icons.format_line_spacing,
+    'Line selection',
+    'Select the whole thought.',
+    'Drag through the gutter, extend with Shift, and copy or annotate a range.',
+  ),
+  (
+    Icons.functions,
+    'Named sections',
+    'Focus on one function.',
+    'Fold patch sections by their function name. Jump to a line to reopen its section.',
+  ),
+  (
+    Icons.tune,
+    'Appearance',
+    'Make the diff yours.',
+    'Try markers, comparison modes, separators, line numbers, and typography.',
+  ),
+  (
+    Icons.manage_search,
+    'Token details',
+    'Look inside the highlight.',
+    'Inspect tokens with the pointer or keyboard and pin their details.',
+  ),
+  (
+    Icons.dashboard_customize,
+    'Custom headers',
+    'Give your files context.',
+    'Replace the header while keeping folding and review state connected.',
+  ),
+  (
+    Icons.compare,
+    'Compare text',
+    'Bring your own changes.',
+    'Paste two versions of a file and explore the resulting diff.',
   ),
 ];
 
@@ -405,7 +442,7 @@ class _ShowcaseHomeState extends State<ShowcaseHome> {
       ReviewAnnotation(
         id: 'note-${DateTime.now().microsecondsSinceEpoch}',
         fileId: selection.fileId,
-        side: selection.side,
+        side: selection.activeSide,
         line: selection.active,
         data: text,
       ),
@@ -547,7 +584,7 @@ class _ShowcaseHomeState extends State<ShowcaseHome> {
                                 ),
                                 child: Column(
                                   children: [
-                                    _toolbar(),
+                                    if (_tab < 6) _toolbar(),
                                     if (_tab == 0 &&
                                         _review.mode == DiffMode.split)
                                       _splitLabels(),
@@ -658,9 +695,17 @@ class _ShowcaseHomeState extends State<ShowcaseHome> {
             ),
           ),
         ),
-        for (var i = 0; i < _examples.length; i++)
-          Padding(padding: const EdgeInsets.only(bottom: 5), child: _nav(i)),
-        const Spacer(),
+        Expanded(
+          child: ListView(
+            children: [
+              for (var i = 0; i < _examples.length; i++)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 5),
+                  child: _nav(i),
+                ),
+            ],
+          ),
+        ),
         Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
@@ -1094,7 +1139,7 @@ class _ShowcaseHomeState extends State<ShowcaseHome> {
               theme: codeTheme,
               textStyle: widget.codeStyle,
             ),
-    _ => ScrollConfiguration(
+    5 => ScrollConfiguration(
       behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
       child: Scrollbar(
         controller: _largeScroll,
@@ -1113,6 +1158,11 @@ class _ShowcaseHomeState extends State<ShowcaseHome> {
           wrap: _largeWrap,
         ),
       ),
+    ),
+    _ => InteractionExamples(
+      kind: _tab - 6,
+      theme: codeTheme,
+      textStyle: widget.codeStyle,
     ),
   };
 

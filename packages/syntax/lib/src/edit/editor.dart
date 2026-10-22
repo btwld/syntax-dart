@@ -413,6 +413,18 @@ final class EditorController extends SyntaxObservable {
     _scheduleProposal();
   }
 
+  /// Selects complete zero-based lines, including both endpoints in either
+  /// direction. The final line's terminator is excluded from source copying.
+  void selectLines(int anchor, int active) {
+    final a = document.lineStart(anchor);
+    final b = document.lineStart(active);
+    setSelections([
+      active < anchor
+          ? DocumentSelection(a + document.lineText(anchor).length, b)
+          : DocumentSelection(a, b + document.lineText(active).length),
+    ]);
+  }
+
   /// Replaces annotations and notifies mounted renderers.
   void setAnnotations(Iterable<LineAnnotation<Object?>> annotations) {
     final next = annotations.toList();

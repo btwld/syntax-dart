@@ -1,8 +1,11 @@
 # File and diff capability checklist
 
 Scope: highlighted files, flat file collections, patches, review interactions,
-editing, conflicts, streaming, catalogs and execution. File trees, filesystem
-path management, hosted applications and accounts are excluded.
+editing, conflicts, streaming, catalogs and execution.
+
+Dedicated gallery coverage and the interaction gaps found during review are
+tracked separately in the [file and diff example matrix](example-matrix.md).
+An API entry below does not by itself imply a dedicated example.
 
 The checklist maps public contracts to working renderer surfaces and behavioral
 checks. Examples are `packages/syntax_flutter/example/lib/workflows.dart` and
@@ -76,9 +79,8 @@ Verified on 2026-10-21:
 | Generated catalog and notices | 330 files identical after regeneration |
 | Flutter web release example with worker asset | Built on both Flutter SDKs |
 
-Minimum-SDK verification used an isolated source copy without local reference
-material or inherited dependency/build caches. No reference contents are tracked
-or staged. The core remains free of runtime package dependencies.
+Minimum-SDK verification used an isolated source copy with fresh dependency and
+build caches. The core remains free of runtime package dependencies.
 
 ## Review regression coverage
 

@@ -21,7 +21,7 @@ light and dark themes, responsive navigation, and project-owned code samples.
 Click **Reset** to restore the samples. Review decisions, comments, and edits
 stay in memory for this browser session. **Languages & themes** opens the full
 catalog editor/preview; **Stress-test workflows** includes partial-patch loading
-and the 1,000-file fixture. These are flat file collections, with no file tree.
+and the 1,000-file fixture.
 
 Every push to `main` deploys it to <https://btwld.github.io/syntax-dart/>.
 
@@ -45,3 +45,8 @@ It also runs on macOS with `flutter run -d macos`. Fonts load from Google
 Fonts, so the first run needs network access.
 
 Run the gallery interaction tests with `flutter test` from this directory.
+
+Focused gallery pages cover gutter drag selection, cross-side ranges, named
+section folding, separator styles, appearance and typography, token details,
+custom headers, and comparing pasted sources. See the
+[example matrix](../../../docs/example-matrix.md) for API mappings and limits.

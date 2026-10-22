@@ -37,6 +37,9 @@ class PatchView extends StatefulWidget {
     this.showReviewActions = false,
     this.showBackgrounds = true,
     this.showChangeIndicators = true,
+    this.indicators = syntax.DiffIndicators.classic,
+    this.showLineNumbers = true,
+    this.hunkSeparatorStyle = syntax.HunkSeparatorStyle.lineInfo,
     this.stickyHeaders = false,
     this.wrap = false,
     this.onCopy = copyTerminalSource,
@@ -69,6 +72,9 @@ class PatchView extends StatefulWidget {
     this.showReviewActions = false,
     this.showBackgrounds = true,
     this.showChangeIndicators = true,
+    this.indicators = syntax.DiffIndicators.classic,
+    this.showLineNumbers = true,
+    this.hunkSeparatorStyle = syntax.HunkSeparatorStyle.lineInfo,
     this.stickyHeaders = false,
     this.wrap = false,
     this.onCopy = copyTerminalSource,
@@ -106,6 +112,9 @@ class PatchView extends StatefulWidget {
     this.showReviewActions = false,
     this.showBackgrounds = true,
     this.showChangeIndicators = true,
+    this.indicators = syntax.DiffIndicators.classic,
+    this.showLineNumbers = true,
+    this.hunkSeparatorStyle = syntax.HunkSeparatorStyle.lineInfo,
     this.stickyHeaders = false,
     this.wrap = false,
     this.onCopy = copyTerminalSource,
@@ -138,6 +147,9 @@ class PatchView extends StatefulWidget {
     this.showReviewActions = false,
     this.showBackgrounds = true,
     this.showChangeIndicators = true,
+    this.indicators = syntax.DiffIndicators.classic,
+    this.showLineNumbers = true,
+    this.hunkSeparatorStyle = syntax.HunkSeparatorStyle.lineInfo,
     this.stickyHeaders = false,
     this.wrap = false,
     this.onCopy = copyTerminalSource,
@@ -167,6 +179,15 @@ class PatchView extends StatefulWidget {
 
   /// Displays addition and deletion markers.
   final bool showChangeIndicators;
+
+  /// Marker style independent of line backgrounds.
+  final syntax.DiffIndicators indicators;
+
+  /// Shows source numbers in the terminal gutters.
+  final bool showLineNumbers;
+
+  /// Presentation of context gaps and section metadata.
+  final syntax.HunkSeparatorStyle hunkSeparatorStyle;
 
   /// Displays the selected file's header above the viewport.
   final bool stickyHeaders;
@@ -364,6 +385,9 @@ class _PatchViewState extends State<PatchView> {
       widget.labels,
       widget.showBackgrounds,
       widget.showChangeIndicators,
+      widget.indicators,
+      widget.showLineNumbers,
+      widget.hunkSeparatorStyle,
     );
     if (painterKey != _painterKey || _painter == null) {
       _painterKey = painterKey;
@@ -373,6 +397,9 @@ class _PatchViewState extends State<PatchView> {
         labels: widget.labels,
         showBackgrounds: widget.showBackgrounds,
         showChangeIndicators: widget.showChangeIndicators,
+        indicators: widget.indicators,
+        showLineNumbers: widget.showLineNumbers,
+        hunkSeparatorStyle: widget.hunkSeparatorStyle,
       );
     }
     return _painter!;
@@ -385,6 +412,12 @@ class _PatchViewState extends State<PatchView> {
           controller.toggleFile(_files[file].id);
         case syntax.DiffGapRow(:final id):
           controller.expand(id);
+        case syntax.DiffHunkHeaderRow(:final hunk)
+            when controller.foldableHunks:
+          controller.toggleHunk(
+            _files[row.file].id,
+            _files[row.file].hunks.indexOf(hunk),
+          );
         default:
           _selectLine(row);
       }
@@ -446,18 +479,19 @@ class _PatchViewState extends State<PatchView> {
     widget.controller?.select(
       syntax.DiffSelection(
         file.id,
-        side,
-        extend && old?.fileId == file.id && old?.side == side
-            ? old!.anchor
-            : number,
+        extend && old?.fileId == file.id ? old!.side : side,
+        extend && old?.fileId == file.id ? old!.anchor : number,
         number,
+        activeSide: side,
       ),
     );
     widget.onLine?.call(file, side, number);
   }
 
   int _codeWidth(syntax.DiffRow row, int width) {
-    final digits = '${_files[row.file].maxLineNumber}'.length;
+    final digits = widget.showLineNumbers
+        ? '${_files[row.file].maxLineNumber}'.length
+        : -1;
     return math.max(
       1,
       row is syntax.DiffPairRow
@@ -623,7 +657,34 @@ class _PatchViewState extends State<PatchView> {
             text: painter.paint(
               row,
               width: width,
-              selected: active,
+              selected:
+                  active ||
+                  [
+                    if (row case syntax.DiffLineRow(:final line)) line,
+                    if (row case syntax.DiffPairRow(
+                      :final left,
+                      :final right,
+                    )) ...[
+                      ?left,
+                      ?right,
+                    ],
+                  ].any(
+                    (line) =>
+                        (line.oldNumber != null &&
+                            widget.controller?.isLineSelected(
+                                  _files[row.file].id,
+                                  syntax.DiffSide.old,
+                                  line.oldNumber!,
+                                ) ==
+                                true) ||
+                        (line.newNumber != null &&
+                            widget.controller?.isLineSelected(
+                                  _files[row.file].id,
+                                  syntax.DiffSide.newer,
+                                  line.newNumber!,
+                                ) ==
+                                true),
+                  ),
               codeOffset: offset,
               ellipsis: !widget.wrap,
             ),
