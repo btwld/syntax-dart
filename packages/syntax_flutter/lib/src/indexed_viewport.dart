@@ -150,10 +150,18 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
       _queued = false;
       if (!mounted || _measurements.isEmpty) return;
       final anchor = _heights.rowAt(_offset);
+      final within = _offset - _heights.offsetFor(anchor);
       var correction = 0.0;
       for (final entry in _measurements.entries) {
         final delta = _heights.measure(entry.key, entry.value);
         if (entry.key < anchor) correction += delta;
+      }
+      final anchorHeight =
+          _heights.offsetFor(anchor + 1) - _heights.offsetFor(anchor);
+      if (_measurements.containsKey(anchor) && within >= anchorHeight) {
+        // Closing an inline editor can remove the part of a tall row that was
+        // at the top of the viewport. Keep the remaining discussion in view.
+        correction += math.max(0, anchorHeight - _extent) - within;
       }
       _measurements.clear();
       setState(_range);
@@ -200,15 +208,20 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
         oldWidget.estimatedHeight != widget.estimatedHeight) {
       final anchor = _anchor;
       final within = _within;
+      final index = anchor == null ? null : widget.indexOf(anchor);
+      final height = oldWidget.count == 0
+          ? null
+          : _heights.offsetFor(_visible + 1) - _heights.offsetFor(_visible);
       _reset();
+      // Retain the anchor's previous extent until it is measured again. Using
+      // the single-line estimate here moves an offset inside a tall annotation
+      // onto unrelated source rows before its new height becomes available.
+      if (index != null && height != null) _heights.measure(index, height);
       _range();
-      if (anchor != null) {
-        final index = widget.indexOf(anchor);
-        if (index != null) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) _jump(index, within);
-          });
-        }
+      if (index != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _jump(index, within);
+        });
       }
     }
     if (widget.revealRow != null &&
@@ -225,7 +238,11 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
     builder: (context, constraints) {
       if (_width != null && _width != constraints.maxWidth) {
         final anchor = _visible, within = _within;
+        final height = widget.count == 0
+            ? null
+            : _heights.offsetFor(anchor + 1) - _heights.offsetFor(anchor);
         _reset();
+        if (height != null) _heights.measure(anchor, height);
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) _jump(anchor, within);
         });

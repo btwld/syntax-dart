@@ -44,6 +44,7 @@ class SyntaxCommentComposer extends StatelessWidget {
     this.focusNode,
     this.autofocus = true,
     this.isSubmitting = false,
+    this.canSubmit = true,
     this.errorText,
     this.title = 'Comment on selection',
     this.submitLabel = 'Add comment',
@@ -80,6 +81,10 @@ class SyntaxCommentComposer extends StatelessWidget {
 
   /// Disables the default input and commands while an application saves.
   final bool isSubmitting;
+
+  /// Application validation or permissions can disable saving without losing
+  /// the draft or disabling cancellation.
+  final bool canSubmit;
 
   /// Application-supplied validation or submission error, announced accessibly.
   final String? errorText;
@@ -131,7 +136,7 @@ class SyntaxCommentComposer extends StatelessWidget {
         controller: controller,
         focusNode: focusNode,
         isSubmitting: isSubmitting,
-        submit: isSubmitting || value.text.trim().isEmpty
+        submit: isSubmitting || !canSubmit || value.text.trim().isEmpty
             ? null
             : () {
                 final text = controller.text.trim();

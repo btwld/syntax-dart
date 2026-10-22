@@ -26,6 +26,114 @@ Future<void> launch(
 }
 
 void main() {
+  for (final fileMode in [false, true]) {
+    testWidgets(
+      '${fileMode ? 'file' : 'diff'} threads support custom reply edit delete and resolution actions',
+      (tester) async {
+        await launch(tester, 0, size: const Size(1200, 1100));
+        Future<void> tap(Finder finder) async {
+          await tester.ensureVisible(finder);
+          await tester.tap(finder);
+          await tester.pumpAndSettle();
+        }
+
+        if (fileMode) await tap(find.text('Show file'));
+        await tap(find.text('Select lines 2–4'));
+        await tap(find.byTooltip('Comment on selected lines'));
+        await tester.enterText(find.byType(TextField), 'Root comment');
+        await tester.pump();
+        await tap(find.text('Add note'));
+        final session = tester
+            .widget<SyntaxCommentThread>(find.byType(SyntaxCommentThread))
+            .controller;
+        final originalId = session.thread.id;
+        final rootId = session.thread.comments.single.id;
+        final patch = fileMode
+            ? null
+            : tester.widget<PatchView>(find.byType(PatchView)).controller!;
+        final editor = fileMode
+            ? tester
+                  .widget<SyntaxFileView>(find.byType(SyntaxFileView))
+                  .controller
+            : null;
+        final anchor = editor != null
+            ? (editor.annotations.single.start, editor.annotations.single.end)
+            : (patch!.annotations.single.side, patch.annotations.single.line);
+        await tap(find.text('Reply'));
+        await tester.enterText(find.byType(TextField), 'Reply draft');
+        await tester.pumpAndSettle();
+        await tap(find.text('Custom threads'));
+        expect(find.widgetWithText(TextField, 'Reply draft'), findsOneWidget);
+        expect(find.text('Team discussion'), findsOneWidget);
+        await tap(find.text('Send reply'));
+        expect(session.thread.comments.length, 2);
+        await tap(find.text('Mark resolved'));
+        expect(session.thread.resolved, isTrue);
+        expect(find.text('Root comment'), findsOneWidget);
+        await tap(find.text('Reopen thread'));
+        expect(session.thread.resolved, isFalse);
+        await tap(
+          find.descendant(
+            of: find.byKey(ValueKey(rootId)),
+            matching: find.byTooltip('Edit message'),
+          ),
+        );
+        await tester.enterText(find.byType(TextField), 'Updated root');
+        await tester.pump();
+        await tap(find.text('Save message'));
+        expect(session.thread.comments.first.body, 'Updated root');
+        expect(find.text('Edited'), findsOneWidget);
+        final replyId = session.thread.comments.last.id;
+        await tap(
+          find.descendant(
+            of: find.byKey(ValueKey(replyId)),
+            matching: find.byTooltip('Remove message'),
+          ),
+        );
+        expect(find.byType(AlertDialog), findsNothing);
+        await tap(find.widgetWithText(FilledButton, 'Delete'));
+        expect(session.thread.comments.single.id, rootId);
+        if (editor != null) {
+          expect((
+            editor.annotations.single.start,
+            editor.annotations.single.end,
+          ), anchor);
+          expect(
+            (editor.annotations.single.data! as ReviewThread)
+                .comments
+                .single
+                .body,
+            'Updated root',
+          );
+        } else {
+          expect((
+            patch!.annotations.single.side,
+            patch.annotations.single.line,
+          ), anchor);
+          expect(
+            (patch.annotations.single.data! as ReviewThread)
+                .comments
+                .single
+                .body,
+            'Updated root',
+          );
+        }
+        await tap(find.byTooltip('Remove message'));
+        await tap(find.widgetWithText(FilledButton, 'Delete'));
+        expect(find.byType(SyntaxCommentThread), findsNothing);
+        expect(editor?.annotations ?? patch!.annotations, isEmpty);
+        await tap(find.text('Add comment'));
+        await tester.enterText(find.byType(TextField), 'New discussion');
+        await tester.pump();
+        await tap(find.text('Add note'));
+        final next = tester
+            .widget<SyntaxCommentThread>(find.byType(SyntaxCommentThread))
+            .controller;
+        expect(next.thread.id, isNot(originalId));
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
   testWidgets('selection presets, source copy and annotations are live', (
     tester,
   ) async {
@@ -43,7 +151,10 @@ void main() {
     await tester.pump();
     await tester.tap(find.text('Add note'));
     await tester.pumpAndSettle();
-    expect(review.annotations.single.data, 'Handle missing names');
+    expect(
+      (review.annotations.single.data! as ReviewThread).comments.single.body,
+      'Handle missing names',
+    );
     await tester.tap(find.text('Clear selection'));
     await tester.pumpAndSettle();
     expect(review.selection, isNull);
@@ -116,7 +227,10 @@ void main() {
       await tester.ensureVisible(find.text('Add note'));
       await tester.tap(find.text('Add note'));
       await tester.pumpAndSettle();
-      expect(editor.annotations.single.data, 'Long range note');
+      expect(
+        (editor.annotations.single.data! as ReviewThread).comments.single.body,
+        'Long range note',
+      );
       expect(tester.takeException(), isNull);
     },
   );
@@ -174,7 +288,10 @@ void main() {
       await tester.pumpAndSettle();
       await tester.ensureVisible(find.text('Post note'));
       await tapVisible('Post note');
-      expect(review.annotations.single.data, 'Final review');
+      expect(
+        (review.annotations.single.data! as ReviewThread).comments.single.body,
+        'Final review',
+      );
       expect(find.byType(SyntaxCommentComposer), findsNothing);
       await tapVisible('Show file');
       expect(find.widgetWithText(TextField, 'File draft'), findsOneWidget);

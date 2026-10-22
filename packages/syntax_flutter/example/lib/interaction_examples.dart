@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:syntax/langs/dart.dart';
 import 'package:syntax_flutter/syntax_flutter.dart';
+import 'comment_threads.dart';
 
 const interactionBefore = '''String formatName(String name) {
   final cleaned = name.trim();
@@ -141,7 +142,8 @@ class _InteractionExamplesState extends State<_InteractionExample> {
   FocusNode get commentFocus => fileMode ? fileCommentFocus : diffCommentFocus;
   FileSelectionDetails? fileComment;
   DiffSelectionDetails? diffComment;
-  bool customComposer = false;
+  bool customComposer = false, customThreads = false;
+  final threads = ExampleCommentThreads();
   final oldInput = TextEditingController(text: interactionBefore);
   final newInput = TextEditingController(text: interactionAfter);
   bool fileMode = false,
@@ -291,15 +293,16 @@ class _InteractionExamplesState extends State<_InteractionExample> {
     final source = fileMode ? fileComment : null;
     final diff = fileMode ? null : diffComment;
     if (source == null && diff == null) return;
+    final thread = threads.create(text);
     if (source != null) {
       if (!source.matches(file.file)) return;
       file.setAnnotations([
         ...file.annotations,
         LineAnnotation(
-          id: 'note-${file.annotations.length}',
+          id: thread.id,
           start: source.selection.start,
           end: source.selection.end,
-          data: text,
+          data: thread,
         ),
       ]);
       cancelComment();
@@ -311,11 +314,11 @@ class _InteractionExamplesState extends State<_InteractionExample> {
     review.setAnnotations([
       ...review.annotations,
       ReviewAnnotation(
-        id: 'note-${review.annotations.length}',
+        id: thread.id,
         fileId: s.fileId,
         side: endpoint.side,
         line: endpoint.line,
-        data: text,
+        data: thread,
       ),
     ]);
     cancelComment();
@@ -387,32 +390,39 @@ class _InteractionExamplesState extends State<_InteractionExample> {
     ),
   );
 
-  Widget noteCard(Object? note) => Container(
-    margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-    padding: const EdgeInsets.all(12),
-    decoration: BoxDecoration(
-      color: widget.theme.selectionColor.withValues(alpha: .12),
-      border: Border.all(
-        color: widget.theme.lineNumberColor.withValues(alpha: .35),
-      ),
-      borderRadius: BorderRadius.circular(8),
-    ),
-    child: Row(
-      children: [
-        Icon(
-          Icons.chat_bubble_outline,
-          size: 16,
-          color: widget.theme.foregroundColor,
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Text(
-            '$note',
-            style: TextStyle(color: widget.theme.foregroundColor),
+  Widget fileThread(LineAnnotation<Object?> annotation) => threads.view(
+    annotation.data! as ReviewThread,
+    custom: customThreads,
+    onChanged: (thread) => file.setAnnotations([
+      for (final current in file.annotations)
+        if (current.id != annotation.id)
+          current
+        else if (thread.comments.isNotEmpty)
+          LineAnnotation(
+            id: current.id,
+            start: current.start,
+            end: current.end,
+            data: thread,
           ),
-        ),
-      ],
-    ),
+    ]),
+  );
+
+  Widget diffThread(ReviewAnnotation<Object?> annotation) => threads.view(
+    annotation.data! as ReviewThread,
+    custom: customThreads,
+    onChanged: (thread) => review.setAnnotations([
+      for (final current in review.annotations)
+        if (current.id != annotation.id)
+          current
+        else if (thread.comments.isNotEmpty)
+          ReviewAnnotation(
+            id: current.id,
+            fileId: current.fileId,
+            side: current.side,
+            line: current.line,
+            data: thread,
+          ),
+    ]),
   );
 
   Widget button(String label, VoidCallback? action) =>
@@ -480,6 +490,10 @@ class _InteractionExamplesState extends State<_InteractionExample> {
           button(
             customComposer ? 'Default composer' : 'Custom composer',
             () => setState(() => customComposer = !customComposer),
+          ),
+          button(
+            customThreads ? 'Default threads' : 'Custom threads',
+            () => setState(() => customThreads = !customThreads),
           ),
           Text(selectionLabel, style: const TextStyle(fontSize: 12)),
         ],
@@ -659,7 +673,7 @@ class _InteractionExamplesState extends State<_InteractionExample> {
                       file.document.positionAt(annotation.end).line,
                   commentBuilder: (context, selection) => composer(),
                   annotationBuilder: (context, annotation) =>
-                      noteCard(annotation.data),
+                      fileThread(annotation),
                   selectionActionStyle: SelectionActionStyle(
                     gutterWidth: customSelectionAction ? 80 : 24,
                   ),
@@ -674,7 +688,7 @@ class _InteractionExamplesState extends State<_InteractionExample> {
                   commentSelection: diffComment,
                   commentBuilder: (context, selection) => composer(),
                   annotationBuilder: (context, annotation) =>
-                      noteCard(annotation.data),
+                      diffThread(annotation),
                   selectionActionStyle: SelectionActionStyle(
                     gutterWidth: customSelectionAction ? 80 : 24,
                   ),
@@ -744,6 +758,7 @@ class _InteractionExamplesState extends State<_InteractionExample> {
     file.removeListener(changed);
     review.dispose();
     file.dispose();
+    threads.dispose();
     fileCommentInput.dispose();
     diffCommentInput.dispose();
     fileCommentFocus.dispose();

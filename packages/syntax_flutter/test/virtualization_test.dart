@@ -3,9 +3,62 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:syntax/langs/dart.dart';
 import 'package:syntax/themes/github_dark.dart';
+import 'package:syntax_flutter/src/indexed_viewport.dart';
 import 'package:syntax_flutter/syntax_flutter.dart';
 
 void main() {
+  for (final changeLayout in [false, true]) {
+    testWidgets(
+      'shrinking an inline row preserves its visible anchor (layout $changeLayout)',
+      (tester) async {
+        final scroll = ScrollController();
+        var height = 800.0;
+        var revision = 0;
+        late StateSetter update;
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Align(
+              alignment: Alignment.topLeft,
+              child: SizedBox(
+                width: 600,
+                height: 300,
+                child: StatefulBuilder(
+                  builder: (context, setState) {
+                    update = setState;
+                    return IndexedCodeViewport(
+                      controller: scroll,
+                      count: 100,
+                      layoutKey: revision,
+                      identity: (index) => index,
+                      indexOf: (identity) => identity as int,
+                      builder: (context, index) => SizedBox(
+                        key: ValueKey('row-$index'),
+                        height: index == 2 ? height : 24,
+                        child: Text(index == 2 ? 'Discussion' : 'Line $index'),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        scroll.jumpTo(548); // 500 pixels inside the expanded discussion.
+        await tester.pumpAndSettle();
+        update(() {
+          height = 200;
+          if (changeLayout) revision++;
+        });
+        await tester.pumpAndSettle();
+        expect(scroll.offset, closeTo(48, .1));
+        expect(find.text('Discussion').hitTestable(), findsOneWidget);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox());
+        scroll.dispose();
+      },
+    );
+  }
   testWidgets(
     'stream keeps existing text colored while highlighting catches up',
     (tester) async {

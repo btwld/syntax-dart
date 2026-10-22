@@ -10,6 +10,7 @@ import 'package:syntax/themes/github_light.dart';
 import 'package:syntax_flutter/syntax_flutter.dart';
 
 import 'catalog.dart';
+import 'comment_threads.dart';
 import 'interaction_examples.dart';
 import 'showcase_samples.dart';
 import 'workflows.dart';
@@ -246,7 +247,7 @@ class _ShowcaseHomeState extends State<ShowcaseHome> {
   bool _contextExpanded = false;
   bool get _activeWrap => _tab == 5 ? _largeWrap : _wrap;
   InlineDiffMode _comparison = InlineDiffMode.mergedWords;
-  final _resolved = <String>{};
+  final _threads = ExampleCommentThreads();
   String _status = 'Click a line to select it. Shift-click to select a range.';
   ColorScheme get colors => Theme.of(context).colorScheme;
   SyntaxTheme get codeTheme => widget.dark ? _night : _day;
@@ -274,13 +275,17 @@ class _ShowcaseHomeState extends State<ShowcaseHome> {
     controller.toggleFile('options');
     controller.toggleFile('tests');
     controller.setAnnotations([
-      const ReviewAnnotation(
+      ReviewAnnotation(
         id: 'initial',
         fileId: 'retry',
         side: DiffSide.newer,
         line: 7,
-        data:
-            'Keeping this configurable is a nice touch. Callers with tighter timeouts can opt into fewer attempts.',
+        data: _threads.create(
+          'Keeping this configurable is a nice touch. Callers with tighter timeouts can opt into fewer attempts.',
+          id: 'initial',
+          author: 'Alex Morgan',
+          authorId: 'alex',
+        ),
       ),
     ]);
     return controller;
@@ -357,7 +362,7 @@ class _ShowcaseHomeState extends State<ShowcaseHome> {
         _commentInput.clear();
         final previous = _review..removeListener(_changed);
         _review = _newReview()..addListener(_changed);
-        _resolved.clear();
+        _threads.clear();
         _contextExpanded = false;
         WidgetsBinding.instance.addPostFrameCallback((_) => previous.dispose());
       case 1:
@@ -463,14 +468,15 @@ class _ShowcaseHomeState extends State<ShowcaseHome> {
     final details = _commentSelection;
     if (details == null || !_review.files.any(details.matches)) return;
     final endpoint = details.endIn(_review.mode);
+    final thread = _threads.create(text);
     _review.setAnnotations([
       ..._review.annotations,
       ReviewAnnotation(
-        id: 'note-${DateTime.now().microsecondsSinceEpoch}',
+        id: thread.id,
         fileId: details.file.id,
         side: endpoint.side,
         line: endpoint.line,
-        data: text,
+        data: thread,
       ),
     ]);
     _cancelComment();
@@ -1366,80 +1372,23 @@ class _ShowcaseHomeState extends State<ShowcaseHome> {
         ),
       );
 
-  Widget _reviewNote(BuildContext context, ReviewAnnotation<Object?> note) {
-    final resolved = _resolved.contains(note.id);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(44, 12, 20, 14),
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: colors.surface,
-          border: Border.all(color: colors.outlineVariant),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                CircleAvatar(
-                  radius: 12,
-                  backgroundColor: colors.primary.withValues(alpha: .15),
-                  child: Text(
-                    note.id == 'initial' ? 'AM' : 'YO',
-                    style: TextStyle(
-                      fontSize: 8,
-                      color: colors.primary,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 9),
-                Expanded(
-                  child: Text(
-                    note.id == 'initial' ? 'Alex Morgan' : 'You',
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                TextButton(
-                  onPressed: () => setState(() {
-                    if (resolved) {
-                      _resolved.remove(note.id);
-                    } else {
-                      _resolved.add(note.id);
-                    }
-                  }),
-                  child: Text(resolved ? 'Reopen' : 'Resolve'),
-                ),
-              ],
-            ),
-            if (!resolved)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text(
-                  '${note.data}',
-                  style: TextStyle(
-                    fontSize: 12,
-                    height: 1.6,
-                    color: colors.onSurface,
-                  ),
-                ),
+  Widget _reviewNote(BuildContext context, ReviewAnnotation<Object?> note) =>
+      _threads.view(
+        note.data! as ReviewThread,
+        onChanged: (thread) => _review.setAnnotations([
+          for (final current in _review.annotations)
+            if (current.id != note.id)
+              current
+            else if (thread.comments.isNotEmpty)
+              ReviewAnnotation(
+                id: current.id,
+                fileId: current.fileId,
+                side: current.side,
+                line: current.line,
+                data: thread,
               ),
-            if (resolved)
-              Text(
-                'Resolved',
-                style: TextStyle(fontSize: 11, color: colors.primary),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
+        ]),
+      );
 
   Widget _footer() {
     final additions = _review.files.fold(
@@ -1505,6 +1454,7 @@ class _ShowcaseHomeState extends State<ShowcaseHome> {
     _timer?.cancel();
     _commentInput.dispose();
     _commentFocus.dispose();
+    _threads.dispose();
     _review.dispose();
     _files.dispose();
     _editor.dispose();

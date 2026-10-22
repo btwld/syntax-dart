@@ -21,3 +21,5 @@ export 'src/editor.dart';
 export 'src/file_view.dart';
 export 'src/selection_actions.dart';
 export 'src/comment_composer.dart';
+export 'src/comment_thread.dart';
+export 'src/comment_thread_controller.dart';

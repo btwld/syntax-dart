@@ -202,3 +202,79 @@ controllers outside row builders to preserve drafts during virtualization.
 Saved notes remain controller annotations. `annotationLineBuilder` on file
 views can position a range annotation below its last line, while preserving its
 full source range. Diff annotations can use the endpoint from `endIn(mode)`.
+
+### Posted comment threads
+
+Render `SyntaxCommentThread` from an `annotationBuilder` to add replies, inline
+message editing, inline delete confirmation, and resolve/reopen actions. The
+renderer-neutral `ReviewThread` and `ReviewComment` models live in `syntax`;
+annotation ranges remain independent of the messages. Deleting a root message
+keeps the remaining replies. Deleting the last message produces an empty thread
+that the application can remove from its annotation list.
+
+```dart
+// Own sessions by stable thread ID, outside virtualized annotation builders.
+final discussion = CommentThreadController(
+  thread: ReviewThread(
+    id: 'discussion-42',
+    comments: const [
+      ReviewComment(
+        id: 'message-1',
+        author: 'Alex',
+        authorId: 'alex',
+        body: 'Could we cover an empty name in a test?',
+      ),
+    ],
+  ),
+  onUpdate: persistThread, // FutureOr<ReviewThread> Function(ReviewThreadChange)
+  permissions: CommentThreadPermissions(
+    edit: (comment) => comment.authorId == currentUserId,
+    delete: (comment) => comment.authorId == currentUserId,
+  ),
+);
+
+// Within the corresponding file or diff annotationBuilder:
+SyntaxCommentThread(controller: discussion);
+```
+
+`onUpdate` receives a `ReviewThreadChange` with its operation, exact base snapshot,
+and message ID, text or resolution state. Authorize and persist it in your app,
+then return the same thread ID with a higher revision. `ReviewThread.copyWith`
+increments the revision by default. Subscribe to the controller to synchronize
+annotation payloads or other application state. Omitting `onUpdate` makes the
+thread read-only; permission predicates also hide individual actions. Backend
+authorization remains the application's responsibility.
+
+The controller retains reply/edit text and focus across row unmounts. Saves are
+serialized, failed requests keep their drafts open, and errors appear inline.
+Closing a tall inline editor preserves the discussion in the viewport as the row
+shrinks.
+`setThread` applies newer remote snapshots; stale responses and responses after
+disposal cannot overwrite them. A remotely changed message cannot be overwritten
+by an edit based on its old contents. Local invalidation does not cancel a server
+request: also validate `change.thread.revision` at your persistence boundary.
+Dispose sessions after their views unmount or when the containing session ends.
+
+Customize any level of the presentation:
+
+- `builder(context, details, child)` replaces or wraps the whole thread.
+- `headerBuilder` and `actionsBuilder` replace the header and thread commands.
+- `commentBuilder(context, details, child)` replaces a complete message;
+  `commentActionsBuilder` replaces its edit/delete controls.
+- `composerBuilder` replaces reply/edit input and actions. Its details contain
+  retained text/focus controllers and nullable submit/cancel commands.
+- `errorBuilder` renders application failures. Default errors avoid displaying
+  raw exception details.
+- `CommentThreadLabels`, `decoration`, `textStyle`, `padding`, and `margin`
+  customize default text and presentation.
+
+Builder details expose guarded commands and the application-owned controller,
+including deletion confirmation and cancellation. The default reply/edit forms
+support Ctrl/Cmd+Enter and Escape through `SyntaxCommentComposer`. Custom editors
+can supply their own keyboard behavior. `SyntaxCommentComposer.canSubmit` disables
+submission for additional validation or permissions without discarding a draft.
+
+The **Line selection** example's **Custom threads** toggle demonstrates custom
+layout, inputs, message actions, thread actions, and a copy-discussion command.
+The [gallery session store](example/lib/comment_threads.dart) demonstrates local
+persistence, permission checks, annotation updates, and controller disposal.
