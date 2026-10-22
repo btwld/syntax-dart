@@ -138,7 +138,8 @@ class _InteractionExamplesState extends State<_InteractionExample> {
       wrap = true,
       numbers = true,
       backgrounds = true,
-      customHeader = true;
+      customHeader = true,
+      customSelectionAction = false;
   DiffIndicators indicators = DiffIndicators.classic;
   HunkSeparatorStyle separators = HunkSeparatorStyle.lineInfo;
   InlineDiffMode comparison = InlineDiffMode.mergedWords;
@@ -146,7 +147,8 @@ class _InteractionExamplesState extends State<_InteractionExample> {
   String fontName = 'Default';
   String? status;
   String get help => switch (widget.kind) {
-    0 => 'Drag line numbers or Shift-click to extend a range.',
+    0 =>
+      'Drag line numbers, then click the comment icon or press Ctrl/Cmd+Shift+M. Shift-click extends a range.',
     1 => 'Click a section name to fold it. Reset restores accepted changes.',
     2 => 'Appearance settings affect this sample only.',
     3 => 'Select a line or activate a token to inspect its details.',
@@ -201,7 +203,28 @@ class _InteractionExamplesState extends State<_InteractionExample> {
     }
   }
 
-  Future<void> annotate() async {
+  Future<void> annotate({
+    FileSelectionDetails? source,
+    DiffSelectionDetails? diff,
+  }) async {
+    if (source == null && diff == null) {
+      if (fileMode) {
+        final selection = file.selections.first;
+        source = FileSelectionDetails(
+          file: file.file,
+          selection: selection,
+          anchorLine: file.document.positionAt(selection.anchor).line,
+          activeLine: file.document.positionAt(selection.active).line,
+        );
+      } else {
+        final selection = review.selection;
+        if (selection == null) return;
+        diff = DiffSelectionDetails(
+          file: review.file(selection.fileId),
+          selection: selection,
+        );
+      }
+    }
     var note = '';
     final text = await showDialog<String>(
       context: context,
@@ -225,8 +248,24 @@ class _InteractionExamplesState extends State<_InteractionExample> {
       ),
     );
     if (!mounted || text == null || text.trim().isEmpty) return;
-    final s = review.selection;
-    if (s == null) return;
+    if (source != null) {
+      if (file.document.revision != source.file.revision ||
+          file.file.id != source.file.id) {
+        return;
+      }
+      file.setAnnotations([
+        ...file.annotations,
+        LineAnnotation(
+          id: 'note-${file.annotations.length}',
+          start: source.selection.start,
+          end: source.selection.end,
+          data: text,
+        ),
+      ]);
+      return;
+    }
+    if (!review.files.any((file) => identical(file, diff!.file))) return;
+    final s = diff!.selection;
     review.setAnnotations([
       ...review.annotations,
       ReviewAnnotation(
@@ -238,6 +277,52 @@ class _InteractionExamplesState extends State<_InteractionExample> {
       ),
     ]);
   }
+
+  Widget customAction(VoidCallback comment) => Tooltip(
+    message: 'Discuss this selection',
+    child: TextButton.icon(
+      onPressed: comment,
+      style: TextButton.styleFrom(
+        backgroundColor: const Color(0xff7258d6),
+        foregroundColor: Colors.white,
+        minimumSize: const Size(0, 20),
+        fixedSize: const Size(76, 20),
+        visualDensity: VisualDensity.standard,
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
+      icon: const Icon(Icons.forum_outlined, size: 13),
+      label: const Text('Discuss', style: TextStyle(fontSize: 11)),
+    ),
+  );
+
+  Widget noteCard(Object? note) => Container(
+    margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: widget.theme.selectionColor.withValues(alpha: .12),
+      border: Border.all(
+        color: widget.theme.lineNumberColor.withValues(alpha: .35),
+      ),
+      borderRadius: BorderRadius.circular(8),
+    ),
+    child: Row(
+      children: [
+        Icon(
+          Icons.chat_bubble_outline,
+          size: 16,
+          color: widget.theme.foregroundColor,
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            '$note',
+            style: TextStyle(color: widget.theme.foregroundColor),
+          ),
+        ),
+      ],
+    ),
+  );
 
   Widget button(String label, VoidCallback? action) =>
       TextButton(onPressed: action, child: Text(label));
@@ -286,8 +371,21 @@ class _InteractionExamplesState extends State<_InteractionExample> {
             file.setSelections([]);
           }),
           button('Copy selection', selectionText.isEmpty ? null : copy),
-          if (!fileMode)
-            button('Add comment', review.selection == null ? null : annotate),
+          button(
+            'Add comment',
+            (fileMode
+                    ? file.selections.first.isCollapsed
+                    : review.selection == null)
+                ? null
+                : annotate,
+          ),
+          button(
+            customSelectionAction
+                ? 'Default comment icon'
+                : 'Custom comment action',
+            () =>
+                setState(() => customSelectionAction = !customSelectionAction),
+          ),
           Text(selectionLabel, style: const TextStyle(fontSize: 12)),
         ],
         if (widget.kind == 1) ...[
@@ -460,9 +558,29 @@ class _InteractionExamplesState extends State<_InteractionExample> {
                   theme: widget.theme,
                   textStyle: style,
                   wrap: wrap,
+                  onComment: (selection) => annotate(source: selection),
+                  annotationBuilder: (context, annotation) =>
+                      noteCard(annotation.data),
+                  selectionActionStyle: SelectionActionStyle(
+                    gutterWidth: customSelectionAction ? 80 : 24,
+                  ),
+                  selectionActionBuilder: customSelectionAction
+                      ? (context, selection) =>
+                            customAction(() => annotate(source: selection))
+                      : null,
                 )
               : PatchView.controlled(
                   controller: review,
+                  onComment: (selection) => annotate(diff: selection),
+                  annotationBuilder: (context, annotation) =>
+                      noteCard(annotation.data),
+                  selectionActionStyle: SelectionActionStyle(
+                    gutterWidth: customSelectionAction ? 80 : 24,
+                  ),
+                  selectionActionBuilder: customSelectionAction
+                      ? (context, selection) =>
+                            customAction(() => annotate(diff: selection))
+                      : null,
                   highlighter: highlighter,
                   theme: widget.theme,
                   textStyle: style,

@@ -416,14 +416,17 @@ class _ShowcaseHomeState extends State<ShowcaseHome> {
     );
   }
 
-  Future<void> _comment() async {
-    final selection = _review.selection;
+  Future<void> _comment([DiffSelectionDetails? details]) async {
+    final selection = details?.selection ?? _review.selection;
     if (selection == null) return;
+    final source = details?.file ?? _review.file(selection.fileId);
     final input = TextEditingController();
     final text = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Comment on line ${selection.active}'),
+        title: Text(
+          'Comment on ${selection.side.name} ${selection.anchor} → ${selection.activeSide.name} ${selection.active}',
+        ),
         content: SizedBox(
           width: 420,
           child: TextField(
@@ -455,7 +458,11 @@ class _ShowcaseHomeState extends State<ShowcaseHome> {
     );
     // A dialog route can still be animating its text field out.
     Future<void>.delayed(const Duration(milliseconds: 300), input.dispose);
-    if (!mounted || text == null) return;
+    if (!mounted ||
+        text == null ||
+        !_review.files.any((file) => identical(file, source))) {
+      return;
+    }
     _review.setAnnotations([
       ..._review.annotations,
       ReviewAnnotation(
@@ -1112,6 +1119,7 @@ class _ShowcaseHomeState extends State<ShowcaseHome> {
       ),
       hunkBuilder: _hunkHeader,
       annotationBuilder: _reviewNote,
+      onComment: _comment,
       onLineTap: (file, side, line) => _message(
         '${file.path} · ${side == DiffSide.old ? 'before' : 'after'} · line $line selected',
       ),

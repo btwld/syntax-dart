@@ -7,6 +7,8 @@ import 'editor.dart';
 import 'indexed_viewport.dart';
 import 'horizontal_scroll.dart';
 import 'line_selection.dart';
+import 'selection_actions.dart';
+import 'selection_action_overlay.dart';
 import 'package:syntax/syntax.dart';
 
 import 'highlighter_scope.dart';
@@ -67,6 +69,9 @@ class PatchView extends StatefulWidget {
     this.hunkBuilder,
     this.annotationBuilder,
     this.gutterActionBuilder,
+    this.onComment,
+    this.selectionActionBuilder,
+    this.selectionActionStyle = const SelectionActionStyle(),
     this.onLineTap,
     this.onTokenTap,
     this.onEditComplete,
@@ -104,6 +109,9 @@ class PatchView extends StatefulWidget {
     this.hunkBuilder,
     this.annotationBuilder,
     this.gutterActionBuilder,
+    this.onComment,
+    this.selectionActionBuilder,
+    this.selectionActionStyle = const SelectionActionStyle(),
     this.onLineTap,
     this.onTokenTap,
     this.onEditComplete,
@@ -147,6 +155,9 @@ class PatchView extends StatefulWidget {
     this.hunkBuilder,
     this.annotationBuilder,
     this.gutterActionBuilder,
+    this.onComment,
+    this.selectionActionBuilder,
+    this.selectionActionStyle = const SelectionActionStyle(),
     this.onLineTap,
     this.onTokenTap,
     this.onEditComplete,
@@ -183,6 +194,9 @@ class PatchView extends StatefulWidget {
     this.hunkBuilder,
     this.annotationBuilder,
     this.gutterActionBuilder,
+    this.onComment,
+    this.selectionActionBuilder,
+    this.selectionActionStyle = const SelectionActionStyle(),
     this.onLineTap,
     this.onTokenTap,
     this.onEditComplete,
@@ -238,6 +252,19 @@ class PatchView extends StatefulWidget {
   /// Builds an application action beside a source line.
   final Widget Function(BuildContext, FileDiff, DiffSide, int)?
   gutterActionBuilder;
+
+  /// Opens an application-owned comment for the directed logical selection.
+  /// Enables a button at its active endpoint and configurable shortcuts.
+  final ValueChanged<DiffSelectionDetails>? onComment;
+
+  /// Replaces the selected line's action; returning null hides it.
+  /// The widget is constrained to the source row, within the active pane in
+  /// split mode, and supplies its own callbacks and accessible labels.
+  final Widget? Function(BuildContext, DiffSelectionDetails)?
+  selectionActionBuilder;
+
+  /// Icon, tooltip, placement, style and shortcuts for selection actions.
+  final SelectionActionStyle selectionActionStyle;
 
   /// Reports a source-line click after updating the logical selection.
   final void Function(FileDiff, DiffSide, int)? onLineTap;
@@ -298,6 +325,30 @@ class PatchView extends StatefulWidget {
 class _PatchViewState extends State<PatchView> {
   late ScrollController _scroll;
   final _focus = FocusNode();
+  PatchController? _localSelection;
+  PatchController get _selectionController =>
+      widget.controller ?? _localSelection!;
+
+  void _selectionChanged() {
+    if (mounted) setState(() {});
+  }
+
+  DiffSelectionDetails? _selectionDetails() {
+    final controller = _selectionController;
+    final selection = controller.selection;
+    return selection == null
+        ? null
+        : DiffSelectionDetails(
+            file: controller.file(selection.fileId),
+            selection: selection,
+          );
+  }
+
+  void _comment() {
+    final details = _selectionDetails();
+    if (details != null) widget.onComment?.call(details);
+  }
+
   int _stickyFile = 0;
   Object? _sourceKey;
   List<FileDiff> _files = const [];
@@ -319,12 +370,15 @@ class _PatchViewState extends State<PatchView> {
 
   void _syncSource() {
     if (widget.controller case final controller?) {
+      _localSelection?.dispose();
+      _localSelection = null;
+      _sourceKey = null;
       _files = controller.files;
       _layoutVersion++;
       return;
     }
     final key = (widget._files, widget._patch, widget._texts);
-    if (key == _sourceKey) return;
+    if (key == _sourceKey && _localSelection != null) return;
     _sourceKey = key;
     _files = switch ((widget._files, widget._patch, widget._texts)) {
       (final files?, _, _) => files,
@@ -336,6 +390,8 @@ class _PatchViewState extends State<PatchView> {
       ],
       _ => const [],
     };
+    _localSelection?.dispose();
+    _localSelection = PatchController(_files)..addListener(_selectionChanged);
     _collapsed.clear();
     _expandedGaps.clear();
     _highlights = null;
@@ -357,6 +413,11 @@ class _PatchViewState extends State<PatchView> {
     return _highlights!;
   }
 
+  double get _actionWidth =>
+      widget.onComment != null || widget.selectionActionBuilder != null
+      ? widget.selectionActionStyle.gutterWidth
+      : 0;
+
   _Palette _paletteFor(BuildContext context) {
     final textStyle = widget.textStyle ?? defaultCodeTextStyle;
     final scaler = MediaQuery.textScalerOf(context);
@@ -370,7 +431,8 @@ class _PatchViewState extends State<PatchView> {
                 (widget.showChangeIndicators
                     ? widget.indicators
                     : DiffIndicators.none) &&
-            p.lineNumbers == widget.showLineNumbers) {
+            p.lineNumbers == widget.showLineNumbers &&
+            p.selectionGutterWidth == _actionWidth) {
       return p;
     }
     return _palette = _Palette(
@@ -383,6 +445,7 @@ class _PatchViewState extends State<PatchView> {
           ? widget.indicators
           : DiffIndicators.none,
       lineNumbers: widget.showLineNumbers,
+      selectionGutterWidth: _actionWidth,
       onTokenTap: widget.onTokenTap,
     );
   }
@@ -422,6 +485,7 @@ class _PatchViewState extends State<PatchView> {
   @override
   void dispose() {
     widget.controller?.removeListener(_controllerChanged);
+    _localSelection?.dispose();
     if (widget.scrollController == null) _scroll.dispose();
     _focus.dispose();
     super.dispose();
@@ -512,6 +576,7 @@ class _PatchViewState extends State<PatchView> {
               widget.wrap,
               widget.textStyle,
               widget.controller?.annotations,
+              _actionWidth,
             ),
             identity: identity,
             indexOf: indexOf,
@@ -552,9 +617,13 @@ class _PatchViewState extends State<PatchView> {
         ],
       );
     }
-    if (widget.controller case final controller?) {
+    {
+      final controller = _selectionController;
       list = CallbackShortcuts(
         bindings: {
+          if (widget.onComment != null)
+            for (final shortcut in widget.selectionActionStyle.shortcuts)
+              shortcut: _comment,
           const SingleActivator(LogicalKeyboardKey.keyC, control: true): () =>
               Clipboard.setData(ClipboardData(text: controller.selectedText())),
           const SingleActivator(LogicalKeyboardKey.keyC, meta: true): () =>
@@ -680,6 +749,7 @@ class _PatchViewState extends State<PatchView> {
     Highlighter highlighter,
   ) {
     final controller = widget.controller;
+    final selectionController = _selectionController;
     final file = _files[row.file];
     final additions = <Widget>[];
     if (controller != null && widget.showReviewActions) {
@@ -765,6 +835,7 @@ class _PatchViewState extends State<PatchView> {
     }
     final lines = switch (row) {
       DiffLineRow(:final line) => [
+        if (line.kind == DiffLineKind.context) (line, DiffSide.old),
         (
           line,
           line.kind == DiffLineKind.removed ? DiffSide.old : DiffSide.newer,
@@ -779,16 +850,24 @@ class _PatchViewState extends State<PatchView> {
     if (lines.isNotEmpty) {
       final lineChild = child;
       void selectAt(double x, double width, bool extend) {
+        final side = row is DiffPairRow
+            ? (x >= width / 2 ? DiffSide.newer : DiffSide.old)
+            : lines.length == 2 &&
+                  widget.showLineNumbers &&
+                  x < palette.selectionGutterWidth + palette.gutterWidth(file)
+            ? DiffSide.old
+            : lines.last.$2;
+        final candidates = lines.where((entry) => entry.$2 == side);
+        // Empty split panes do not address a source line.
+        if (candidates.isEmpty) return;
         _focus.requestFocus();
-        final (line, side) = lines.length > 1 && x >= width / 2
-            ? lines.last
-            : lines.first;
+        final line = candidates.first.$1;
         final number = (side == DiffSide.old
             ? line.oldNumber
             : line.newNumber)!;
-        final old = controller?.selection;
+        final old = selectionController.selection;
         final keepAnchor = extend && old?.fileId == file.id;
-        controller?.select(
+        selectionController.select(
           DiffSelection(
             file.id,
             keepAnchor ? old!.side : side,
@@ -801,6 +880,7 @@ class _PatchViewState extends State<PatchView> {
       }
 
       final gutter =
+          palette.selectionGutterWidth +
           (widget.showLineNumbers
               ? palette.gutterWidth(file) * (row is DiffPairRow ? 1 : 2)
               : 0) +
@@ -832,6 +912,7 @@ class _PatchViewState extends State<PatchView> {
           ),
         ),
       );
+      var highlighted = false;
       for (final (line, side) in lines) {
         final number = (side == DiffSide.old
             ? line.oldNumber
@@ -853,8 +934,8 @@ class _PatchViewState extends State<PatchView> {
             );
           }
         }
-        final selection = controller?.selection;
-        if (controller?.isLineSelected(file.id, side, number) == true) {
+        final selection = selectionController.selection;
+        if (selectionController.isLineSelected(file.id, side, number)) {
           if (controller != null &&
               widget.showReviewActions &&
               !file.isPartial &&
@@ -884,27 +965,29 @@ class _PatchViewState extends State<PatchView> {
               );
             }
           }
-          child = Stack(
-            children: [
-              child,
-              Positioned.fill(
-                child: IgnorePointer(
-                  child: Align(
-                    alignment: row is DiffPairRow && side == DiffSide.old
-                        ? Alignment.centerLeft
-                        : Alignment.centerRight,
-                    child: FractionallySizedBox(
-                      widthFactor: row is DiffPairRow ? .5 : 1,
-                      heightFactor: 1,
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: widget.theme.selectionColor.withValues(
-                            alpha: .15,
-                          ),
-                          border: Border(
-                            left: BorderSide(
-                              width: 3,
-                              color: widget.theme.selectionColor,
+          if (row is DiffPairRow || !highlighted) {
+            child = Stack(
+              children: [
+                child,
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: Align(
+                      alignment: row is DiffPairRow && side == DiffSide.old
+                          ? Alignment.centerLeft
+                          : Alignment.centerRight,
+                      child: FractionallySizedBox(
+                        widthFactor: row is DiffPairRow ? .5 : 1,
+                        heightFactor: 1,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: widget.theme.selectionColor.withValues(
+                              alpha: .15,
+                            ),
+                            border: Border(
+                              left: BorderSide(
+                                width: 3,
+                                color: widget.theme.selectionColor,
+                              ),
                             ),
                           ),
                         ),
@@ -912,10 +995,38 @@ class _PatchViewState extends State<PatchView> {
                     ),
                   ),
                 ),
-              ),
-            ],
-          );
+              ],
+            );
+          }
+          highlighted = true;
         }
+      }
+      final details =
+          widget.onComment != null || widget.selectionActionBuilder != null
+          ? _selectionDetails()
+          : null;
+      if (details != null &&
+          details.file.id == file.id &&
+          lines.any(
+            (entry) =>
+                entry.$2 == details.selection.activeSide &&
+                (entry.$2 == DiffSide.old
+                        ? entry.$1.oldNumber
+                        : entry.$1.newNumber) ==
+                    details.selection.active,
+          )) {
+        child = SelectionActionOverlay(
+          alignment: widget.selectionActionStyle.alignment,
+          split: row is DiffPairRow,
+          right: details.selection.activeSide == DiffSide.newer,
+          action: widget.selectionActionBuilder != null
+              ? widget.selectionActionBuilder!(context, details)
+              : defaultSelectionAction(
+                  widget.selectionActionStyle,
+                  () => widget.onComment!(details),
+                ),
+          child: child,
+        );
       }
     }
     return Column(
@@ -1035,6 +1146,7 @@ final class _Palette {
     this.backgrounds = true,
     this.indicators = DiffIndicators.classic,
     this.lineNumbers = true,
+    this.selectionGutterWidth = 0,
     this.onTokenTap,
   }) : styles = TokenTextStyles(theme, base: textStyle) {
     final diff = DiffColors.of(theme);
@@ -1052,6 +1164,7 @@ final class _Palette {
   }
 
   final bool wrap, backgrounds, lineNumbers;
+  final double selectionGutterWidth;
   final DiffIndicators indicators;
   final void Function(FileDiff, DiffLine, DiffSegment)? onTokenTap;
   final SyntaxTheme theme;
@@ -1483,6 +1596,8 @@ class _Gutter extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              if (palette.selectionGutterWidth > 0)
+                SizedBox(width: palette.selectionGutterWidth),
               if (palette.lineNumbers)
                 for (final n in numbers)
                   SizedBox(

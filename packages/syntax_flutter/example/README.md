@@ -57,3 +57,9 @@ Ctrl/Cmd+/ for comments, Tab/Shift+Tab for indentation, Alt+Up/Down to move line
 and Alt+Shift+Up/Down to duplicate them. Search inputs retain normal text editing
 and Tab navigation. After a gutter selection, Ctrl/Cmd+C copies the selected
 source in file and diff views.
+
+Drag line numbers to reveal a comment icon at the moving end of the selection.
+Click it or use Ctrl/Cmd+Shift+M to open a note. **Line selection** supports file
+and diff notes, plus a **Custom comment action** toggle demonstrating a supplied
+button builder. The library exposes the range and source revision to the app;
+the gallery owns its forms and temporary notes.

@@ -35,7 +35,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(review.selection!.crossesSides, isTrue);
     expect(review.selectedText(), contains('cleaned.isEmpty'));
-    await tester.tap(find.text('Add comment'));
+    await tester.tap(find.byTooltip('Comment on selected lines'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), 'Handle missing names');
     await tester.tap(find.text('Add note'));
@@ -53,8 +53,53 @@ void main() {
         .controller;
     expect(file.document.positionAt(file.selections.single.start).line, 1);
     expect(file.document.positionAt(file.selections.single.end).line, 3);
+    await tester.tap(find.byTooltip('Comment on selected lines'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'File range note');
+    await tester.tap(find.text('Add note'));
+    await tester.pumpAndSettle();
+    expect(file.annotations.single.start, file.selections.single.start);
+    expect(file.annotations.single.end, file.selections.single.end);
+    expect(find.text('File range note'), findsOneWidget);
+    await tester.ensureVisible(find.text('Custom comment action'));
+    await tester.tap(find.text('Custom comment action'));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('Comment on selected lines'), findsNothing);
+    await tester.tap(find.byTooltip('Discuss this selection'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'Custom action note');
+    await tester.tap(find.text('Add note'));
+    await tester.pumpAndSettle();
+    expect(file.annotations.length, 2);
+    expect(find.text('Custom action note'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+  testWidgets(
+    'custom diff actions retain range and discard notes for replaced source',
+    (tester) async {
+      await launch(tester, 0, size: const Size(520, 900));
+      final review = tester
+          .widget<PatchView>(find.byType(PatchView))
+          .controller!;
+      await tester.tap(find.text('Select across sides'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Custom comment action'));
+      await tester.tap(find.text('Custom comment action'));
+      await tester.pumpAndSettle();
+      final selection = review.selection;
+      await tester.tap(find.byTooltip('Discuss this selection'));
+      await tester.pumpAndSettle();
+      expect(identical(review.selection, selection), isTrue);
+      await tester.enterText(find.byType(TextField), 'Stale note');
+      review.setFiles([
+        diffTexts('before', 'after', id: 'policy', path: 'changed.dart'),
+      ]);
+      await tester.tap(find.text('Add note'));
+      await tester.pumpAndSettle();
+      expect(review.annotations, isEmpty);
+      expect(tester.takeException(), isNull);
+    },
+  );
   testWidgets('named sections fold independently and reveal their function', (
     tester,
   ) async {

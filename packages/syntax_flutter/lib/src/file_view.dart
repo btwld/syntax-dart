@@ -7,6 +7,8 @@ import 'chrome.dart';
 import 'indexed_viewport.dart';
 import 'horizontal_scroll.dart';
 import 'line_selection.dart';
+import 'selection_actions.dart';
+import 'selection_action_overlay.dart';
 
 /// A virtualized highlighted file with source-only line selection and copy.
 class SyntaxFileView extends StatefulWidget {
@@ -23,6 +25,9 @@ class SyntaxFileView extends StatefulWidget {
     this.headerBuilder,
     this.annotationBuilder,
     this.gutterActionBuilder,
+    this.onComment,
+    this.selectionActionBuilder,
+    this.selectionActionStyle = const SelectionActionStyle(),
     this.onLineTap,
     this.onTokenTap,
     this.scrollController,
@@ -63,6 +68,19 @@ class SyntaxFileView extends StatefulWidget {
   /// Custom per-line gutter actions.
   final Widget Function(BuildContext, int)? gutterActionBuilder;
 
+  /// Opens an application-owned comment for the primary logical selection.
+  /// Enables a button at its active line and configurable keyboard shortcuts.
+  final ValueChanged<FileSelectionDetails>? onComment;
+
+  /// Replaces the selected line's action; returning null hides it.
+  /// The widget is constrained to the source row and must supply its own
+  /// callbacks and accessible labels. Native text selections are independent.
+  final Widget? Function(BuildContext, FileSelectionDetails)?
+  selectionActionBuilder;
+
+  /// Icon, tooltip, placement, style and shortcuts for selection actions.
+  final SelectionActionStyle selectionActionStyle;
+
   /// Called with a zero-based line number.
   final ValueChanged<int>? onLineTap;
 
@@ -90,6 +108,8 @@ class SyntaxFileView extends StatefulWidget {
 class _SyntaxFileViewState extends State<SyntaxFileView> {
   late ScrollController _scroll;
   final _focus = FocusNode();
+  DocumentSelection? _gutterSelection;
+  int? _gutterRevision;
   HighlightExecutor? _ownedExecutor;
   PresentationController? _presentation;
   void _presentationChanged() {
@@ -135,6 +155,8 @@ class _SyntaxFileViewState extends State<SyntaxFileView> {
   }
 
   void _detach(EditorController controller, ScrollController? external) {
+    _gutterSelection = null;
+    _gutterRevision = null;
     _horizontal.onChanged = null;
     controller.removeListener(_changed);
     _presentation?.dispose();
@@ -173,7 +195,30 @@ class _SyntaxFileViewState extends State<SyntaxFileView> {
         ? doc.positionAt(existing.anchor).line
         : line;
     editor.selectLines(anchor, line);
+    _gutterSelection = editor.selections.first;
+    _gutterRevision = doc.revision;
     widget.onLineTap?.call(line);
+  }
+
+  FileSelectionDetails? _selectionDetails() {
+    final selection = editor.selections.first;
+    // An explicitly selected empty line is meaningful, unlike an idle caret.
+    if (selection.isCollapsed &&
+        (!identical(selection, _gutterSelection) ||
+            editor.document.revision != _gutterRevision)) {
+      return null;
+    }
+    return FileSelectionDetails(
+      file: editor.file,
+      selection: selection,
+      anchorLine: editor.document.positionAt(selection.anchor).line,
+      activeLine: editor.document.positionAt(selection.active).line,
+    );
+  }
+
+  void _comment() {
+    final details = _selectionDetails();
+    if (details != null) widget.onComment?.call(details);
   }
 
   void _copy() {
@@ -186,6 +231,21 @@ class _SyntaxFileViewState extends State<SyntaxFileView> {
   @override
   Widget build(BuildContext context) {
     final doc = editor.document;
+    final selection =
+        widget.onComment != null || widget.selectionActionBuilder != null
+        ? _selectionDetails()
+        : null;
+    final actionWidth =
+        widget.onComment != null || widget.selectionActionBuilder != null
+        ? widget.selectionActionStyle.gutterWidth
+        : 0.0;
+    final gutterWidth =
+        actionWidth +
+        (widget.showLineNumbers
+            ? doc.lineCount.toString().length *
+                      (widget.textStyle?.fontSize ?? 14) +
+                  20
+            : 0);
     final styles = TokenTextStyles(
       widget.theme,
       base: widget.textStyle ?? defaultCodeTextStyle,
@@ -194,6 +254,9 @@ class _SyntaxFileViewState extends State<SyntaxFileView> {
       theme: widget.theme,
       child: CallbackShortcuts(
         bindings: {
+          if (widget.onComment != null)
+            for (final shortcut in widget.selectionActionStyle.shortcuts)
+              shortcut: _comment,
           const SingleActivator(LogicalKeyboardKey.keyC, control: true): _copy,
           const SingleActivator(LogicalKeyboardKey.keyC, meta: true): _copy,
         },
@@ -238,6 +301,7 @@ class _SyntaxFileViewState extends State<SyntaxFileView> {
                         editor.diagnostics,
                         editor.carets,
                         widget.lineHeaderBuilder,
+                        gutterWidth,
                       ),
                       identity: doc.lineIdentity,
                       indexOf: doc.lineForIdentity,
@@ -257,9 +321,11 @@ class _SyntaxFileViewState extends State<SyntaxFileView> {
                         final text = doc.lineText(line);
                         final start = doc.lineStart(line),
                             end = start + text.length;
-                        final selected = editor.selections.any(
-                          (s) => s.start <= end && s.end > start,
-                        );
+                        final selected =
+                            editor.selections.any(
+                              (s) => s.start <= end && s.end > start,
+                            ) ||
+                            (selection?.activeLine == line);
                         Widget code = Text.rich(
                           TextSpan(
                             style: styles.base,
@@ -314,79 +380,86 @@ class _SyntaxFileViewState extends State<SyntaxFileView> {
                             children: [
                               if (header != null)
                                 SelectionContainer.disabled(child: header),
-                              LineSelectionTarget(
-                                isGutter: (x, _) =>
-                                    widget.showLineNumbers &&
-                                    x <
-                                        doc.lineCount.toString().length *
-                                                (styles.base.fontSize ?? 14) +
-                                            20,
-                                onSelect: (_, _, extend) =>
-                                    _selectLine(line, extend: extend),
-                                child: Semantics(
-                                  label: 'Line ${line + 1}',
-                                  selected: selected,
-                                  child: ColoredBox(
-                                    color: selected
-                                        ? Color.alphaBlend(
-                                            widget.theme.selectionColor,
-                                            background,
-                                          )
-                                        : background,
-                                    child: Row(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        if (widget.showLineNumbers)
-                                          SelectionContainer.disabled(
-                                            child: Semantics(
-                                              button: true,
-                                              label: 'Select line ${line + 1}',
-                                              onTap: () => _selectLine(line),
-                                              excludeSemantics: true,
-                                              child: MouseRegion(
-                                                cursor:
-                                                    SystemMouseCursors.click,
-                                                child: SizedBox(
-                                                  width:
-                                                      doc.lineCount
-                                                              .toString()
-                                                              .length *
-                                                          (styles
-                                                                  .base
-                                                                  .fontSize ??
-                                                              14) +
-                                                      20,
-                                                  child: Padding(
-                                                    padding:
-                                                        const EdgeInsets.only(
-                                                          right: 12,
-                                                        ),
-                                                    child: Text(
-                                                      '${line + 1}',
-                                                      textAlign:
-                                                          TextAlign.right,
-                                                      style: styles.base
-                                                          .copyWith(
-                                                            color: widget
-                                                                .theme
-                                                                .lineNumberColor,
+                              SelectionActionOverlay(
+                                alignment:
+                                    widget.selectionActionStyle.alignment,
+                                action: selection?.activeLine != line
+                                    ? null
+                                    : widget.selectionActionBuilder != null
+                                    ? widget.selectionActionBuilder!(
+                                        context,
+                                        selection!,
+                                      )
+                                    : defaultSelectionAction(
+                                        widget.selectionActionStyle,
+                                        () => widget.onComment!(selection!),
+                                      ),
+                                child: LineSelectionTarget(
+                                  isGutter: (x, _) => x < gutterWidth,
+                                  onSelect: (_, _, extend) =>
+                                      _selectLine(line, extend: extend),
+                                  child: Semantics(
+                                    label: 'Line ${line + 1}',
+                                    selected: selected,
+                                    child: ColoredBox(
+                                      color: selected
+                                          ? Color.alphaBlend(
+                                              widget.theme.selectionColor,
+                                              background,
+                                            )
+                                          : background,
+                                      child: Row(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          if (gutterWidth > 0)
+                                            SelectionContainer.disabled(
+                                              child: Semantics(
+                                                button: true,
+                                                label:
+                                                    'Select line ${line + 1}',
+                                                onTap: () => _selectLine(line),
+                                                excludeSemantics: true,
+                                                child: MouseRegion(
+                                                  cursor:
+                                                      SystemMouseCursors.click,
+                                                  child: SizedBox(
+                                                    width: gutterWidth,
+                                                    child: Padding(
+                                                      padding:
+                                                          const EdgeInsets.only(
+                                                            right: 12,
                                                           ),
+                                                      child: Text(
+                                                        widget.showLineNumbers
+                                                            ? '${line + 1}'
+                                                            : '',
+                                                        textAlign:
+                                                            TextAlign.right,
+                                                        style: styles.base
+                                                            .copyWith(
+                                                              color: widget
+                                                                  .theme
+                                                                  .lineNumberColor,
+                                                            ),
+                                                      ),
                                                     ),
                                                   ),
                                                 ),
                                               ),
                                             ),
-                                          ),
-                                        if (widget.gutterActionBuilder != null)
-                                          SelectionContainer.disabled(
-                                            child: widget.gutterActionBuilder!(
-                                              context,
-                                              line,
+                                          if (widget.gutterActionBuilder !=
+                                              null)
+                                            SelectionContainer.disabled(
+                                              child:
+                                                  widget.gutterActionBuilder!(
+                                                    context,
+                                                    line,
+                                                  ),
                                             ),
-                                          ),
-                                        Expanded(child: code),
-                                      ],
+                                          Expanded(child: code),
+                                        ],
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -467,6 +540,10 @@ class SyntaxFileList extends StatefulWidget {
     this.fileHeight = 360,
     this.wrap = true,
     this.textStyle,
+    this.onComment,
+    this.selectionActionBuilder,
+    this.selectionActionStyle = const SelectionActionStyle(),
+    this.annotationBuilder,
   });
 
   /// Files and session storage.
@@ -492,6 +569,20 @@ class SyntaxFileList extends StatefulWidget {
 
   /// Code typography shared by file previews and editors.
   final TextStyle? textStyle;
+
+  /// Application-owned comment action for selections in file previews.
+  final ValueChanged<FileSelectionDetails>? onComment;
+
+  /// Replaces a preview's selection action, or returns null to hide it.
+  final Widget? Function(BuildContext, FileSelectionDetails)?
+  selectionActionBuilder;
+
+  /// Presentation and shortcuts shared by preview selection actions.
+  final SelectionActionStyle selectionActionStyle;
+
+  /// Application-owned annotation content below preview source lines.
+  final Widget Function(BuildContext, LineAnnotation<Object?>)?
+  annotationBuilder;
   @override
   State<SyntaxFileList> createState() => _SyntaxFileListState();
 }
@@ -650,6 +741,10 @@ class _SessionFileState extends State<_SessionFile> {
             textStyle: owner.textStyle,
             wrap: owner.wrap,
             showHeader: false,
+            onComment: owner.onComment,
+            selectionActionBuilder: owner.selectionActionBuilder,
+            selectionActionStyle: owner.selectionActionStyle,
+            annotationBuilder: owner.annotationBuilder,
           );
   }
 
