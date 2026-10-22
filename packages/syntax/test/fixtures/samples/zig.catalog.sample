@@ -1,0 +1,5 @@
+const std = @import("std");
+pub fn main() void {
+    const value: u32 = 42;
+    std.debug.print("value={d}\n", .{value});
+}

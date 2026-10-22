@@ -10,6 +10,7 @@ const htmlLanguage = Language(
   scopeName: 'text.html.basic',
   displayName: 'HTML',
   aliases: ['htm'],
+  injectTo: [],
   grammar: <String, Object?>{
     'displayName': 'HTML',
     'injections': {
@@ -1812,5 +1813,6 @@ const htmlLanguage = Language(
       },
     },
     'scopeName': 'text.html.basic',
+    'embeddedLangs': ['javascript', 'css'],
   },
 );

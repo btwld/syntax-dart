@@ -1,3 +1,4 @@
+import 'runtime_web.dart' if (dart.library.io) 'runtime_native.dart';
 import 'onig_translator.dart';
 
 /// A regex backend for the tokenizer.
@@ -70,7 +71,8 @@ final class DartRegexEngine implements RegexEngine {
 
   /// Search all of a scanner's patterns with one alternation regex instead
   /// of one regex each. Leftmost-first alternation gives the same winner
-  /// as the per-pattern search, with far fewer regex calls.
+  /// as the per-pattern search, with far fewer regex calls. Dart 3.9 native
+  /// runtimes use equivalent individual scans to avoid a RegExp JIT crash.
   final bool combinePatterns;
 
   /// Compiled patterns shared by every scanner, keyed by Oniguruma source.
@@ -84,7 +86,10 @@ final class DartRegexEngine implements RegexEngine {
     final compiled = [for (final p in patterns) _compile(p)];
     final scanner = _DartScanner(compiled);
     final combinable = compiled.every((p) => p.translated?.combinable ?? true);
-    return combinePatterns && combinable && compiled.length > 1
+    return supportsCombinedRegex &&
+            combinePatterns &&
+            combinable &&
+            compiled.length > 1
         ? _CombinedScanner(compiled, scanner)
         : scanner;
   }
@@ -461,6 +466,18 @@ final class _CombinedScanner implements Scanner {
     if (!identical(line, _unicodeLine)) {
       _unicodeLine = line;
       _isUnicode = !_DartScanner._asciiOnly.hasMatch(line);
+    }
+    // Expanding Unicode word classes across a large alternation can exceed
+    // native RegExp compiler limits on older supported VMs. Individual
+    // patterns preserve the same earliest-match precedence without that
+    // compilation hazard. ASCII lines retain the combined fast path.
+    if (_isUnicode) {
+      return _fallback.findNextMatch(
+        line,
+        start,
+        allowA: allowA,
+        allowG: allowG,
+      );
     }
     final key =
         (_anyA && allowA ? _allowABit : 0) |

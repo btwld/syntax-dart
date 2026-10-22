@@ -10,6 +10,7 @@ const cssLanguage = Language(
   scopeName: 'source.css',
   displayName: 'CSS',
   aliases: [],
+  injectTo: [],
   grammar: <String, Object?>{
     'displayName': 'CSS',
     'name': 'css',

@@ -43,7 +43,8 @@ PatchView.fromTexts(
 );
 ```
 
-Each row is one terminal line; long lines end in `…`. Arrow keys move the
+By default each source row is one terminal line; enable `wrap` to wrap code by
+terminal cell width. Arrow keys move the
 selection, and Enter collapses a file or shows hidden unchanged lines. The
 rows come from syntax's `layoutDiff`, so they match `syntax_flutter`'s
 `PatchView`. To build your own view, `PatchPainter` paints any row as a
@@ -61,3 +62,25 @@ See [`example/main.dart`](example/main.dart).
 ## License
 
 BSD 3-Clause, see [LICENSE](LICENSE).
+
+## Shared file and review sessions
+
+`SyntaxFileView`, `SyntaxFileList`, `SyntaxEditor`, `StreamingCodeView`,
+`MergeConflictView` and `PatchView.controlled` consume renderer-neutral
+controllers from `syntax`. Editing, history, selection, annotations, diagnostics,
+proposed changes and drafts survive view replacement. Applications own controller
+disposal and acceptance callbacks. File collections are flat.
+
+Annotations preserve line breaks and wrap by grapheme and terminal cell width.
+Editors include their measured height in the source-row index. Review notes
+use a bounded panel: Tab into it and use arrows, Page Up/Down or Home/End to
+scroll. Resizing remeasures annotations and preserves the editor's source
+anchor. For custom variable-height content, supply `annotationRowCount` and
+`annotationRowBuilder`; only visible rows build widgets. The existing
+`annotationBuilder` remains a single-row convenience.
+
+The example demonstrates editing, retained file sessions, unified/split review,
+partial-content loading, conflict resolution, streaming, palettes and a large
+file. See [migration](../../docs/migration.md),
+[capabilities](../../docs/capabilities.md) and
+[execution](../../docs/execution.md) for contracts and validation.

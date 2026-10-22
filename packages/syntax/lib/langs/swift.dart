@@ -9,7 +9,8 @@ const swiftLanguage = Language(
   name: 'swift',
   scopeName: 'source.swift',
   displayName: 'Swift',
-  aliases: [],
+  aliases: ['swift'],
+  injectTo: [],
   grammar: <String, Object?>{
     'displayName': 'Swift',
     'fileTypes': ['swift'],

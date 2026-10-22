@@ -1,6 +1,7 @@
 // The TextMate tokenizer, a port of vscode-textmate's `grammar.ts` and
 // `tokenizeString.ts`, including injections.
 
+import 'raw_map.dart';
 import '../regex/engine.dart';
 import 'matcher.dart';
 import 'rules.dart';
@@ -128,6 +129,19 @@ final class Grammar {
     Map<String, Object?> grammar,
     Map<String, Object?>? base,
   ) {
+    // Dart canonicalizes equal const maps across generated grammar libraries.
+    // TextMate rule IDs are object identities: each grammar must own its rule
+    // objects, including structurally equal rules with different repositories.
+    // Clone JSON occurrences rather than memoizing shared constants.
+    Object? copy(Object? value) => switch (value) {
+      Map() => <String, Object?>{
+        for (final entry in value.entries)
+          entry.key as String: copy(entry.value),
+      },
+      List() => value.map(copy).toList(),
+      _ => value,
+    };
+    grammar = copy(grammar) as Map<String, Object?>;
     final self = <String, Object?>{
       'patterns': grammar['patterns'],
       'name': grammar['scopeName'],
@@ -693,11 +707,7 @@ final class _LineTokenBuilder {
   }
 }
 
-Map<String, Object?> _asMap(Object? value) => value is Map<String, Object?>
-    ? value
-    : value is Map
-    ? value.cast<String, Object?>()
-    : const {};
+Map<String, Object?> _asMap(Object? value) => asGrammarMap(value);
 
 /// Gives the rule factory access to the grammar's rule table without making
 /// it part of [Grammar]'s public API.

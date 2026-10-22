@@ -4,62 +4,788 @@
 // individual files instead to keep app size down.
 import 'package:syntax/syntax.dart' show Language;
 
-import 'css.dart';
-import 'dart.dart';
-import 'diff.dart';
-import 'go.dart';
-import 'html.dart';
+import 'abap.dart';
+import 'actionscript_3.dart';
+import 'ada.dart';
+import 'ahk.dart';
+import 'ahk2.dart';
 import 'javascript.dart';
-import 'json.dart';
-import 'jsonc.dart';
-import 'kotlin.dart';
-import 'markdown.dart';
-import 'python.dart';
-import 'rust.dart';
-import 'shellscript.dart';
-import 'sql.dart';
-import 'swift.dart';
-import 'typescript.dart';
+import 'css.dart';
+import 'html.dart';
+import 'angular_expression.dart';
+import 'angular_let_declaration.dart';
+import 'angular_template.dart';
+import 'angular_template_blocks.dart';
+import 'angular_html.dart';
+import 'scss.dart';
+import 'angular_inline_style.dart';
+import 'angular_inline_template.dart';
+import 'angular_ts.dart';
+import 'apache.dart';
+import 'apex.dart';
+import 'java.dart';
 import 'xml.dart';
+import 'json.dart';
+import 'apl.dart';
+import 'applescript.dart';
+import 'ara.dart';
+import 'asciidoc.dart';
+import 'asm.dart';
+import 'typescript.dart';
+import 'postcss.dart';
+import 'tsx.dart';
+import 'astro.dart';
+import 'awk.dart';
+import 'ballerina.dart';
+import 'bat.dart';
+import 'beancount.dart';
+import 'berry.dart';
+import 'bibtex.dart';
+import 'bicep.dart';
+import 'bird2.dart';
+import 'html_derivative.dart';
+import 'sql.dart';
+import 'blade.dart';
+import 'sdbl.dart';
+import 'bsl.dart';
+import 'c.dart';
+import 'c3.dart';
+import 'cadence.dart';
+import 'python.dart';
+import 'cairo.dart';
+import 'chapel.dart';
+import 'clarity.dart';
+import 'clojure.dart';
+import 'cmake.dart';
+import 'cobol.dart';
+import 'codeowners.dart';
+import 'codeql.dart';
+import 'coffee.dart';
+import 'common_lisp.dart';
+import 'coq.dart';
+import 'regexp.dart';
+import 'glsl.dart';
+import 'cpp_macro.dart';
+import 'cpp.dart';
+import 'shellscript.dart';
+import 'crystal.dart';
+import 'csharp.dart';
+import 'csv.dart';
+import 'cue.dart';
+import 'cypher.dart';
+import 'd.dart';
+import 'dart.dart';
+import 'dax.dart';
+import 'desktop.dart';
+import 'diff.dart';
+import 'docker.dart';
+import 'dotenv.dart';
+import 'dream_maker.dart';
+import 'edge.dart';
+import 'elixir.dart';
+import 'elm.dart';
+import 'emacs_lisp.dart';
+import 'haml.dart';
+import 'jsx.dart';
+import 'graphql.dart';
+import 'lua.dart';
 import 'yaml.dart';
+import 'ruby.dart';
+import 'erb.dart';
+import 'markdown.dart';
+import 'erlang.dart';
+import 'fennel.dart';
+import 'fish.dart';
+import 'fluent.dart';
+import 'fortran_free_form.dart';
+import 'fortran_fixed_form.dart';
+import 'fsharp.dart';
+import 'gdshader.dart';
+import 'gdscript.dart';
+import 'gdresource.dart';
+import 'genie.dart';
+import 'gherkin.dart';
+import 'git_commit.dart';
+import 'git_rebase.dart';
+import 'gleam.dart';
+import 'glimmer_js.dart';
+import 'glimmer_ts.dart';
+import 'gn.dart';
+import 'gnuplot.dart';
+import 'go.dart';
+import 'groovy.dart';
+import 'hack.dart';
+import 'handlebars.dart';
+import 'haskell.dart';
+import 'haxe.dart';
+import 'hcl.dart';
+import 'hjson.dart';
+import 'hlsl.dart';
+import 'http.dart';
+import 'hurl.dart';
+import 'hxml.dart';
+import 'hy.dart';
+import 'imba.dart';
+import 'ini.dart';
+import 'jinja_html.dart';
+import 'jinja.dart';
+import 'jison.dart';
+import 'json5.dart';
+import 'jsonc.dart';
+import 'jsonl.dart';
+import 'jsonnet.dart';
+import 'jssm.dart';
+import 'r.dart';
+import 'julia.dart';
+import 'perl.dart';
+import 'just.dart';
+import 'kdl.dart';
+import 'kotlin.dart';
+import 'kusto.dart';
+import 'tex.dart';
+import 'latex.dart';
+import 'lean.dart';
+import 'less.dart';
+import 'liquid.dart';
+import 'llvm.dart';
+import 'log.dart';
+import 'logo.dart';
+import 'luau.dart';
+import 'make.dart';
+import 'marko.dart';
+import 'matlab.dart';
+import 'mdc.dart';
+import 'mdx.dart';
+import 'mermaid.dart';
+import 'mipsasm.dart';
+import 'mojo.dart';
+import 'moonbit.dart';
+import 'move.dart';
+import 'narrat.dart';
+import 'nextflow_groovy.dart';
+import 'nextflow.dart';
+import 'nginx.dart';
+import 'nim.dart';
+import 'markdown_nix.dart';
+import 'nix.dart';
+import 'nsis.dart';
+import 'nushell.dart';
+import 'objective_c.dart';
+import 'objective_cpp.dart';
+import 'ocaml.dart';
+import 'odin.dart';
+import 'openscad.dart';
+import 'php.dart';
+import 'vb.dart';
+import 'raku.dart';
+import 'rust.dart';
+import 'scala.dart';
+import 'zig.dart';
+import 'xsl.dart';
+import 'org.dart';
+import 'pascal.dart';
+import 'pkl.dart';
+import 'plsql.dart';
+import 'po.dart';
+import 'polar.dart';
+import 'powerquery.dart';
+import 'powershell.dart';
+import 'prisma.dart';
+import 'prolog.dart';
+import 'proto.dart';
+import 'pug.dart';
+import 'puppet.dart';
+import 'purescript.dart';
+import 'qml.dart';
+import 'qmldir.dart';
+import 'qss.dart';
+import 'racket.dart';
+import 'razor.dart';
+import 'rbs.dart';
+import 'reg.dart';
+import 'rel.dart';
+import 'riscv.dart';
+import 'ron.dart';
+import 'rosmsg.dart';
+import 'rst.dart';
+import 'sas.dart';
+import 'sass.dart';
+import 'scheme.dart';
+import 'shaderlab.dart';
+import 'shellsession.dart';
+import 'smalltalk.dart';
+import 'smithy.dart';
+import 'solidity.dart';
+import 'soy.dart';
+import 'turtle.dart';
+import 'sparql.dart';
+import 'splunk.dart';
+import 'ssh_config.dart';
+import 'stata.dart';
+import 'stylus.dart';
+import 'surrealql.dart';
+import 'svelte.dart';
+import 'swift.dart';
+import 'system_verilog.dart';
+import 'systemd.dart';
+import 'talonscript.dart';
+import 'tasl.dart';
+import 'tcl.dart';
+import 'templ.dart';
+import 'terraform.dart';
+import 'toml.dart';
+import 'es_tag_css.dart';
+import 'es_tag_glsl.dart';
+import 'es_tag_html.dart';
+import 'es_tag_sql.dart';
+import 'es_tag_xml.dart';
+import 'ts_tags.dart';
+import 'tsv.dart';
+import 'twig.dart';
+import 'typespec.dart';
+import 'verilog.dart';
+import 'typst.dart';
+import 'v.dart';
+import 'vala.dart';
+import 'vhdl.dart';
+import 'viml.dart';
+import 'markdown_vue.dart';
+import 'vue_directives.dart';
+import 'vue_interpolations.dart';
+import 'vue_sfc_style_variable_injection.dart';
+import 'vue.dart';
+import 'vue_html.dart';
+import 'vue_vine.dart';
+import 'vyper.dart';
+import 'wasm.dart';
+import 'wenyan.dart';
+import 'wgsl.dart';
+import 'wikitext.dart';
+import 'wit.dart';
+import 'wolfram.dart';
+import 'zenscript.dart';
 
-export 'css.dart';
-export 'dart.dart';
-export 'diff.dart';
-export 'go.dart';
-export 'html.dart';
+export 'abap.dart';
+export 'actionscript_3.dart';
+export 'ada.dart';
+export 'ahk.dart';
+export 'ahk2.dart';
 export 'javascript.dart';
-export 'json.dart';
-export 'jsonc.dart';
-export 'kotlin.dart';
-export 'markdown.dart';
-export 'python.dart';
-export 'rust.dart';
-export 'shellscript.dart';
-export 'sql.dart';
-export 'swift.dart';
-export 'typescript.dart';
+export 'css.dart';
+export 'html.dart';
+export 'angular_expression.dart';
+export 'angular_let_declaration.dart';
+export 'angular_template.dart';
+export 'angular_template_blocks.dart';
+export 'angular_html.dart';
+export 'scss.dart';
+export 'angular_inline_style.dart';
+export 'angular_inline_template.dart';
+export 'angular_ts.dart';
+export 'apache.dart';
+export 'apex.dart';
+export 'java.dart';
 export 'xml.dart';
+export 'json.dart';
+export 'apl.dart';
+export 'applescript.dart';
+export 'ara.dart';
+export 'asciidoc.dart';
+export 'asm.dart';
+export 'typescript.dart';
+export 'postcss.dart';
+export 'tsx.dart';
+export 'astro.dart';
+export 'awk.dart';
+export 'ballerina.dart';
+export 'bat.dart';
+export 'beancount.dart';
+export 'berry.dart';
+export 'bibtex.dart';
+export 'bicep.dart';
+export 'bird2.dart';
+export 'html_derivative.dart';
+export 'sql.dart';
+export 'blade.dart';
+export 'sdbl.dart';
+export 'bsl.dart';
+export 'c.dart';
+export 'c3.dart';
+export 'cadence.dart';
+export 'python.dart';
+export 'cairo.dart';
+export 'chapel.dart';
+export 'clarity.dart';
+export 'clojure.dart';
+export 'cmake.dart';
+export 'cobol.dart';
+export 'codeowners.dart';
+export 'codeql.dart';
+export 'coffee.dart';
+export 'common_lisp.dart';
+export 'coq.dart';
+export 'regexp.dart';
+export 'glsl.dart';
+export 'cpp_macro.dart';
+export 'cpp.dart';
+export 'shellscript.dart';
+export 'crystal.dart';
+export 'csharp.dart';
+export 'csv.dart';
+export 'cue.dart';
+export 'cypher.dart';
+export 'd.dart';
+export 'dart.dart';
+export 'dax.dart';
+export 'desktop.dart';
+export 'diff.dart';
+export 'docker.dart';
+export 'dotenv.dart';
+export 'dream_maker.dart';
+export 'edge.dart';
+export 'elixir.dart';
+export 'elm.dart';
+export 'emacs_lisp.dart';
+export 'haml.dart';
+export 'jsx.dart';
+export 'graphql.dart';
+export 'lua.dart';
 export 'yaml.dart';
+export 'ruby.dart';
+export 'erb.dart';
+export 'markdown.dart';
+export 'erlang.dart';
+export 'fennel.dart';
+export 'fish.dart';
+export 'fluent.dart';
+export 'fortran_free_form.dart';
+export 'fortran_fixed_form.dart';
+export 'fsharp.dart';
+export 'gdshader.dart';
+export 'gdscript.dart';
+export 'gdresource.dart';
+export 'genie.dart';
+export 'gherkin.dart';
+export 'git_commit.dart';
+export 'git_rebase.dart';
+export 'gleam.dart';
+export 'glimmer_js.dart';
+export 'glimmer_ts.dart';
+export 'gn.dart';
+export 'gnuplot.dart';
+export 'go.dart';
+export 'groovy.dart';
+export 'hack.dart';
+export 'handlebars.dart';
+export 'haskell.dart';
+export 'haxe.dart';
+export 'hcl.dart';
+export 'hjson.dart';
+export 'hlsl.dart';
+export 'http.dart';
+export 'hurl.dart';
+export 'hxml.dart';
+export 'hy.dart';
+export 'imba.dart';
+export 'ini.dart';
+export 'jinja_html.dart';
+export 'jinja.dart';
+export 'jison.dart';
+export 'json5.dart';
+export 'jsonc.dart';
+export 'jsonl.dart';
+export 'jsonnet.dart';
+export 'jssm.dart';
+export 'r.dart';
+export 'julia.dart';
+export 'perl.dart';
+export 'just.dart';
+export 'kdl.dart';
+export 'kotlin.dart';
+export 'kusto.dart';
+export 'tex.dart';
+export 'latex.dart';
+export 'lean.dart';
+export 'less.dart';
+export 'liquid.dart';
+export 'llvm.dart';
+export 'log.dart';
+export 'logo.dart';
+export 'luau.dart';
+export 'make.dart';
+export 'marko.dart';
+export 'matlab.dart';
+export 'mdc.dart';
+export 'mdx.dart';
+export 'mermaid.dart';
+export 'mipsasm.dart';
+export 'mojo.dart';
+export 'moonbit.dart';
+export 'move.dart';
+export 'narrat.dart';
+export 'nextflow_groovy.dart';
+export 'nextflow.dart';
+export 'nginx.dart';
+export 'nim.dart';
+export 'markdown_nix.dart';
+export 'nix.dart';
+export 'nsis.dart';
+export 'nushell.dart';
+export 'objective_c.dart';
+export 'objective_cpp.dart';
+export 'ocaml.dart';
+export 'odin.dart';
+export 'openscad.dart';
+export 'php.dart';
+export 'vb.dart';
+export 'raku.dart';
+export 'rust.dart';
+export 'scala.dart';
+export 'zig.dart';
+export 'xsl.dart';
+export 'org.dart';
+export 'pascal.dart';
+export 'pkl.dart';
+export 'plsql.dart';
+export 'po.dart';
+export 'polar.dart';
+export 'powerquery.dart';
+export 'powershell.dart';
+export 'prisma.dart';
+export 'prolog.dart';
+export 'proto.dart';
+export 'pug.dart';
+export 'puppet.dart';
+export 'purescript.dart';
+export 'qml.dart';
+export 'qmldir.dart';
+export 'qss.dart';
+export 'racket.dart';
+export 'razor.dart';
+export 'rbs.dart';
+export 'reg.dart';
+export 'rel.dart';
+export 'riscv.dart';
+export 'ron.dart';
+export 'rosmsg.dart';
+export 'rst.dart';
+export 'sas.dart';
+export 'sass.dart';
+export 'scheme.dart';
+export 'shaderlab.dart';
+export 'shellsession.dart';
+export 'smalltalk.dart';
+export 'smithy.dart';
+export 'solidity.dart';
+export 'soy.dart';
+export 'turtle.dart';
+export 'sparql.dart';
+export 'splunk.dart';
+export 'ssh_config.dart';
+export 'stata.dart';
+export 'stylus.dart';
+export 'surrealql.dart';
+export 'svelte.dart';
+export 'swift.dart';
+export 'system_verilog.dart';
+export 'systemd.dart';
+export 'talonscript.dart';
+export 'tasl.dart';
+export 'tcl.dart';
+export 'templ.dart';
+export 'terraform.dart';
+export 'toml.dart';
+export 'es_tag_css.dart';
+export 'es_tag_glsl.dart';
+export 'es_tag_html.dart';
+export 'es_tag_sql.dart';
+export 'es_tag_xml.dart';
+export 'ts_tags.dart';
+export 'tsv.dart';
+export 'twig.dart';
+export 'typespec.dart';
+export 'verilog.dart';
+export 'typst.dart';
+export 'v.dart';
+export 'vala.dart';
+export 'vhdl.dart';
+export 'viml.dart';
+export 'markdown_vue.dart';
+export 'vue_directives.dart';
+export 'vue_interpolations.dart';
+export 'vue_sfc_style_variable_injection.dart';
+export 'vue.dart';
+export 'vue_html.dart';
+export 'vue_vine.dart';
+export 'vyper.dart';
+export 'wasm.dart';
+export 'wenyan.dart';
+export 'wgsl.dart';
+export 'wikitext.dart';
+export 'wit.dart';
+export 'wolfram.dart';
+export 'zenscript.dart';
 
 /// Every bundled entry, keyed by name.
 const bundledLanguages = <String, Language>{
-  'css': cssLanguage,
-  'dart': dartLanguage,
-  'diff': diffLanguage,
-  'go': goLanguage,
-  'html': htmlLanguage,
+  'abap': abapLanguage,
+  'actionscript-3': actionscript3Language,
+  'ada': adaLanguage,
+  'ahk': ahkLanguage,
+  'ahk2': ahk2Language,
   'javascript': javascriptLanguage,
-  'json': jsonLanguage,
-  'jsonc': jsoncLanguage,
-  'kotlin': kotlinLanguage,
-  'markdown': markdownLanguage,
-  'python': pythonLanguage,
-  'rust': rustLanguage,
-  'shellscript': shellscriptLanguage,
-  'sql': sqlLanguage,
-  'swift': swiftLanguage,
-  'typescript': typescriptLanguage,
+  'css': cssLanguage,
+  'html': htmlLanguage,
+  'angular-expression': angularExpressionLanguage,
+  'angular-let-declaration': angularLetDeclarationLanguage,
+  'angular-template': angularTemplateLanguage,
+  'angular-template-blocks': angularTemplateBlocksLanguage,
+  'angular-html': angularHtmlLanguage,
+  'scss': scssLanguage,
+  'angular-inline-style': angularInlineStyleLanguage,
+  'angular-inline-template': angularInlineTemplateLanguage,
+  'angular-ts': angularTsLanguage,
+  'apache': apacheLanguage,
+  'apex': apexLanguage,
+  'java': javaLanguage,
   'xml': xmlLanguage,
+  'json': jsonLanguage,
+  'apl': aplLanguage,
+  'applescript': applescriptLanguage,
+  'ara': araLanguage,
+  'asciidoc': asciidocLanguage,
+  'asm': asmLanguage,
+  'typescript': typescriptLanguage,
+  'postcss': postcssLanguage,
+  'tsx': tsxLanguage,
+  'astro': astroLanguage,
+  'awk': awkLanguage,
+  'ballerina': ballerinaLanguage,
+  'bat': batLanguage,
+  'beancount': beancountLanguage,
+  'berry': berryLanguage,
+  'bibtex': bibtexLanguage,
+  'bicep': bicepLanguage,
+  'bird2': bird2Language,
+  'html-derivative': htmlDerivativeLanguage,
+  'sql': sqlLanguage,
+  'blade': bladeLanguage,
+  'sdbl': sdblLanguage,
+  'bsl': bslLanguage,
+  'c': cLanguage,
+  'c3': c3Language,
+  'cadence': cadenceLanguage,
+  'python': pythonLanguage,
+  'cairo': cairoLanguage,
+  'chapel': chapelLanguage,
+  'clarity': clarityLanguage,
+  'clojure': clojureLanguage,
+  'cmake': cmakeLanguage,
+  'cobol': cobolLanguage,
+  'codeowners': codeownersLanguage,
+  'codeql': codeqlLanguage,
+  'coffee': coffeeLanguage,
+  'common-lisp': commonLispLanguage,
+  'coq': coqLanguage,
+  'regexp': regexpLanguage,
+  'glsl': glslLanguage,
+  'cpp-macro': cppMacroLanguage,
+  'cpp': cppLanguage,
+  'shellscript': shellscriptLanguage,
+  'crystal': crystalLanguage,
+  'csharp': csharpLanguage,
+  'csv': csvLanguage,
+  'cue': cueLanguage,
+  'cypher': cypherLanguage,
+  'd': dLanguage,
+  'dart': dartLanguage,
+  'dax': daxLanguage,
+  'desktop': desktopLanguage,
+  'diff': diffLanguage,
+  'docker': dockerLanguage,
+  'dotenv': dotenvLanguage,
+  'dream-maker': dreamMakerLanguage,
+  'edge': edgeLanguage,
+  'elixir': elixirLanguage,
+  'elm': elmLanguage,
+  'emacs-lisp': emacsLispLanguage,
+  'haml': hamlLanguage,
+  'jsx': jsxLanguage,
+  'graphql': graphqlLanguage,
+  'lua': luaLanguage,
   'yaml': yamlLanguage,
+  'ruby': rubyLanguage,
+  'erb': erbLanguage,
+  'markdown': markdownLanguage,
+  'erlang': erlangLanguage,
+  'fennel': fennelLanguage,
+  'fish': fishLanguage,
+  'fluent': fluentLanguage,
+  'fortran-free-form': fortranFreeFormLanguage,
+  'fortran-fixed-form': fortranFixedFormLanguage,
+  'fsharp': fsharpLanguage,
+  'gdshader': gdshaderLanguage,
+  'gdscript': gdscriptLanguage,
+  'gdresource': gdresourceLanguage,
+  'genie': genieLanguage,
+  'gherkin': gherkinLanguage,
+  'git-commit': gitCommitLanguage,
+  'git-rebase': gitRebaseLanguage,
+  'gleam': gleamLanguage,
+  'glimmer-js': glimmerJsLanguage,
+  'glimmer-ts': glimmerTsLanguage,
+  'gn': gnLanguage,
+  'gnuplot': gnuplotLanguage,
+  'go': goLanguage,
+  'groovy': groovyLanguage,
+  'hack': hackLanguage,
+  'handlebars': handlebarsLanguage,
+  'haskell': haskellLanguage,
+  'haxe': haxeLanguage,
+  'hcl': hclLanguage,
+  'hjson': hjsonLanguage,
+  'hlsl': hlslLanguage,
+  'http': httpLanguage,
+  'hurl': hurlLanguage,
+  'hxml': hxmlLanguage,
+  'hy': hyLanguage,
+  'imba': imbaLanguage,
+  'ini': iniLanguage,
+  'jinja-html': jinjaHtmlLanguage,
+  'jinja': jinjaLanguage,
+  'jison': jisonLanguage,
+  'json5': json5Language,
+  'jsonc': jsoncLanguage,
+  'jsonl': jsonlLanguage,
+  'jsonnet': jsonnetLanguage,
+  'jssm': jssmLanguage,
+  'r': rLanguage,
+  'julia': juliaLanguage,
+  'perl': perlLanguage,
+  'just': justLanguage,
+  'kdl': kdlLanguage,
+  'kotlin': kotlinLanguage,
+  'kusto': kustoLanguage,
+  'tex': texLanguage,
+  'latex': latexLanguage,
+  'lean': leanLanguage,
+  'less': lessLanguage,
+  'liquid': liquidLanguage,
+  'llvm': llvmLanguage,
+  'log': logLanguage,
+  'logo': logoLanguage,
+  'luau': luauLanguage,
+  'make': makeLanguage,
+  'marko': markoLanguage,
+  'matlab': matlabLanguage,
+  'mdc': mdcLanguage,
+  'mdx': mdxLanguage,
+  'mermaid': mermaidLanguage,
+  'mipsasm': mipsasmLanguage,
+  'mojo': mojoLanguage,
+  'moonbit': moonbitLanguage,
+  'move': moveLanguage,
+  'narrat': narratLanguage,
+  'nextflow-groovy': nextflowGroovyLanguage,
+  'nextflow': nextflowLanguage,
+  'nginx': nginxLanguage,
+  'nim': nimLanguage,
+  'markdown-nix': markdownNixLanguage,
+  'nix': nixLanguage,
+  'nsis': nsisLanguage,
+  'nushell': nushellLanguage,
+  'objective-c': objectiveCLanguage,
+  'objective-cpp': objectiveCppLanguage,
+  'ocaml': ocamlLanguage,
+  'odin': odinLanguage,
+  'openscad': openscadLanguage,
+  'php': phpLanguage,
+  'vb': vbLanguage,
+  'raku': rakuLanguage,
+  'rust': rustLanguage,
+  'scala': scalaLanguage,
+  'zig': zigLanguage,
+  'xsl': xslLanguage,
+  'org': orgLanguage,
+  'pascal': pascalLanguage,
+  'pkl': pklLanguage,
+  'plsql': plsqlLanguage,
+  'po': poLanguage,
+  'polar': polarLanguage,
+  'powerquery': powerqueryLanguage,
+  'powershell': powershellLanguage,
+  'prisma': prismaLanguage,
+  'prolog': prologLanguage,
+  'proto': protoLanguage,
+  'pug': pugLanguage,
+  'puppet': puppetLanguage,
+  'purescript': purescriptLanguage,
+  'qml': qmlLanguage,
+  'qmldir': qmldirLanguage,
+  'qss': qssLanguage,
+  'racket': racketLanguage,
+  'razor': razorLanguage,
+  'rbs': rbsLanguage,
+  'reg': regLanguage,
+  'rel': relLanguage,
+  'riscv': riscvLanguage,
+  'ron': ronLanguage,
+  'rosmsg': rosmsgLanguage,
+  'rst': rstLanguage,
+  'sas': sasLanguage,
+  'sass': sassLanguage,
+  'scheme': schemeLanguage,
+  'shaderlab': shaderlabLanguage,
+  'shellsession': shellsessionLanguage,
+  'smalltalk': smalltalkLanguage,
+  'smithy': smithyLanguage,
+  'solidity': solidityLanguage,
+  'soy': soyLanguage,
+  'turtle': turtleLanguage,
+  'sparql': sparqlLanguage,
+  'splunk': splunkLanguage,
+  'ssh-config': sshConfigLanguage,
+  'stata': stataLanguage,
+  'stylus': stylusLanguage,
+  'surrealql': surrealqlLanguage,
+  'svelte': svelteLanguage,
+  'swift': swiftLanguage,
+  'system-verilog': systemVerilogLanguage,
+  'systemd': systemdLanguage,
+  'talonscript': talonscriptLanguage,
+  'tasl': taslLanguage,
+  'tcl': tclLanguage,
+  'templ': templLanguage,
+  'terraform': terraformLanguage,
+  'toml': tomlLanguage,
+  'es-tag-css': esTagCssLanguage,
+  'es-tag-glsl': esTagGlslLanguage,
+  'es-tag-html': esTagHtmlLanguage,
+  'es-tag-sql': esTagSqlLanguage,
+  'es-tag-xml': esTagXmlLanguage,
+  'ts-tags': tsTagsLanguage,
+  'tsv': tsvLanguage,
+  'twig': twigLanguage,
+  'typespec': typespecLanguage,
+  'verilog': verilogLanguage,
+  'typst': typstLanguage,
+  'v': vLanguage,
+  'vala': valaLanguage,
+  'vhdl': vhdlLanguage,
+  'viml': vimlLanguage,
+  'markdown-vue': markdownVueLanguage,
+  'vue-directives': vueDirectivesLanguage,
+  'vue-interpolations': vueInterpolationsLanguage,
+  'vue-sfc-style-variable-injection': vueSfcStyleVariableInjectionLanguage,
+  'vue': vueLanguage,
+  'vue-html': vueHtmlLanguage,
+  'vue-vine': vueVineLanguage,
+  'vyper': vyperLanguage,
+  'wasm': wasmLanguage,
+  'wenyan': wenyanLanguage,
+  'wgsl': wgslLanguage,
+  'wikitext': wikitextLanguage,
+  'wit': witLanguage,
+  'wolfram': wolframLanguage,
+  'zenscript': zenscriptLanguage,
 };

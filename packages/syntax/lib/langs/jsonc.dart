@@ -10,6 +10,7 @@ const jsoncLanguage = Language(
   scopeName: 'source.json.comments',
   displayName: 'JSON with Comments',
   aliases: [],
+  injectTo: [],
   grammar: <String, Object?>{
     'displayName': 'JSON with Comments',
     'name': 'jsonc',

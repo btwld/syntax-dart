@@ -21,3 +21,6 @@ export 'src/code_highlighter.dart';
 export 'src/colors.dart';
 export 'src/patch_painter.dart';
 export 'src/patch_view.dart';
+export 'src/editor.dart';
+export 'src/file_view.dart';
+export 'src/annotations.dart' show AnnotationRowBuilder, AnnotationRowCount;

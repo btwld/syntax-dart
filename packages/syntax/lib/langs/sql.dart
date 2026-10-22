@@ -10,6 +10,7 @@ const sqlLanguage = Language(
   scopeName: 'source.sql',
   displayName: 'SQL',
   aliases: [],
+  injectTo: [],
   grammar: <String, Object?>{
     'displayName': 'SQL',
     'name': 'sql',

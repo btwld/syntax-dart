@@ -1,3 +1,15 @@
+## Unreleased
+
+- Add revisioned text documents, shared editor and file-list controllers,
+  atomic edits, history, selections, annotations, diagnostics and proposed edits.
+- Add streaming, merge-conflict resolution, review operations, partial patch
+  loading, metadata-preserving parsing and indexed diff layouts.
+- Expand the pinned catalog to 242 languages and 65 themes, with deferred
+  catalogs, theme collections, Zed import and accessible palette variants.
+- Add viewport presentation, cancellable executors, native isolates and a
+  compiled Dart browser worker; support static multi-palette HTML and ANSI input.
+- See `docs/migration.md` in the repository for updated contracts and ownership.
+
 ## 0.1.0-dev
 
 - First release.

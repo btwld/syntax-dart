@@ -77,3 +77,17 @@ and theme.
 ## License
 
 BSD 3-Clause, see [LICENSE](LICENSE).
+
+## Shared file and review sessions
+
+`SyntaxFileView`, `SyntaxFileList`, `SyntaxEditor`, `StreamingCodeView`,
+`MergeConflictView` and `PatchView.controlled` consume renderer-neutral
+controllers from `syntax`. Editing, history, selection, annotations, diagnostics,
+proposed changes and drafts survive view replacement. Applications own controller
+disposal and acceptance callbacks. File collections are flat.
+
+The example demonstrates editing, retained file sessions, unified/split review,
+partial-content loading, conflict resolution, streaming, palettes and a large
+file. See [migration](../../docs/migration.md),
+[capabilities](../../docs/capabilities.md) and
+[execution](../../docs/execution.md) for contracts and validation.

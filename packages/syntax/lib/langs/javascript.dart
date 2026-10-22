@@ -10,6 +10,7 @@ const javascriptLanguage = Language(
   scopeName: 'source.js',
   displayName: 'JavaScript',
   aliases: ['js', 'cjs', 'mjs'],
+  injectTo: [],
   grammar: <String, Object?>{
     'displayName': 'JavaScript',
     'name': 'javascript',
@@ -4042,5 +4043,6 @@ const javascriptLanguage = Language(
       },
     },
     'scopeName': 'source.js',
+    'aliases': ['js', 'cjs', 'mjs'],
   },
 );

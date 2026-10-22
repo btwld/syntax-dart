@@ -1,110 +1,95 @@
-# ADR-0002: The core owns everything but painting
+# ADR-0002: Shared document and review state, native rendering
 
 **Status:** Accepted
-**Date:** 2026-10-19
 
-## Context
-
-`syntax_flutter` is the first renderer, and `syntax_noir` is planned for
-[noir](https://github.com/btwld/noir), a terminal UI framework on OpenTUI.
-`syntax` itself already renders HTML and ANSI.
-
-Noir's `CodeView` and `DiffView` take a `CodeHighlighter`, an interface with
-one method. It returns non-overlapping UTF-16 `StyledTextRange`s over the
-whole source, styled with noir's own `TextStyle` (see
-`packages/noir/lib/src/widgets/code_view.dart` in that repository).
-
-Until now, several pieces that have nothing to do with Flutter lived
-privately in `syntax_flutter`:
-
-- incremental re-tokenizing, in the text controller;
-- the fallbacks for line number, selection and cursor colors;
-- the patch layout: gaps, split pairing and line numbering;
-- splitting tokens where changed words start and end.
-
-A second renderer would have copied them. The patch layout alone had two
-line-numbering bugs found in review, so copies would have copied
-bugs too.
+**Updated:** 2026-10-21
 
 ## Decision
 
-`syntax` provides everything a renderer needs, in neutral types: colors as
-ARGB `int`s, offsets in UTF-16 code units, and no `dart:ui`. A renderer only
-paints and handles interaction.
+`syntax` owns source documents, transactions, tokenization, themes, diffs,
+review state, editing commands and background presentation requests. It has
+no runtime package dependencies and does not import Flutter or terminal UI
+libraries. Flutter and noir own input, composition, focus, measurement,
+painting, platform clipboard access and accessibility.
 
-| Need | Core API |
-|---|---|
-| Tokens and incremental state | `Grammar.tokenizeLine`, `StateStack` |
-| Styles | `TokenStyle` (colors and bold, italic, underline, strikethrough), `SyntaxTheme` |
-| Editor colors | `SyntaxTheme.foreground`, `background`, `lineNumberForeground`, `selectionBackground`, `cursorForeground`, `editorColor` |
-| One styled string | `Highlighter.highlightRanges` returning `StyledRange`s |
-| A document being edited | `TokenizedDocument`; unchanged `DocumentLine`s keep their identity, so renderers can cache per line |
-| Diffs | `parsePatch`, `diffTexts`, `FileDiff` |
-| Diff presentation | `layoutDiff` returning `DiffRow`s, `DiffHighlightCache` and `HighlightedDiff.segmentsFor` returning `DiffSegment`s, `DiffColors` (including opaque chrome colors), `FileDiff.maxLineNumber`, `FileDiff.changeBlocks` |
-| Words | `DiffLabels`, English defaults that renderers extend to translate |
-| Blending | `alphaBlend`, for renderers such as terminals that can't blend |
+Application-supplied `SourceFile.id` identifies a document independently of
+its display path or position in a collection. Content revisions increase
+on every transaction, including undo/redo. Asynchronous loads and proposals
+must match both their source identity and current revision before being
+installed. A display path can inform language detection; it is not a path
+management API. File trees and filesystem operations are outside the scope.
 
-Renderers own:
+| Responsibility | Core contract |
+| --- | --- |
+| Indexed source and history | `TextDocument`, `DocumentChange`, `OffsetEdit` |
+| Coordinates | Zero-based `DocumentPosition`, half-open UTF-16 ranges, directed `DocumentSelection` |
+| Shared editor state | `EditorController`, `EditorCommand`, annotations, diagnostics and remote carets |
+| Draft lifetime | `FileListController`, bounded `SessionStore`, explicit acquire/release |
+| Incremental tokens | `LiveHighlighter`, retained raw scopes and unchanged line identities |
+| Streamed source | `StreamDocumentController`, `StreamingHighlighter` |
+| Patch transport | `parsePatchDocuments`, `PatchStreamParser`, metadata and diagnostics |
+| Review state | `PatchController`, directed one-based `DiffSelection`, partial-content loading |
+| Logical diff rows | `DiffLayout`, source lookup and bounded context expansion |
+| Measurement index | `RowHeightIndex`; renderers supply pixel or cell measurements |
+| Review changes | `resolveDiffChange`, `MergeController`, application acceptance callbacks |
+| Appearance | `SyntaxTheme`, `ThemeResolver`, `SyntaxThemeController`, lazy collections |
+| Background work | `HighlightExecutor`, `HighlightPool`, `PresentationController` |
+| Portable output | `HighlightResult` serialization, static file/diff HTML and safe ANSI parsing |
 
-- widgets, layout, fonts and spacing;
-- interaction state, such as collapsed files, expanded gaps and selection;
-- the final wording. The core reports *why* a file has no lines as a
-  `DiffNotice` value, and `DiffLabels` gives English defaults that a
-  renderer, or an app, extends to translate.
+`Highlighter`, `TokenizedDocument`, `HighlightedCode`, the existing text
+controller adapters and `PatchView` constructors remain useful entry points.
+New interactive surfaces use shared controllers so unmounting a widget does
+not destroy a draft or undo history. A renderer disposes its bindings, and
+the controller owner disposes the controller. Active session claims are
+protected; applications release them when a view closes. Inactive sessions
+are evicted according to their configured bound.
+Claims are counted per mounted view. Replacing source refreshes clean sessions;
+dirty sessions retain their draft and require an explicit reload before they
+can complete against a changed source. Completing one view leaves other
+claimants' session and history available.
 
-`syntax_flutter` now follows this. `PatchView` paints `layoutDiff` rows,
-`SyntaxTextEditingController` keeps a `TokenizedDocument`, and the
-`SyntaxThemeColors` getters wrap the core colors.
+## Native integration
 
-### `syntax_noir`
+Flutter's editor binds a native `TextField` to `EditorController`. Flutter
+owns IME composing ranges and selection overlays; the shared controller owns
+source, logical selections, commands and history. Read-only file and patch
+surfaces mount an indexed window with overscan and measure variable-height
+rows. Split panes share vertical rows and a horizontal scroll group.
 
-`packages/syntax_noir` follows this split:
+The terminal editor uses noir input intents and grapheme/cell measurement.
+It paints visible source rows, retaining logical UTF-16 positions in core.
+Keyboard actions provide review, search, proposals, copying and conflict
+resolution. Clipboard transport can be supplied by the application; the
+default uses OSC 52 on an interactive terminal.
+Annotation measurements count wrapped terminal cells and explicit newlines.
+Custom annotation row-count and row-builder callbacks allow indexed variable
+heights without building widgets for hidden rows. Long patch annotations use
+a bounded, keyboard-scrollable panel.
 
-- `SyntaxCodeHighlighter` implements noir's `CodeHighlighter` with a
-  `TokenizedDocument` per language, for noir's `CodeView`.
-- Its `PatchView` paints `layoutDiff` rows as one terminal line each.
-- Colors go through `alphaBlend` first, because terminals don't blend.
+Core supplies no widget tree, font metrics or DOM hydration API. Native
+Flutter editing still uses the platform text layout for the document; only
+visible lines build styled spans. The read-only file and patch surfaces are
+independently virtualized. Applications can use background execution for
+large documents and cooperative execution where workers are unavailable.
 
-noir's own `DiffView` can't use syntax's highlighting. It passes the
-highlighter its whole rendered text, including `@@` lines, line numbers and
-`+`/`-` markers, and in split mode both sides on one line. No grammar reads
-that correctly, so `syntax_noir` has its own patch view. If `DiffView`
-passed each line's code instead, it could use `SyntaxCodeHighlighter`
-directly.
+## Execution and compatibility
 
-noir needs Dart 3.10 while the workspace packages support Dart 3.9, so
-`syntax_noir` resolves on its own, with a dependency override on
-`../syntax` until syntax is published. noir also exports `DiffLine`,
-`DiffHunk` and `DiffLineKind`, so code using both imports syntax with a
-prefix.
+Synchronous, cooperative, native-isolate and compiled Dart browser-worker
+backends consume the same serializable request. `HighlightPool` bounds
+concurrency, queued distinct requests and cached results. Theme-only changes
+retheme retained scopes. Grammar changes invalidate compiled state. Failure,
+cancellation, timeout and disposal are explicit outcomes.
 
-## Options considered
-
-- **Keep the logic in each renderer.** This means less public API in core,
-  but every renderer re-implements the patch layout and the incremental
-  tokenizer, and their bugs.
-- **Core owns all non-painting logic (chosen).** Renderers stay thin, and
-  the logic is tested once, in plain Dart, without widget tests. The cost is
-  that `DiffRow`, `TokenizedDocument` and friends are now public contracts.
-- **A full renderer interface in core**, such as `abstract class
-  SyntaxRenderer`. Flutter and a terminal framework share too little at the
-  painting level for one interface to help, so data types are the
-  contract instead.
+The package split and SDK minimums remain Dart 3.9 / Flutter 3.35 for the
+workspace and Dart 3.10 for `syntax_noir`. There is one TextMate engine and
+no additional WASM or native highlighting runtime.
 
 ## Consequences
 
-- A new renderer maps rows and segments to its own widgets. It never
-  computes line numbers, gaps or word ranges.
-- The core's public surface is larger, and changes to the row types or
-  `TokenizedDocument` affect every renderer.
-- Layout behavior is tested in `packages/syntax/test`. That includes a
-  property test that expanding every gap rebuilds both files.
-
-## Reconsider when
-
-- A renderer needs something the core can't express neutrally, such as
-  measured text widths for wrapping or bidirectional text.
-- Noir's `CodeHighlighter` gains incremental or streaming semantics that
-  `TokenizedDocument.update` with the whole source doesn't fit.
-- Very large patches need the layout to be lazy, producing rows on demand
-  instead of as one list.
+The public core surface is larger, but selection, revision, layout and
+reconstruction behavior can be tested once and exercised by both renderers.
+Renderer tests cover the platform bindings in addition to core behavior.
+Applications remain responsible for loading file contents, supplying proposal
+providers, choosing persistence and deciding whether an edited result is
+accepted. See [migration](../migration.md), [capabilities](../capabilities.md)
+and [execution](../execution.md) for usage and validation.

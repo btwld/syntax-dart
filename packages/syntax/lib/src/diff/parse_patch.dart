@@ -14,13 +14,21 @@ final RegExp _hunkHeader = RegExp(
 /// before the first file, such as a commit message, is ignored. Malformed
 /// input never throws; whatever could be read is returned.
 ///
-/// A trailing `\r` is dropped from every line, so patches with CRLF line
-/// endings read like any other. A change that only converts line endings
-/// therefore shows as removed and added lines with the same text.
+/// Transport CRLF is distinguished from source CRLF. Display text excludes
+/// carriage returns; source terminators remain available for serialization.
 List<FileDiff> parsePatch(String patch) {
+  final rawLines = patch.split('\n');
+  final header = rawLines
+      .where(
+        (line) => line.startsWith('diff --git ') || line.startsWith('--- '),
+      )
+      .firstOrNull;
+  final transport = header?.endsWith('\r') == true ? '\r\n' : '\n';
   final lines = [
-    for (final line in patch.split('\n'))
-      line.endsWith('\r') ? line.substring(0, line.length - 1) : line,
+    for (final line in rawLines)
+      transport == '\r\n' && line.endsWith('\r')
+          ? line.substring(0, line.length - 1)
+          : line,
   ];
   // The final line break ends the last line; it doesn't start a blank one.
   if (patch.endsWith('\n')) lines.removeLast();
@@ -28,7 +36,9 @@ List<FileDiff> parsePatch(String patch) {
   _FileBuilder? file;
 
   void finish() {
-    if (file != null) files.add(file!.build());
+    if (file != null) {
+      files.add(file!.build().copyWith(patchLineEnding: transport));
+    }
     file = null;
   }
 
@@ -90,7 +100,11 @@ int _readHunk(List<String> lines, int start, _FileBuilder file) {
   while (i < lines.length && (oldLeft > 0 || newLeft > 0)) {
     final line = lines[i];
     final marker = line.isEmpty ? ' ' : line[0];
-    final text = line.isEmpty ? '' : line.substring(1);
+    final rawText = line.isEmpty ? '' : line.substring(1);
+    final sourceLineEnding = rawText.endsWith('\r') ? '\r\n' : '\n';
+    final text = rawText.endsWith('\r')
+        ? rawText.substring(0, rawText.length - 1)
+        : rawText;
     if (marker == ' ' && oldLeft > 0 && newLeft > 0) {
       diffLines.add(
         DiffLine(
@@ -98,19 +112,32 @@ int _readHunk(List<String> lines, int start, _FileBuilder file) {
           text,
           oldNumber: oldNumber++,
           newNumber: newNumber++,
+          sourceLineEnding: sourceLineEnding,
         ),
       );
       oldLeft--;
       newLeft--;
     } else if (marker == '-' && oldLeft > 0) {
       diffLines.add(
-        DiffLine(DiffLineKind.removed, text, oldNumber: oldNumber++),
+        DiffLine(
+          DiffLineKind.removed,
+          text,
+          oldNumber: oldNumber++,
+          sourceLineEnding: sourceLineEnding,
+        ),
       );
       oldLeft--;
     } else if (marker == '+' && newLeft > 0) {
-      diffLines.add(DiffLine(DiffLineKind.added, text, newNumber: newNumber++));
+      diffLines.add(
+        DiffLine(
+          DiffLineKind.added,
+          text,
+          newNumber: newNumber++,
+          sourceLineEnding: sourceLineEnding,
+        ),
+      );
       newLeft--;
-    } else if (marker == r'\' && diffLines.isNotEmpty) {
+    } else if (line == r'\ No newline at end of file' && diffLines.isNotEmpty) {
       diffLines.add(_withoutNewline(diffLines.removeLast()));
     } else {
       break; // A malformed hunk: keep what was read.
@@ -119,7 +146,7 @@ int _readHunk(List<String> lines, int start, _FileBuilder file) {
   }
   // A "no newline" marker can follow the hunk's last line.
   while (i < lines.length &&
-      lines[i].startsWith(r'\') &&
+      lines[i] == r'\ No newline at end of file' &&
       diffLines.isNotEmpty) {
     diffLines.add(_withoutNewline(diffLines.removeLast()));
     i++;
@@ -144,6 +171,7 @@ DiffLine _withoutNewline(DiffLine line) => DiffLine(
   oldNumber: line.oldNumber,
   newNumber: line.newNumber,
   noNewlineAtEnd: true,
+  sourceLineEnding: line.sourceLineEnding,
 );
 
 /// A path from a `---` or `+++` line. Returns `null` for `/dev/null`.
@@ -256,6 +284,7 @@ final class _FileBuilder {
   bool binary = false;
   bool sawPathLines = false;
   final List<DiffHunk> hunks = [];
+  String? oldObjectId, newObjectId, oldMode, newMode;
 
   /// Reads the paths of a `diff --git` line. Rename, copy, `---` and `+++`
   /// lines that follow take precedence.
@@ -267,10 +296,26 @@ final class _FileBuilder {
   }
 
   void readHeaderLine(String line) {
-    if (line.startsWith('new file mode')) {
+    if (line.startsWith('index ')) {
+      final match = RegExp(
+        r'^index ([0-9a-f]+)\.\.([0-9a-f]+)(?: (\d+))?',
+      ).firstMatch(line);
+      if (match != null) {
+        oldObjectId = match[1];
+        newObjectId = match[2];
+        oldMode ??= match[3];
+        newMode ??= match[3];
+      }
+    } else if (line.startsWith('old mode ')) {
+      oldMode = line.substring(9);
+    } else if (line.startsWith('new mode ')) {
+      newMode = line.substring(9);
+    } else if (line.startsWith('new file mode')) {
+      newMode = line.substring(14);
       added = true;
     } else if (line.startsWith('deleted file mode')) {
       deleted = true;
+      oldMode = line.substring(18);
     } else if (line.startsWith('rename from ')) {
       moved = FileDiffKind.renamed;
       oldPath = _unquote(line.substring(12));
@@ -305,6 +350,10 @@ final class _FileBuilder {
       kind: kind,
       hunks: List.unmodifiable(hunks),
       isBinary: binary,
+      oldObjectId: oldObjectId,
+      newObjectId: newObjectId,
+      oldMode: oldMode,
+      newMode: newMode,
     );
   }
 }

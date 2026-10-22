@@ -17,3 +17,5 @@ export 'src/highlighter_scope.dart';
 export 'src/patch_view.dart';
 export 'src/styles.dart';
 export 'src/syntax_text_controller.dart';
+export 'src/editor.dart';
+export 'src/file_view.dart';

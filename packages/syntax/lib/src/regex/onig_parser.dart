@@ -332,7 +332,20 @@ final class _Parser {
       _expect(')');
       return _groups[index] = _Group(_GroupKind.capture, body, index: index);
     } else if (c == '~') {
-      _fail('absent operator');
+      _i++;
+      // The absent repeater consumes characters only while its body does not
+      // match. Stopper/expression forms use a distinct range-state operator.
+      if (_peek == '|') _fail('absent range operator');
+      final body = _parseAlternation(flags);
+      _expect(')');
+      return _Quant(
+        _Group(
+          _GroupKind.nonCapture,
+          _Seq([_Group(_GroupKind.negativeLookahead, body), _Dot(true)]),
+        ),
+        0,
+        null,
+      );
     } else if (c == '(') {
       _fail('conditional');
     } else {

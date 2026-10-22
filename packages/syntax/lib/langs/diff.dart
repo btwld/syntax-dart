@@ -10,6 +10,7 @@ const diffLanguage = Language(
   scopeName: 'source.diff',
   displayName: 'Diff',
   aliases: ['patch'],
+  injectTo: [],
   grammar: <String, Object?>{
     'displayName': 'Diff',
     'name': 'diff',

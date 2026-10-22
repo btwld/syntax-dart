@@ -10,6 +10,7 @@ const goLanguage = Language(
   scopeName: 'source.go',
   displayName: 'Go',
   aliases: [],
+  injectTo: [],
   grammar: <String, Object?>{
     'displayName': 'Go',
     'name': 'go',

@@ -1,0 +1,4 @@
+#include <stdio.h>
+/* A nested state across lines
+   ends here. */
+int main(void) { printf("value=%d\n", 42); return 0; }

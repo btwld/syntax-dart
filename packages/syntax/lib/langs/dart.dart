@@ -10,6 +10,7 @@ const dartLanguage = Language(
   scopeName: 'source.dart',
   displayName: 'Dart',
   aliases: [],
+  injectTo: [],
   grammar: <String, Object?>{
     'displayName': 'Dart',
     'name': 'dart',

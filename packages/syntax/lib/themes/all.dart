@@ -4,53 +4,203 @@
 // individual files instead to keep app size down.
 import 'package:syntax/syntax.dart' show SyntaxTheme;
 
+import 'andromeeda.dart';
+import 'aurora_x.dart';
+import 'ayu_dark.dart';
+import 'ayu_light.dart';
+import 'ayu_mirage.dart';
+import 'catppuccin_frappe.dart';
 import 'catppuccin_latte.dart';
+import 'catppuccin_macchiato.dart';
 import 'catppuccin_mocha.dart';
 import 'dark_plus.dart';
 import 'dracula.dart';
+import 'dracula_soft.dart';
+import 'everforest_dark.dart';
+import 'everforest_light.dart';
 import 'github_dark.dart';
+import 'github_dark_default.dart';
+import 'github_dark_dimmed.dart';
+import 'github_dark_high_contrast.dart';
 import 'github_light.dart';
+import 'github_light_default.dart';
+import 'github_light_high_contrast.dart';
+import 'gruvbox_dark_hard.dart';
+import 'gruvbox_dark_medium.dart';
+import 'gruvbox_dark_soft.dart';
+import 'gruvbox_light_hard.dart';
+import 'gruvbox_light_medium.dart';
+import 'gruvbox_light_soft.dart';
+import 'horizon.dart';
+import 'horizon_bright.dart';
+import 'houston.dart';
+import 'kanagawa_dragon.dart';
+import 'kanagawa_lotus.dart';
+import 'kanagawa_wave.dart';
+import 'laserwave.dart';
 import 'light_plus.dart';
+import 'material_theme.dart';
+import 'material_theme_darker.dart';
+import 'material_theme_lighter.dart';
+import 'material_theme_ocean.dart';
+import 'material_theme_palenight.dart';
+import 'min_dark.dart';
 import 'min_light.dart';
 import 'monokai.dart';
+import 'night_owl.dart';
+import 'night_owl_light.dart';
 import 'nord.dart';
 import 'one_dark_pro.dart';
+import 'one_light.dart';
+import 'plastic.dart';
+import 'poimandres.dart';
+import 'red.dart';
+import 'rose_pine.dart';
+import 'rose_pine_dawn.dart';
+import 'rose_pine_moon.dart';
+import 'slack_dark.dart';
+import 'slack_ochin.dart';
+import 'snazzy_light.dart';
+import 'solarized_dark.dart';
 import 'solarized_light.dart';
+import 'synthwave_84.dart';
 import 'tokyo_night.dart';
+import 'vesper.dart';
+import 'vitesse_black.dart';
 import 'vitesse_dark.dart';
 import 'vitesse_light.dart';
 
+export 'andromeeda.dart';
+export 'aurora_x.dart';
+export 'ayu_dark.dart';
+export 'ayu_light.dart';
+export 'ayu_mirage.dart';
+export 'catppuccin_frappe.dart';
 export 'catppuccin_latte.dart';
+export 'catppuccin_macchiato.dart';
 export 'catppuccin_mocha.dart';
 export 'dark_plus.dart';
 export 'dracula.dart';
+export 'dracula_soft.dart';
+export 'everforest_dark.dart';
+export 'everforest_light.dart';
 export 'github_dark.dart';
+export 'github_dark_default.dart';
+export 'github_dark_dimmed.dart';
+export 'github_dark_high_contrast.dart';
 export 'github_light.dart';
+export 'github_light_default.dart';
+export 'github_light_high_contrast.dart';
+export 'gruvbox_dark_hard.dart';
+export 'gruvbox_dark_medium.dart';
+export 'gruvbox_dark_soft.dart';
+export 'gruvbox_light_hard.dart';
+export 'gruvbox_light_medium.dart';
+export 'gruvbox_light_soft.dart';
+export 'horizon.dart';
+export 'horizon_bright.dart';
+export 'houston.dart';
+export 'kanagawa_dragon.dart';
+export 'kanagawa_lotus.dart';
+export 'kanagawa_wave.dart';
+export 'laserwave.dart';
 export 'light_plus.dart';
+export 'material_theme.dart';
+export 'material_theme_darker.dart';
+export 'material_theme_lighter.dart';
+export 'material_theme_ocean.dart';
+export 'material_theme_palenight.dart';
+export 'min_dark.dart';
 export 'min_light.dart';
 export 'monokai.dart';
+export 'night_owl.dart';
+export 'night_owl_light.dart';
 export 'nord.dart';
 export 'one_dark_pro.dart';
+export 'one_light.dart';
+export 'plastic.dart';
+export 'poimandres.dart';
+export 'red.dart';
+export 'rose_pine.dart';
+export 'rose_pine_dawn.dart';
+export 'rose_pine_moon.dart';
+export 'slack_dark.dart';
+export 'slack_ochin.dart';
+export 'snazzy_light.dart';
+export 'solarized_dark.dart';
 export 'solarized_light.dart';
+export 'synthwave_84.dart';
 export 'tokyo_night.dart';
+export 'vesper.dart';
+export 'vitesse_black.dart';
 export 'vitesse_dark.dart';
 export 'vitesse_light.dart';
 
 /// Every bundled entry, keyed by name.
 const bundledThemes = <String, SyntaxTheme>{
+  'andromeeda': andromeedaTheme,
+  'aurora-x': auroraXTheme,
+  'ayu-dark': ayuDarkTheme,
+  'ayu-light': ayuLightTheme,
+  'ayu-mirage': ayuMirageTheme,
+  'catppuccin-frappe': catppuccinFrappeTheme,
   'catppuccin-latte': catppuccinLatteTheme,
+  'catppuccin-macchiato': catppuccinMacchiatoTheme,
   'catppuccin-mocha': catppuccinMochaTheme,
   'dark-plus': darkPlusTheme,
   'dracula': draculaTheme,
+  'dracula-soft': draculaSoftTheme,
+  'everforest-dark': everforestDarkTheme,
+  'everforest-light': everforestLightTheme,
   'github-dark': githubDarkTheme,
+  'github-dark-default': githubDarkDefaultTheme,
+  'github-dark-dimmed': githubDarkDimmedTheme,
+  'github-dark-high-contrast': githubDarkHighContrastTheme,
   'github-light': githubLightTheme,
+  'github-light-default': githubLightDefaultTheme,
+  'github-light-high-contrast': githubLightHighContrastTheme,
+  'gruvbox-dark-hard': gruvboxDarkHardTheme,
+  'gruvbox-dark-medium': gruvboxDarkMediumTheme,
+  'gruvbox-dark-soft': gruvboxDarkSoftTheme,
+  'gruvbox-light-hard': gruvboxLightHardTheme,
+  'gruvbox-light-medium': gruvboxLightMediumTheme,
+  'gruvbox-light-soft': gruvboxLightSoftTheme,
+  'horizon': horizonTheme,
+  'horizon-bright': horizonBrightTheme,
+  'houston': houstonTheme,
+  'kanagawa-dragon': kanagawaDragonTheme,
+  'kanagawa-lotus': kanagawaLotusTheme,
+  'kanagawa-wave': kanagawaWaveTheme,
+  'laserwave': laserwaveTheme,
   'light-plus': lightPlusTheme,
+  'material-theme': materialThemeTheme,
+  'material-theme-darker': materialThemeDarkerTheme,
+  'material-theme-lighter': materialThemeLighterTheme,
+  'material-theme-ocean': materialThemeOceanTheme,
+  'material-theme-palenight': materialThemePalenightTheme,
+  'min-dark': minDarkTheme,
   'min-light': minLightTheme,
   'monokai': monokaiTheme,
+  'night-owl': nightOwlTheme,
+  'night-owl-light': nightOwlLightTheme,
   'nord': nordTheme,
   'one-dark-pro': oneDarkProTheme,
+  'one-light': oneLightTheme,
+  'plastic': plasticTheme,
+  'poimandres': poimandresTheme,
+  'red': redTheme,
+  'rose-pine': rosePineTheme,
+  'rose-pine-dawn': rosePineDawnTheme,
+  'rose-pine-moon': rosePineMoonTheme,
+  'slack-dark': slackDarkTheme,
+  'slack-ochin': slackOchinTheme,
+  'snazzy-light': snazzyLightTheme,
+  'solarized-dark': solarizedDarkTheme,
   'solarized-light': solarizedLightTheme,
+  'synthwave-84': synthwave84Theme,
   'tokyo-night': tokyoNightTheme,
+  'vesper': vesperTheme,
+  'vitesse-black': vitesseBlackTheme,
   'vitesse-dark': vitesseDarkTheme,
   'vitesse-light': vitesseLightTheme,
 };

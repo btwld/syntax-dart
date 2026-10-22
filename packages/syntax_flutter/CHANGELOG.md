@@ -1,3 +1,13 @@
+## Unreleased
+
+- Add shared-controller file, file-list, editor, conflict and streaming widgets.
+- Extend patch reviews with partial loading, annotations, selections, source
+  copying, hunk and individual-change actions, and application-controlled edits.
+- Add native IME editing, search, diagnostics, proposed edits, custom shortcuts
+  and retained drafts; virtualize read-only rows with measured scroll anchoring.
+- Add synchronized horizontal scrolling, background presentation and complete
+  workflow examples, including large files and browser workers.
+
 ## 0.1.0-dev
 
 - First release.

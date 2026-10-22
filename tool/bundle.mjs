@@ -1,47 +1,14 @@
 // What syntax bundles. Edit these lists, then run `npm run generate` and
 // `npm run golden` from this folder.
 
-export const LANGS = [
-  'css',
-  'dart',
-  'diff',
-  'go',
-  'html',
-  'javascript',
-  'json',
-  'jsonc',
-  'kotlin',
-  'markdown',
-  'python',
-  'rust',
-  'shellscript',
-  'sql',
-  'swift',
-  'typescript',
-  'xml',
-  'yaml',
-]
+import { grammars } from 'tm-grammars'
+import { themes } from 'tm-themes'
 
-export const THEMES = [
-  'catppuccin-latte',
-  'catppuccin-mocha',
-  'dark-plus',
-  'dracula',
-  'github-dark',
-  'github-light',
-  'light-plus',
-  'min-light',
-  'monokai',
-  'nord',
-  'one-dark-pro',
-  'solarized-light',
-  'tokyo-night',
-  'vitesse-dark',
-  'vitesse-light',
-]
+export const LANGS = grammars.map((entry) => entry.name)
+export const THEMES = themes.map((entry) => entry.name)
 
 /// Themes the golden tests compare colors against.
 export const GOLDEN_THEMES = ['github-dark', 'light-plus', 'one-dark-pro']
 
 export const camel = (name) =>
-  name.replace(/[-_](\w)/g, (_, c) => c.toUpperCase())
+  name.replace(/[-_](\w)/g, (_, c) => c.toUpperCase()).replace(/[^a-zA-Z0-9]/g, '').replace(/^(?=\d)/, 'language')

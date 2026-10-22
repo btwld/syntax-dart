@@ -6,6 +6,25 @@ import 'myers.dart';
 /// A half-open range of UTF-16 offsets within a line.
 typedef CharRange = ({int start, int end});
 
+/// Inline comparison policy, independent of the surrounding line diff.
+/// Granularity of bounded inline change highlighting.
+enum InlineDiffMode {
+  /// Compare individual word and punctuation tokens.
+  word,
+
+  /// Merge adjacent changed word regions.
+  mergedWords,
+
+  /// Highlight one region from the first to the last difference.
+  changedSpan,
+
+  /// Compare Unicode characters.
+  character,
+
+  /// Disable inline emphasis while keeping line changes.
+  none,
+}
+
 /// The changed words within edited lines, for highlighting what changed
 /// inside a line rather than only which lines changed.
 ///
@@ -22,7 +41,11 @@ final class WordChanges {
   List<CharRange> rangesFor(DiffLine line) => _ranges[line] ?? const [];
 
   /// Computes word changes for every hunk in [diff].
-  factory WordChanges.of(FileDiff diff) {
+  factory WordChanges.of(
+    FileDiff diff, {
+    InlineDiffMode mode = InlineDiffMode.mergedWords,
+    int maxLineLength = 10000,
+  }) {
     final ranges = Map<DiffLine, List<CharRange>>.identity();
     for (final hunk in diff.hunks) {
       final lines = hunk.lines;
@@ -42,7 +65,17 @@ final class WordChanges {
         for (var p = 0; p < pairs; p++) {
           final removed = lines[removedStart + p];
           final added = lines[addedStart + p];
-          final (oldRanges, newRanges) = _compare(removed.text, added.text);
+          if (mode == InlineDiffMode.none ||
+              (maxLineLength > 0 &&
+                  (removed.text.length > maxLineLength ||
+                      added.text.length > maxLineLength))) {
+            continue;
+          }
+          final (oldRanges, newRanges) = _compare(
+            removed.text,
+            added.text,
+            mode,
+          );
           if (oldRanges.isNotEmpty) ranges[removed] = oldRanges;
           if (newRanges.isNotEmpty) ranges[added] = newRanges;
         }
@@ -59,9 +92,16 @@ final RegExp _word = RegExp(r'[\p{L}\p{N}_]+|\s+|.', unicode: true);
 /// rewritten and gets no word ranges.
 const _minSimilarity = 0.5;
 
-(List<CharRange>, List<CharRange>) _compare(String a, String b) {
-  final aTokens = _word.allMatches(a).toList();
-  final bTokens = _word.allMatches(b).toList();
+(List<CharRange>, List<CharRange>) _compare(
+  String a,
+  String b,
+  InlineDiffMode mode,
+) {
+  final pattern = mode == InlineDiffMode.character
+      ? RegExp(r'[\s\S]', unicode: true)
+      : _word;
+  final aTokens = pattern.allMatches(a).toList();
+  final bTokens = pattern.allMatches(b).toList();
   final ids = <String, int>{};
   int id(Match m) => ids.putIfAbsent(m.group(0)!, () => ids.length);
   final edits = myersDiff(
@@ -90,7 +130,15 @@ const _minSimilarity = 0.5;
   if (longest == 0 || shared / longest < _minSimilarity) {
     return (const [], const []);
   }
-  return (_merge(oldChanged, a), _merge(newChanged, b));
+  List<CharRange> finish(List<CharRange> ranges, String text) {
+    if (ranges.isEmpty) return const [];
+    if (mode == InlineDiffMode.changedSpan) {
+      return [(start: ranges.first.start, end: ranges.last.end)];
+    }
+    return mode == InlineDiffMode.mergedWords ? _merge(ranges, text) : ranges;
+  }
+
+  return (finish(oldChanged, a), finish(newChanged, b));
 }
 
 final RegExp _space = RegExp(r'\s');

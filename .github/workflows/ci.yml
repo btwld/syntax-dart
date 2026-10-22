@@ -50,29 +50,41 @@ jobs:
         working-directory: packages/syntax_flutter/example
         run: flutter analyze --fatal-infos
 
-      # Includes the conformance suite, which compares every bundled grammar
-      # with Shiki's output recorded in test/fixtures/golden.
+      # Includes pinned tokenizer conformance fixtures and compilation checks
+      # across the complete bundled catalog.
       - name: Test syntax (VM)
         working-directory: packages/syntax
-        run: dart test
+        run: flutter pub run test
+
+      - name: Compile browser worker
+        run: dart tool/build_worker.dart
 
       # The web runs on the browser's RegExp engine, so run the tests that
       # don't read fixtures with dart:io there too.
       - name: Test syntax (Chrome)
         working-directory: packages/syntax
         run: >-
-          dart test -p chrome
+          flutter pub run test -p chrome
           test/translator_test.dart
           test/highlighter_test.dart
           test/document_test.dart
+          test/review_edit_test.dart
+          test/review_regression_test.dart
+          test/session_test.dart
+          test/presentation_test.dart
+          test/lifecycle_test.dart
+          test/browser_worker_test.dart
 
       - name: Test syntax_flutter
         working-directory: packages/syntax_flutter
         run: flutter test
 
+      - name: Build example worker asset
+        run: dart tool/build_worker.dart packages/syntax_flutter/example/web/highlight_worker.js
+
       - name: Build example for web
         working-directory: packages/syntax_flutter/example
-        run: flutter build web --release
+        run: flutter build web --release --dart-define=SYNTAX_WORKER=true
 
   # syntax_noir needs Dart 3.10 for noir, so it resolves on its own instead
   # of in the workspace.
@@ -93,7 +105,7 @@ jobs:
       - run: dart analyze --fatal-infos
       # Includes test/driver, which runs PatchView as a real noir app with
       # noir_driver and checks what it painted.
-      - run: dart test
+      - run: flutter pub run test
 
   # The oldest SDKs the pubspecs allow: Dart 3.9 and Flutter 3.35.
   minimum-sdk:
@@ -108,10 +120,24 @@ jobs:
       - run: flutter pub get
       - name: Test syntax
         working-directory: packages/syntax
-        run: dart test
+        run: flutter pub run test
       - name: Test syntax_flutter
         working-directory: packages/syntax_flutter
         run: flutter test
+
+  minimum-noir-sdk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.38.x
+          channel: stable
+          cache: true
+      - run: dart pub get
+        working-directory: packages/syntax_noir
+      - run: dart test
+        working-directory: packages/syntax_noir
 
   # The bundled grammars, themes and NOTICE are generated; regenerating
   # them must not change anything.
@@ -138,3 +164,5 @@ jobs:
         run: npm ci && npm run generate
       - name: Check for differences
         run: git diff --exit-code -- packages/syntax/lib packages/syntax/NOTICE
+      - name: Check local-only material is excluded
+        run: test -z "$(git ls-files references)"

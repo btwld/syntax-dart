@@ -10,6 +10,7 @@ const kotlinLanguage = Language(
   scopeName: 'source.kotlin',
   displayName: 'Kotlin',
   aliases: ['kt', 'kts'],
+  injectTo: [],
   grammar: <String, Object?>{
     'displayName': 'Kotlin',
     'fileTypes': ['kt', 'kts'],
@@ -398,5 +399,6 @@ const kotlinLanguage = Language(
       },
     },
     'scopeName': 'source.kotlin',
+    'aliases': ['kt', 'kts'],
   },
 );

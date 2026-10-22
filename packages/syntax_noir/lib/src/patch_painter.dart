@@ -21,6 +21,8 @@ final class PatchPainter {
     required this.files,
     required this.highlights,
     this.labels = const syntax.DiffLabels(),
+    this.showBackgrounds = true,
+    this.showChangeIndicators = true,
   }) : _colors = syntax.DiffColors.of(highlights.theme) {
     final background = theme.background;
     _addedLine = syntax.alphaBlend(_colors.insertedLine, background);
@@ -38,6 +40,12 @@ final class PatchPainter {
   /// The words shown in headers, notices and collapsed lines.
   final syntax.DiffLabels labels;
 
+  /// Whether changed lines receive a tinted background.
+  final bool showBackgrounds;
+
+  /// Whether gutters display addition and deletion markers.
+  final bool showChangeIndicators;
+
   final syntax.DiffColors _colors;
   late final int _addedLine;
   late final int _removedLine;
@@ -54,8 +62,10 @@ final class PatchPainter {
     syntax.DiffRow row, {
     required int width,
     bool selected = false,
+    int codeOffset = 0,
+    bool ellipsis = true,
   }) {
-    final out = _LineBuilder(width);
+    final out = _LineBuilder(width, ellipsis: ellipsis);
     final base = switch (row) {
       syntax.DiffFileHeaderRow() => _colors.fileHeader,
       syntax.DiffLineRow(:final line) => _lineBackground(line.kind),
@@ -90,10 +100,10 @@ final class PatchPainter {
         out.add('⋯ ${labels.showUnchangedLines(count)}', _muted(base));
       case syntax.DiffLineRow(:final file, :final line):
         _gutter(out, file, line, [line.oldNumber, line.newNumber]);
-        _code(out, file, line);
+        _code(out, file, line, codeOffset);
       case syntax.DiffPairRow(:final file, :final left, :final right):
         final half = (width - 2) ~/ 2;
-        _side(out, file, left, old: true, width: half);
+        _side(out, file, left, old: true, width: half, codeOffset: codeOffset);
         out.add(
           '│',
           TextStyle(
@@ -101,7 +111,14 @@ final class PatchPainter {
             backgroundColor: noirColor(theme.background),
           ),
         );
-        _side(out, file, right, old: false, width: width - 2 - half);
+        _side(
+          out,
+          file,
+          right,
+          old: false,
+          width: width - 2 - half,
+          codeOffset: codeOffset,
+        );
     }
     out.fill(TextStyle(backgroundColor: noirColor(base)));
     return out.build();
@@ -148,13 +165,14 @@ final class PatchPainter {
     syntax.DiffLine? line, {
     required bool old,
     required int width,
+    int codeOffset = 0,
   }) {
-    final side = _LineBuilder(width);
+    final side = _LineBuilder(width, ellipsis: out.ellipsis);
     if (line == null) {
       side.fill(TextStyle(backgroundColor: noirColor(_colors.emptySide)));
     } else {
       _gutter(side, file, line, [old ? line.oldNumber : line.newNumber]);
-      _code(side, file, line);
+      _code(side, file, line, codeOffset);
       side.fill(
         TextStyle(backgroundColor: noirColor(_lineBackground(line.kind))),
       );
@@ -184,10 +202,11 @@ final class PatchPainter {
       syntax.DiffLineKind.removed => ('−', _colors.removed),
       syntax.DiffLineKind.context => (' ', _colors.muted),
     };
-    out.add('$marker ', _bold(color, base));
+    out.add(showChangeIndicators ? '$marker ' : '  ', _bold(color, base));
   }
 
-  void _code(_LineBuilder out, int file, syntax.DiffLine line) {
+  void _code(_LineBuilder out, int file, syntax.DiffLine line, int codeOffset) {
+    var skipped = 0;
     final base = _lineBackground(line.kind);
     final word = switch (line.kind) {
       syntax.DiffLineKind.added => _addedWord,
@@ -204,9 +223,23 @@ final class PatchPainter {
             )
           : segment.style;
       final background = changed ? word : base;
+      final expanded = segment.text.replaceAll('\t', '    ');
+      final size = terminalStringWidth(expanded);
+      if (skipped + size <= codeOffset) {
+        skipped += size;
+        continue;
+      }
+      final skip = math.max(0, codeOffset - skipped);
+      final prefix = sliceByCells(expanded, skip);
+      final missing = skip - terminalStringWidth(prefix);
+      var visible = expanded.substring(prefix.length);
+      if (missing > 0 && visible.isNotEmpty) {
+        final map = TextIndexMap(visible);
+        visible = ' ${visible.substring(map.graphemeToUtf16(1))}';
+      }
+      skipped += size;
       out.add(
-        // Tabs have no fixed width in a terminal.
-        segment.text.replaceAll('\t', '    '),
+        visible,
         noirTextStyle(style, background: background).copyWith(
           backgroundColor: noirColor(
             style.background ?? background,
@@ -219,11 +252,13 @@ final class PatchPainter {
     if (line.noNewlineAtEnd) out.add(' ⊘', _muted(base));
   }
 
-  int _lineBackground(syntax.DiffLineKind kind) => switch (kind) {
-    syntax.DiffLineKind.added => _addedLine,
-    syntax.DiffLineKind.removed => _removedLine,
-    syntax.DiffLineKind.context => theme.background,
-  };
+  int _lineBackground(syntax.DiffLineKind kind) => !showBackgrounds
+      ? theme.background
+      : switch (kind) {
+          syntax.DiffLineKind.added => _addedLine,
+          syntax.DiffLineKind.removed => _removedLine,
+          syntax.DiffLineKind.context => theme.background,
+        };
 
   TextStyle _muted(int background) => TextStyle(
     color: noirColor(_colors.muted),
@@ -243,7 +278,9 @@ final RegExp _control = RegExp('[\\x00-\\x1F\\x7F-\\x9F]');
 /// Collects spans up to a fixed number of terminal cells. Text that doesn't
 /// fit is cut, and the last cell shows `…` instead.
 final class _LineBuilder {
-  _LineBuilder(this.width);
+  _LineBuilder(this.width, {this.ellipsis = true});
+
+  final bool ellipsis;
 
   final int width;
   final List<TextSpan> _spans = [];
@@ -272,7 +309,9 @@ final class _LineBuilder {
       _used += terminalStringWidth(fits);
     }
     // A wide character that doesn't fit cuts the line too.
-    if (fits.length < safe.length) _cutWith(style, changed: changed);
+    if (ellipsis && fits.length < safe.length) {
+      _cutWith(style, changed: changed);
+    }
   }
 
   /// Ends the line with `…` in its last cell, taking the cell back from the

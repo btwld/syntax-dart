@@ -10,6 +10,7 @@ const xmlLanguage = Language(
   scopeName: 'text.xml',
   displayName: 'XML',
   aliases: ['svg'],
+  injectTo: [],
   grammar: <String, Object?>{
     'displayName': 'XML',
     'name': 'xml',
@@ -252,5 +253,6 @@ const xmlLanguage = Language(
       },
     },
     'scopeName': 'text.xml',
+    'embeddedLangs': ['java'],
   },
 );

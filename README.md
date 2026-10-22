@@ -52,7 +52,8 @@ grammar.json ──► RuleFactory ──► Grammar.tokenizeLine(line, state) �
 
    Dart's `RegExpMatch` has no group offsets, so capture positions are
    recovered with a lookbehind probe. All of a rule's patterns are
-   searched with one alternation regex. The engine sits behind a
+   searched with one alternation regex when the runtime supports it; individual
+   pattern scanning preserves precedence on compatibility paths. The engine sits behind a
    `RegexEngine` interface, so an exact Oniguruma engine can be plugged in.
 3. **Themes:** a port of vscode-textmate's theme trie. It handles dotted
    prefix matching, parent-scope selectors and specificity.
@@ -62,16 +63,15 @@ grammar.json ──► RuleFactory ──► Grammar.tokenizeLine(line, state) �
 Shiki, with its Oniguruma WASM engine, is the oracle.
 
 - **Bundled grammars:** `packages/syntax/test/conformance_test.dart` checks
-  18 bundled grammars on 21 samples. Every token's scopes match Shiki
+  32 bundled grammars on 37 samples. Every token's scopes match Shiki
   exactly, as does every character's color and font style under three
-  themes: 84 of 84 checks pass.
+  themes: 148 of 148 checks pass.
 - **All of Shiki's grammars:** a stress run over all 238 grammars in Shiki
   that have samples matches 237 exactly. That is 9,445 of 9,447 lines.
   The remaining one is Pug. There, Shiki only applies Vue injections when
   Vue loads first, and this package applies them regardless of load order.
-- **Translator:** it compiles 34,684 of the 34,686 patterns across all 260
-  of Shiki's grammars. The two failures are C# patterns that use
-  Oniguruma's absent operator, which ECMAScript cannot express.
+- **Translator:** every pattern in the 260 pinned grammar libraries compiles,
+  including bounded translations of the C# absent expressions.
 
 Shiki's own `codeToTokensBase` skips blank lines without advancing the
 grammar state. VS Code does advance it, so in Shiki a `---` after a blank
@@ -125,6 +125,23 @@ The long-line numbers come from:
 dart run packages/syntax/benchmark/long_line.dart
 ```
 
+## File and review workflows
+
+The three packages now share document revisions, editing commands, selections,
+annotations, diagnostics, proposed edits, partial-patch loading and conflict
+resolution. Both renderer examples include persistent drafts, streaming,
+100,000-line files and a 1,000-file review. File collections are flat.
+
+- [Public API migration](docs/migration.md)
+- [Capabilities and behavioral checks](docs/capabilities.md)
+- [Background execution and browser-worker assets](docs/execution.md)
+- [Architecture](docs/decisions/0002-renderer-neutral-core.md)
+
+The opt-in catalogs contain 242 top-level languages with their embedded
+and injection grammars, 65 third-party themes, and lazy loaders. Individual
+imports stay available. Ten project-owned light/dark palette variants are
+created with `createSyntaxTheme`.
+
 ## Development
 
 ```bash
@@ -135,7 +152,7 @@ The workspace includes Flutter packages, so it resolves with the Flutter
 SDK.
 
 ```bash
-cd packages/syntax && dart test
+cd packages/syntax && flutter pub run test
 ```
 
 ```bash
@@ -165,12 +182,8 @@ Shiki grammar:
 
 ## Not done yet
 
-- **Publishing:** neither package is on pub.dev yet. Drop `publish_to:
-  none` and publish `syntax` first, since `syntax_flutter` depends on it.
-- **Background tokenizing:** an isolate helper for very large documents.
-  Today tokenizing is synchronous.
-- **Optional Oniguruma engine:** a `RegexEngine` adapter over
-  `oniguruma_dart`, for grammars that need exact Oniguruma semantics.
+- **Publishing:** the packages are not on pub.dev yet. Drop `publish_to:
+  none` and publish `syntax` first, since both renderers depend on it.
 
 ## License
 

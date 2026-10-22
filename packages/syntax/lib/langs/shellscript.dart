@@ -10,6 +10,7 @@ const shellscriptLanguage = Language(
   scopeName: 'source.shell',
   displayName: 'Shell',
   aliases: ['bash', 'sh', 'shell', 'zsh'],
+  injectTo: [],
   grammar: <String, Object?>{
     'displayName': 'Shell',
     'name': 'shellscript',
@@ -1680,5 +1681,6 @@ const shellscriptLanguage = Language(
       },
     },
     'scopeName': 'source.shell',
+    'aliases': ['bash', 'sh', 'shell', 'zsh'],
   },
 );

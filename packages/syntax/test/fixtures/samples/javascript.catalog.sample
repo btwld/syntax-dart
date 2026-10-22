@@ -1,0 +1,3 @@
+const html = /* html */ `<section>${name}</section>`;
+const sql = /* sql */ `SELECT name FROM users WHERE id = ${id}`;
+const re = /(?<name>[a-z]+)\d*/gu;

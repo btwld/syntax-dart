@@ -15,3 +15,11 @@ tool/node_modules/
 
 # Private planning notes
 docs/internal/
+
+# Local source material is never part of this repository.
+/references/
+
+# Compiled worker test and example assets are rebuilt from Dart.
+/packages/syntax/test/fixtures/highlight_worker.js*
+/packages/syntax/test/fixtures/failing_worker.js*
+/packages/syntax_flutter/example/web/highlight_worker.js*

@@ -1,0 +1,5 @@
+defmodule Greeting do
+  @prefix "Hello"
+  def greet(name), do: "#{@prefix} #{name}"
+end
+IO.puts(Greeting.greet("Ada"))

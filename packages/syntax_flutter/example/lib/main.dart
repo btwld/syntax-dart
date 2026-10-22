@@ -5,6 +5,7 @@ import 'package:syntax/themes/all.dart';
 import 'package:syntax_flutter/syntax_flutter.dart';
 
 import 'samples.dart';
+import 'workflows.dart';
 
 void main() => runApp(const SyntaxDemo());
 
@@ -106,6 +107,21 @@ class _SyntaxDemoState extends State<SyntaxDemo> {
       home: HighlighterScope(
         highlighter: _highlighter,
         child: Scaffold(
+          appBar: AppBar(
+            title: const Text('Syntax'),
+            actions: [
+              Builder(
+                builder: (context) => TextButton(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const WorkflowsDemo(),
+                    ),
+                  ),
+                  child: const Text('File and review workflows'),
+                ),
+              ),
+            ],
+          ),
           body: SafeArea(
             child: Padding(
               padding: const EdgeInsets.all(20),

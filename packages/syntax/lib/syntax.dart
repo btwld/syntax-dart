@@ -15,6 +15,18 @@
 /// runtime with [Language.fromJson] and [SyntaxTheme.fromJson].
 library;
 
+export 'src/edit/text_document.dart';
+export 'src/edit/editor.dart';
+export 'src/diff/review.dart';
+export 'src/diff/patch_controller.dart';
+export 'src/highlight_session.dart';
+export 'src/theme/catalog.dart';
+export 'src/execution/executor.dart';
+export 'src/execution/native_stub.dart'
+    if (dart.library.io) 'src/execution/native_executor.dart';
+export 'src/execution/browser_stub.dart'
+    if (dart.library.js_interop) 'src/execution/browser_executor.dart';
+
 export 'src/grammar/grammar.dart'
     show
         Grammar,
@@ -51,3 +63,7 @@ export 'src/theme/theme.dart'
         alphaBlend,
         colorToHex,
         parseHexColor;
+export 'src/edit/file_controller.dart';
+export 'src/edit/stream_controller.dart';
+export 'src/presentation.dart';
+export 'src/execution/presentation_controller.dart';

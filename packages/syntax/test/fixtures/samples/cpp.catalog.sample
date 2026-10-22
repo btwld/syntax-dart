@@ -1,0 +1,5 @@
+#include <vector>
+namespace demo {
+template <typename T> class Box { public: T value; };
+auto label = R"tag(hello \" world)tag";
+}

@@ -10,6 +10,7 @@ const typescriptLanguage = Language(
   scopeName: 'source.ts',
   displayName: 'TypeScript',
   aliases: ['ts', 'cts', 'mts'],
+  injectTo: [],
   grammar: <String, Object?>{
     'displayName': 'TypeScript',
     'name': 'typescript',
@@ -3888,5 +3889,6 @@ const typescriptLanguage = Language(
       },
     },
     'scopeName': 'source.ts',
+    'aliases': ['ts', 'cts', 'mts'],
   },
 );

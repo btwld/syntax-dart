@@ -1,0 +1,5 @@
+package demo;
+import java.util.List;
+public record Item(String label) {
+  public String greeting() { return "Hello " + label; }
+}

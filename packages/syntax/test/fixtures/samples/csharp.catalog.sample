@@ -1,0 +1,5 @@
+using System;
+namespace Demo;
+public record Person(string Name);
+var person = new Person("Ada");
+Console.WriteLine($"Hello {person.Name}");

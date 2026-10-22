@@ -10,6 +10,7 @@ const jsonLanguage = Language(
   scopeName: 'source.json',
   displayName: 'JSON',
   aliases: [],
+  injectTo: [],
   grammar: <String, Object?>{
     'displayName': 'JSON',
     'name': 'json',

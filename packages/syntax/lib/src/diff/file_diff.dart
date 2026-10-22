@@ -22,6 +22,7 @@ final class DiffLine {
     this.oldNumber,
     this.newNumber,
     this.noNewlineAtEnd = false,
+    this.sourceLineEnding = '\n',
   });
 
   /// Whether the line was kept, added or removed.
@@ -40,6 +41,10 @@ final class DiffLine {
   /// marked by `\ No newline at end of file`.
   final bool noNewlineAtEnd;
 
+  /// Original source terminator, independent of patch transport line endings.
+  /// [noNewlineAtEnd] takes precedence for an unterminated final source line.
+  final String sourceLineEnding;
+
   @override
   bool operator ==(Object other) =>
       other is DiffLine &&
@@ -47,11 +52,18 @@ final class DiffLine {
       other.text == text &&
       other.oldNumber == oldNumber &&
       other.newNumber == newNumber &&
+      other.sourceLineEnding == sourceLineEnding &&
       other.noNewlineAtEnd == noNewlineAtEnd;
 
   @override
-  int get hashCode =>
-      Object.hash(kind, text, oldNumber, newNumber, noNewlineAtEnd);
+  int get hashCode => Object.hash(
+    kind,
+    text,
+    oldNumber,
+    newNumber,
+    noNewlineAtEnd,
+    sourceLineEnding,
+  );
 
   @override
   String toString() =>
@@ -136,7 +148,91 @@ final class FileDiff {
     this.isBinary = false,
     this.oldLines,
     this.newLines,
+    this.identity,
+    this.revision = 0,
+    this.language,
+    this.oldText,
+    this.newText,
+    this.oldObjectId,
+    this.newObjectId,
+    this.oldMode,
+    this.newMode,
+    this.patchLineEnding = '\n',
   });
+
+  /// Stable caller-supplied identity; defaults to the pair of paths.
+  final String? identity;
+
+  /// Stable key for retained UI state.
+  String get id => identity ?? '${oldPath ?? ''}\u0000${newPath ?? ''}';
+
+  /// Content revision for asynchronous operations.
+  final int revision;
+
+  /// Explicit language override.
+  final String? language;
+
+  /// Complete source texts, including their original line endings.
+  final String? oldText;
+
+  /// Complete new-side source, preserving terminators, or null for a partial patch.
+  final String? newText;
+
+  /// Object IDs and modes recorded in Git patch headers.
+  final String? oldObjectId;
+
+  /// New Git object identifier when present in the patch header.
+  final String? newObjectId;
+
+  /// Original Git file mode when supplied by the patch.
+  final String? oldMode;
+
+  /// Updated Git file mode when supplied by the patch.
+  final String? newMode;
+
+  /// Transport line ending used by the original patch.
+  final String patchLineEnding;
+
+  /// Whether unchanged content is unavailable.
+  bool get isPartial => oldText == null || newText == null;
+
+  /// Replaces computed data while preserving source metadata and identity.
+  /// Changing a known full source invalidates that side's Git object ID.
+  FileDiff copyWith({
+    List<DiffHunk>? hunks,
+    List<String>? oldLines,
+    List<String>? newLines,
+    String? oldText,
+    String? newText,
+    int? revision,
+    String? patchLineEnding,
+    String? language,
+    String? identity,
+  }) => FileDiff(
+    oldPath: oldPath,
+    newPath: newPath,
+    kind: kind,
+    hunks: hunks ?? this.hunks,
+    isBinary: isBinary,
+    oldLines: oldLines ?? this.oldLines,
+    newLines: newLines ?? this.newLines,
+    oldText: oldText ?? this.oldText,
+    newText: newText ?? this.newText,
+    identity: identity ?? this.identity,
+    revision: revision ?? this.revision,
+    language: language ?? this.language,
+    oldObjectId:
+        oldText != null && this.oldText != null && oldText != this.oldText
+        ? null
+        : oldObjectId,
+    newObjectId:
+        newText != null && this.newText != null && newText != this.newText
+        ? null
+        : newObjectId,
+    oldMode: oldMode,
+    newMode: newMode,
+    patchLineEnding: patchLineEnding ?? this.patchLineEnding,
+  );
 
   /// Path before the change, or `null` for an added file.
   final String? oldPath;

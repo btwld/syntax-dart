@@ -302,7 +302,7 @@ void main() {
       throwsA(isA<UnsupportedPatternException>()),
     );
     expect(
-      () => translateOnigPattern(r'(?~abc)'),
+      () => translateOnigPattern(r'(?~|abc)'),
       throwsA(isA<UnsupportedPatternException>()),
     );
     // Out of the Unicode range: rejected instead of throwing RangeError.

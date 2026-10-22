@@ -8,7 +8,17 @@ const yamlLanguage = Language(
   name: 'yaml',
   scopeName: 'source.yaml',
   displayName: 'YAML',
-  aliases: ['yml'],
+  aliases: [
+    'yml',
+    'yaml',
+    'rviz',
+    'reek',
+    'clang-format',
+    'yaml-tmlanguage',
+    'syntax',
+    'sublime-syntax',
+  ],
+  injectTo: [],
   grammar: <String, Object?>{
     'displayName': 'YAML',
     'fileTypes': [
@@ -436,5 +446,6 @@ const yamlLanguage = Language(
       },
     },
     'scopeName': 'source.yaml',
+    'aliases': ['yml'],
   },
 );

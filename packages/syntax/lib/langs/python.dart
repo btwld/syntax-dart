@@ -10,6 +10,7 @@ const pythonLanguage = Language(
   scopeName: 'source.python',
   displayName: 'Python',
   aliases: ['py'],
+  injectTo: [],
   grammar: <String, Object?>{
     'displayName': 'Python',
     'name': 'python',
@@ -2760,5 +2761,6 @@ const pythonLanguage = Language(
       },
     },
     'scopeName': 'source.python',
+    'aliases': ['py'],
   },
 );

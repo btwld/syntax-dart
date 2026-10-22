@@ -1,0 +1,4 @@
+flowchart LR
+  A[Input] --> B{Valid?}
+  B -->|Yes| C[Output]
+  B -->|No| A

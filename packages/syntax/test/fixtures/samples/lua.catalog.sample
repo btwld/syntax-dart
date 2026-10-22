@@ -1,0 +1,6 @@
+local message = [[a multiline
+string]]
+-- comment
+function greet(name)
+  return message .. name
+end

@@ -54,21 +54,22 @@ in one call.
 
 ### Bundled grammars and themes
 
-Each grammar and theme is its own library, so unused ones are tree-shaken:
+The catalog includes 242 top-level languages and their embedded/injection
+grammars, plus 65 third-party themes from pinned sources. Each grammar and
+theme remains independently importable so unused entries can be tree-shaken.
+Hyphens in catalog IDs become underscores in Dart import filenames.
 
-- `package:syntax/langs/<name>.dart`. The bundled languages are:
-  - css, dart, diff, go, html, javascript, json, jsonc, kotlin, markdown,
-    python, rust, shellscript, sql, swift, typescript, xml and yaml.
-  - Markdown highlights fenced code blocks for any of these languages
-    that you register.
-- `package:syntax/themes/<name>.dart`. The bundled themes are:
-  - github-dark and github-light;
-  - dark-plus and light-plus;
-  - one-dark-pro, dracula, nord, monokai and tokyo-night;
-  - catppuccin (latte and mocha) and vitesse (dark and light);
-  - min-light and solarized-light.
-- `package:syntax/langs/all.dart` and `package:syntax/themes/all.dart` contain
-  everything.
+- `package:syntax/langs/all.dart` and `package:syntax/themes/all.dart` opt into
+  the complete eager catalogs.
+- `package:syntax/langs/catalog.dart` exposes deferred language loaders and
+  `createBundledLanguageRegistry`, which loads dependency closures and aliases.
+- `package:syntax/themes/catalog.dart` exposes deferred theme loaders and
+  `bundledThemeCollection` metadata for filtering, sorting and lazy selection.
+- `createSyntaxTheme` supplies ten project-owned light/dark palette variants.
+
+See [migration](../../docs/migration.md) for shared documents, editing,
+streaming, themes and review controllers, and [execution](../../docs/execution.md)
+for native isolates, cooperative scheduling and browser workers.
 
 ### Your own grammars and themes
 

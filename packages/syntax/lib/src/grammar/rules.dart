@@ -6,6 +6,7 @@
 // Raw grammar JSON is compiled lazily into numbered rules. Scanners are
 // built per rule the first time the rule is on top of the stack.
 
+import 'raw_map.dart';
 import '../regex/engine.dart';
 
 /// Pseudo rule id the scanner reports when a rule's `end` pattern matched.
@@ -345,8 +346,4 @@ final class RuleFactory {
   }
 }
 
-Map<String, Object?> _asMap(Object? value) => value is Map<String, Object?>
-    ? value
-    : value is Map
-    ? value.cast<String, Object?>()
-    : const {};
+Map<String, Object?> _asMap(Object? value) => asGrammarMap(value);

@@ -10,9 +10,9 @@ import 'word_diff.dart';
 /// Syntax colors for both sides of a [FileDiff].
 ///
 /// Removed lines are highlighted as part of the old file and the other
-/// lines as part of the new one. With the full texts, both files are
-/// tokenized from the top when the diff is highlighted, so highlighting is
-/// exact and costs time in proportion to the files, not the hunks. A
+/// lines as part of the new one. With the full texts, grammar state is
+/// advanced to each requested line. Checkpoints and a bounded token cache
+/// avoid constructing offscreen presentation data. A
 /// parsed patch only has its hunks, so each hunk is tokenized from a fresh
 /// state, which is what GitHub does too. A construct that opens before a
 /// hunk, such as a block comment, may be colored wrongly inside it.
@@ -29,60 +29,47 @@ final class HighlightedDiff {
   }) {
     final grammar = _grammarFor(diff, highlighter, language);
 
-    final old = <int, List<ThemedToken>>{};
-    final newer = <int, List<ThemedToken>>{};
-    void tokenize(
-      Iterable<(int, String)> numbered,
-      Map<int, List<ThemedToken>> out,
-    ) {
-      StateStack? state;
-      for (final (number, text) in numbered) {
-        if (grammar == null) {
-          out[number] = [
-            ThemedToken(
-              text,
-              0,
-              TokenStyle(foreground: theme.foreground),
-              _plainScopes,
-            ),
-          ];
-          continue;
-        }
-        final tokens = grammar.tokenizeLine(text, state);
-        state = tokens.endState;
-        out[number] = themeTokens(text, tokens.tokens, theme);
-      }
-    }
-
-    final oldLines = diff.oldLines;
-    final newLines = diff.newLines;
-    if (oldLines != null && newLines != null) {
-      tokenize([
-        for (var i = 0; i < oldLines.length; i++) (i + 1, oldLines[i]),
-      ], old);
-      tokenize([
-        for (var i = 0; i < newLines.length; i++) (i + 1, newLines[i]),
-      ], newer);
-    } else {
-      for (final hunk in diff.hunks) {
-        tokenize([
-          for (final l in hunk.lines)
-            if (l.oldNumber != null && l.kind != DiffLineKind.added)
-              (l.oldNumber!, l.text),
-        ], old);
-        tokenize([
-          for (final l in hunk.lines)
-            if (l.newNumber != null && l.kind != DiffLineKind.removed)
-              (l.newNumber!, l.text),
-        ], newer);
-      }
-    }
+    _DiffLines side(bool old) => _DiffLines(
+      grammar,
+      theme,
+      full: old ? diff.oldLines : diff.newLines,
+      hunks: [
+        for (final hunk in diff.hunks)
+          [
+            for (final line in hunk.lines)
+              if ((old ? line.oldNumber : line.newNumber) case final number?)
+                (number, line.text),
+          ],
+      ],
+    );
     return HighlightedDiff._(
-      old,
-      newer,
+      side(true),
+      side(false),
       TokenStyle(foreground: theme.foreground),
     );
   }
+
+  /// Changes colors while retaining grammar checkpoints and raw token scopes.
+  void setTheme(SyntaxTheme theme) {
+    _plain = TokenStyle(foreground: theme.foreground);
+    for (final side in [_old, _new]) {
+      side.theme = theme;
+      for (final entry in side._cache.entries.toList()) {
+        side._cache[entry.key] = [
+          for (final token in entry.value)
+            ThemedToken(
+              token.text,
+              token.offset,
+              theme.styleFor(token.scopes),
+              token.scopes,
+            ),
+        ];
+      }
+    }
+  }
+
+  /// Number of retained styled lines across both sides, bounded at 1024.
+  int get cachedLineCount => _old._cache.length + _new._cache.length;
 
   /// The grammar for [diff], or `null` for plain text.
   static Grammar? _grammarFor(
@@ -90,17 +77,16 @@ final class HighlightedDiff {
     Highlighter highlighter,
     String? language,
   ) {
-    final lang = language != null
-        ? highlighter.language(language)
+    final effectiveLanguage = language ?? diff.language;
+    final lang = effectiveLanguage != null
+        ? highlighter.language(effectiveLanguage)
         : highlighter.languageForPath(diff.path);
     return lang == null ? null : highlighter.grammar(lang.scopeName);
   }
 
-  static final ScopeStack _plainScopes = ScopeStack.root('text.plain');
-
-  final Map<int, List<ThemedToken>> _old;
-  final Map<int, List<ThemedToken>> _new;
-  final TokenStyle _plain;
+  final _DiffLines _old;
+  final _DiffLines _new;
+  TokenStyle _plain;
 
   /// Tokens for a line of the diff: removed lines from the old file, added
   /// and context lines from the new one.
@@ -155,6 +141,92 @@ final class HighlightedDiff {
   }
 }
 
+// Retain grammar checkpoints and a bounded set of painted lines. Reaching a
+// distant viewport tokenizes intervening lines without constructing their spans.
+final class _DiffLines {
+  _DiffLines(this.grammar, this.theme, {this.full, required this.hunks});
+  final Grammar? grammar;
+  SyntaxTheme theme;
+  final List<String>? full;
+  final List<List<(int, String)>> hunks;
+  final Map<int, StateStack?> _states = {1: null};
+  final Map<int, List<ThemedToken>> _cache = {};
+  static final _plain = ScopeStack.root('text.plain');
+
+  List<ThemedToken>? operator [](int? number) {
+    if (number == null || number < 1) return null;
+    final cached = _cache.remove(number);
+    if (cached != null) {
+      _cache[number] = cached;
+      return cached;
+    }
+    final lines = full;
+    String text;
+    StateStack? state;
+    if (lines != null) {
+      if (number > lines.length) return null;
+      var start = 1;
+      for (final key in _states.keys) {
+        if (key <= number && key > start) start = key;
+      }
+      state = _states[start];
+      for (var n = start; n < number; n++) {
+        state = grammar?.tokenizeLine(lines[n - 1], state).endState;
+        if (n % 128 == 0) _states[n + 1] = state;
+      }
+      text = lines[number - 1];
+    } else {
+      List<(int, String)>? found;
+      for (final hunk in hunks) {
+        if (hunk.isNotEmpty &&
+            hunk.first.$1 <= number &&
+            hunk.last.$1 >= number) {
+          found = hunk;
+          break;
+        }
+      }
+      if (found == null) return null;
+      text = '';
+      for (final (n, source) in found) {
+        if (n == number) {
+          text = source;
+          break;
+        }
+        state = grammar?.tokenizeLine(source, state).endState;
+      }
+    }
+    final result = grammar?.tokenizeLine(text, state);
+    final tokens = result == null
+        ? [
+            ThemedToken(
+              text,
+              0,
+              TokenStyle(foreground: theme.foreground),
+              _plain,
+            ),
+          ]
+        : [
+            for (final token in result.tokens)
+              ThemedToken(
+                text.substring(token.start, token.end),
+                token.start,
+                theme.styleFor(token.scopes),
+                token.scopes,
+              ),
+          ];
+    if (lines != null && result != null) {
+      // One moving checkpoint makes sequential access linear even between
+      // persistent checkpoints. Bound these temporary states with the cache.
+      _states[number + 1] = result.endState;
+      _states.removeWhere(
+        (key, _) => key != 1 && (key - 1) % 128 != 0 && key != number + 1,
+      );
+    }
+    if (_cache.length >= 512) _cache.remove(_cache.keys.first);
+    return _cache[number] = tokens;
+  }
+}
+
 /// The highlighting and word changes a diff view needs per file, computed
 /// the first time a file is asked for.
 ///
@@ -166,21 +238,40 @@ final class DiffHighlightCache {
   /// or the language of each file's path.
   DiffHighlightCache({
     required this.highlighter,
-    required this.theme,
+    required SyntaxTheme theme,
     this.language,
-  });
+    this.inlineDiffMode = InlineDiffMode.mergedWords,
+    this.capacity = 32,
+  }) : _theme = theme;
 
   /// Provides the grammars.
   final Highlighter highlighter;
 
   /// Provides the colors.
-  final SyntaxTheme theme;
+  SyntaxTheme get theme => _theme;
+  SyntaxTheme _theme;
+  set theme(SyntaxTheme value) {
+    if (identical(value, _theme)) return;
+    _theme = value;
+    for (final entry in _highlights.values) {
+      entry.$2.setTheme(value);
+    }
+  }
 
   /// The language of every file, or `null` to guess from each path.
   final String? language;
 
+  /// Inline comparison used by all consumers of this cache.
+  final InlineDiffMode inlineDiffMode;
+
+  /// Maximum retained file results.
+  final int capacity;
+
   final Map<FileDiff, (Grammar?, HighlightedDiff)> _highlights = Map.identity();
   final Map<FileDiff, WordChanges> _words = Map.identity();
+
+  /// Number of retained file presentations, bounded by capacity.
+  int get cachedFileCount => _highlights.length;
 
   /// [file]'s highlighting.
   HighlightedDiff highlighted(FileDiff file) {
@@ -197,12 +288,30 @@ final class DiffHighlightCache {
       theme: theme,
       language: language,
     );
+    if (capacity < 1) return highlighted;
+    while (_highlights.length >= capacity) {
+      final oldest = _highlights.keys.first;
+      _highlights.remove(oldest);
+      _words.remove(oldest);
+    }
     _highlights[file] = (grammar, highlighted);
     return highlighted;
   }
 
   /// [file]'s changed words.
-  WordChanges words(FileDiff file) => _words[file] ??= WordChanges.of(file);
+  WordChanges words(FileDiff file) {
+    final cached = _words.remove(file);
+    if (cached != null) {
+      _words[file] = cached;
+      return cached;
+    }
+    final result = WordChanges.of(file, mode: inlineDiffMode);
+    if (capacity > 0) {
+      if (_words.length >= capacity) _words.remove(_words.keys.first);
+      _words[file] = result;
+    }
+    return result;
+  }
 
   /// [line] of [file] as styled segments, with its changed words marked.
   List<DiffSegment> segmentsFor(FileDiff file, DiffLine line) =>

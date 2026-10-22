@@ -9,6 +9,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { grammars } from 'tm-grammars'
+import { bundledLanguages as loaders } from 'shiki'
 import { themes } from 'tm-themes'
 import { LANGS, THEMES, camel } from './bundle.mjs'
 
@@ -59,33 +60,47 @@ const header = (source, license) =>
 // Highlighter.languageForPath finds them.
 const EXTRA_ALIASES = { diff: ['patch'], html: ['htm'], xml: ['svg'] }
 
-function writeLangs() {
+async function writeLangs() {
+  const registrations = new Map()
+  const dependencies = new Map()
+  const metadata = new Map()
+  for (const name of LANGS) {
+    const meta = grammars.find((g) => g.name === name)
+    const values = (await loaders[name]()).default
+    dependencies.set(name, [...new Set(values.map((v) => v.name).filter((n) => n !== name))])
+    for (const value of values) {
+      registrations.set(value.name, value)
+      if (!metadata.has(value.name) || value.name === name) metadata.set(value.name, meta)
+    }
+  }
   const dir = path.join(pkg, 'lib', 'langs')
   fs.rmSync(dir, { recursive: true, force: true })
   fs.mkdirSync(dir, { recursive: true })
   const exports = []
-  for (const name of LANGS) {
-    const meta = grammars.find((g) => g.name === name)
+  for (const [name, registration] of registrations) {
+    const meta = metadata.get(name)
     if (!meta) throw new Error(`Unknown grammar ${name}`)
-    const grammar = readJson('tm-grammars', 'grammars', `${name}.json`)
+    const grammar = registration
     const id = `${camel(name)}Language`
-    const file = `${name}.dart`
+    const file = `${name.replace(/-/g, '_')}.dart`
     fs.writeFileSync(
       path.join(dir, file),
-      header(meta.source, meta.license) +
+      header(meta.source ?? 'https://github.com/shikijs/shiki', meta.license) +
         `import 'package:syntax/syntax.dart' show Language;\n\n` +
         `/// ${meta.displayName} (\`${meta.scopeName}\`).\n` +
         `const ${id} = Language(\n` +
         `  name: ${dartString(name)},\n` +
-        `  scopeName: ${dartString(meta.scopeName)},\n` +
+        `  scopeName: ${dartString(registration.scopeName)},\n` +
         `  displayName: ${dartString(meta.displayName)},\n` +
-        `  aliases: ${dart([...new Set([...(meta.aliases ?? []), ...(EXTRA_ALIASES[name] ?? [])])], '  ')},\n` +
+        `  aliases: ${dart([...new Set([...(registration.aliases ?? []), ...(registration.fileTypes ?? []), ...(EXTRA_ALIASES[name] ?? [])])], '  ')},\n` +
+        `  injectTo: ${dart(registration.injectTo ?? [])},\n` +
         `  grammar: <String, Object?>${dart(grammar, '  ')},\n` +
         `);\n`,
     )
-    exports.push({ file, id })
+    exports.push({ file, id, aliases: [...new Set([...(registration.aliases ?? []), ...(registration.fileTypes ?? []), ...(EXTRA_ALIASES[name] ?? [])])] })
   }
   writeIndex(dir, 'Language', 'bundledLanguages', exports)
+  writeLazyCatalog(dir, exports, dependencies, 'Language')
 }
 
 function writeThemes() {
@@ -103,7 +118,7 @@ function writeThemes() {
     const file = `${name.replace(/-/g, '_')}.dart`
     fs.writeFileSync(
       path.join(dir, file),
-      header(meta.source, meta.license) +
+      header(meta.source ?? 'https://github.com/shikijs/shiki', meta.license) +
         `import 'package:syntax/syntax.dart' show SyntaxTheme;\n\n` +
         `/// ${meta.displayName}.\n` +
         `const ${id} = SyntaxTheme(\n` +
@@ -111,9 +126,45 @@ function writeThemes() {
         `  json: <String, Object?>${dart(json, '  ')},\n` +
         `);\n`,
     )
-    exports.push({ file, id })
+    exports.push({ file, id, displayName: meta.displayName, isDark: json.type === 'dark', collection: name.split('-')[0] })
   }
   writeIndex(dir, 'SyntaxTheme', 'bundledThemes', exports)
+  writeLazyCatalog(dir, exports, new Map(), 'SyntaxTheme')
+}
+
+function writeLazyCatalog(dir, entries, dependencies, type) {
+  const imports = entries.map(({file}, i) => `import '${file}' deferred as entry${i};`)
+  const rows = entries.map(({file, id}, i) => {
+    const name = file.replace('.dart', '').replace(/_/g, '-')
+    return `  '${name}': () async { await entry${i}.loadLibrary(); return entry${i}.${id}; },`
+  })
+  const names = type === 'Language' ? 'language' : 'theme'
+  const body = [
+    '// Generated catalog. Individual libraries remain independently importable.',
+    `import 'package:syntax/syntax.dart';`, ...imports, '',
+    `/// Lazy loaders for the complete bundled ${names} catalog.`,
+    `final bundled${type}Loaders = <String, Future<${type}> Function()>{`, ...rows, '};',
+  ]
+  if (type === 'Language') {
+    body.push('/// Attaches all bundled loaders and their embedded-language dependencies.',
+      'LanguageRegistry createBundledLanguageRegistry(Highlighter highlighter) {',
+      '  final registry = LanguageRegistry(highlighter);')
+    for (const {file, aliases} of entries) {
+      const name = file.replace('.dart', '').replace(/_/g, '-')
+      body.push(`  registry.register('${name}', bundledLanguageLoaders['${name}']!, dependencies: ${dart(dependencies.get(name) ?? [])}, aliases: ${dart(aliases ?? [])});`)
+    }
+    body.push('  return registry;', '}')
+  }
+  if (type === 'SyntaxTheme') {
+    body.push('/// Complete theme metadata without eagerly loading theme definitions.',
+      'final bundledThemeCollection = ThemeCollection([');
+    for (const {file, displayName, isDark, collection} of entries) {
+      const name = file.replace('.dart', '').replace(/_/g, '-');
+      body.push(`  ThemeDescriptor(name: '${name}', displayName: ${dartString(displayName)}, collection: '${collection}', isDark: ${isDark}, load: bundledSyntaxThemeLoaders['${name}']!),`);
+    }
+    body.push(']);');
+  }
+  fs.writeFileSync(path.join(dir, 'catalog.dart'), body.join('\n') + '\n')
 }
 
 function writeIndex(dir, type, listName, exports) {
@@ -143,6 +194,7 @@ function writeIndex(dir, type, listName, exports) {
  */
 const EXTRA_NOTICES = {
   'tm-grammars': {
+    ...JSON.parse(fs.readFileSync(new URL('./extra-notices.json', import.meta.url), 'utf8')),
     // textmate/yaml.tmbundle has no LICENSE file; its README grants this.
     yaml: [
       'Files:   yaml.json',
@@ -191,14 +243,17 @@ function writeNotice() {
     `themes from tm-themes@${version('tm-themes')} (https://github.com/shikijs/textmate-grammars-themes).\n` +
     `Each generated file names its upstream source and license. The notices\n` +
     `for the bundled grammars and themes follow.\n\n` +
+    fs.readFileSync(path.join(modules, 'shiki', 'LICENSE'), 'utf8') + '\n\n' +
     bundledNotice('tm-grammars', LANGS) +
     '\n\n' +
     bundledNotice('tm-themes', THEMES) +
     '\n'
-  fs.writeFileSync(path.join(pkg, 'NOTICE'), notice)
+  // Preserve every notice while normalizing source line endings and trailing
+  // whitespace for reproducible repository output.
+  fs.writeFileSync(path.join(pkg, 'NOTICE'), notice.replace(/\r\n?/g, '\n').replace(/[\t ]+$/gm, ''))
 }
 
-writeLangs()
+await writeLangs()
 writeThemes()
 writeNotice()
 // Keep generated code in the formatter's style so CI format checks pass.

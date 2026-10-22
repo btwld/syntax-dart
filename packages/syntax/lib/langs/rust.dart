@@ -10,6 +10,7 @@ const rustLanguage = Language(
   scopeName: 'source.rust',
   displayName: 'Rust',
   aliases: ['rs'],
+  injectTo: [],
   grammar: <String, Object?>{
     'displayName': 'Rust',
     'name': 'rust',
@@ -663,5 +664,6 @@ const rustLanguage = Language(
       },
     },
     'scopeName': 'source.rust',
+    'aliases': ['rs'],
   },
 );
