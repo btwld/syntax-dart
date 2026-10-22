@@ -62,7 +62,11 @@ typedef UnsupportedPatternCallback =
 final class DartRegexEngine implements RegexEngine {
   /// An engine that reports patterns it can't run to
   /// [onUnsupportedPattern].
-  DartRegexEngine({this.onUnsupportedPattern, this.combinePatterns = true});
+  DartRegexEngine({
+    this.onUnsupportedPattern,
+    this.combinePatterns = true,
+    this.combineMaxSource = 2000,
+  });
 
   /// Called once for each pattern that can't be translated, with an
   /// [UnsupportedPatternException].
@@ -72,6 +76,17 @@ final class DartRegexEngine implements RegexEngine {
   /// of one regex each. Leftmost-first alternation gives the same winner
   /// as the per-pattern search, with far fewer regex calls.
   final bool combinePatterns;
+
+  /// Scanners whose patterns add up to more Oniguruma source than this
+  /// search pattern by pattern, even with [combinePatterns].
+  ///
+  /// Each scanner compiles its own alternation regex, so a large pattern
+  /// shared by many rules is compiled again for every rule. For grammars
+  /// with patterns of thousands of characters, such as TypeScript, that
+  /// made the first highlight take over a second, and on the web several
+  /// seconds and hundreds of megabytes. Single patterns are compiled once
+  /// and shared.
+  final int combineMaxSource;
 
   /// Compiled patterns shared by every scanner, keyed by Oniguruma source.
   /// Patterns built from end backreferences are dynamic, so the cache is
@@ -84,7 +99,8 @@ final class DartRegexEngine implements RegexEngine {
     final compiled = [for (final p in patterns) _compile(p)];
     final scanner = _DartScanner(compiled);
     final combinable = compiled.every((p) => p.translated?.combinable ?? true);
-    return combinePatterns && combinable && compiled.length > 1
+    final small = patterns.fold(0, (n, p) => n + p.length) <= combineMaxSource;
+    return combinePatterns && combinable && small && compiled.length > 1
         ? _CombinedScanner(compiled, scanner)
         : scanner;
   }
