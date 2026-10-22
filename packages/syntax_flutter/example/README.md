@@ -96,3 +96,11 @@ select it, or select one by navigating. These commands pause while typing in an
 input; Ctrl/Cmd+Enter and Escape still submit or cancel reply drafts.
 **Line selection → Custom shortcuts** switches to J/K, R and X and updates the
 guide and tooltips. It works in both file and diff mode.
+
+In **Line selection**, use **Load sample threads** to add three discussions,
+including a resolved one. Previous/next buttons and review hotkeys move the
+active outline between them and reveal the selected discussion. **Custom
+highlight** changes its color, tint, shape, thickness and scroll spacing; both
+file and diff modes demonstrate it. The main **Diff review** uses the default
+highlight. Selection stays visible through resizing and thread expansion;
+manual scrolling takes precedence until the next navigation command.

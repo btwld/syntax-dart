@@ -287,7 +287,7 @@ class _SyntaxFileViewState extends State<SyntaxFileView> {
       widget.theme,
       base: widget.textStyle ?? defaultCodeTextStyle,
     );
-    return SyntaxChrome(
+    final view = SyntaxChrome(
       theme: widget.theme,
       child: CallbackShortcuts(
         bindings: {
@@ -587,6 +587,7 @@ class _SyntaxFileViewState extends State<SyntaxFileView> {
         ),
       ),
     );
+    return CommentNavigationViewport(child: view);
   }
 
   @override
@@ -706,7 +707,10 @@ class _SyntaxFileListState extends State<SyntaxFileList> {
   }
 
   @override
-  Widget build(BuildContext context) => SyntaxChrome(
+  Widget build(BuildContext context) =>
+      CommentNavigationViewport(child: _files(context));
+
+  Widget _files(BuildContext context) => SyntaxChrome(
     theme: widget.theme,
     child: IndexedCodeViewport(
       controller: _scroll,

@@ -29,6 +29,50 @@ Future<void> launch(
 void main() {
   for (final fileMode in [false, true]) {
     testWidgets(
+      '${fileMode ? 'file' : 'diff'} sample threads demonstrate active custom highlights',
+      (tester) async {
+        await launch(tester, 0, size: const Size(1200, 1100));
+        Future<void> tap(Finder finder) async {
+          await tester.ensureVisible(finder);
+          await tester.tap(finder);
+          await tester.pumpAndSettle();
+        }
+
+        if (fileMode) await tap(find.text('Show file'));
+        await tap(find.text('Load sample threads'));
+        expect(find.text('1 / 3'), findsOneWidget);
+        expect(find.text('2 unresolved'), findsAtLeastNWidgets(1));
+        await tap(find.text('Custom highlight'));
+        final active = find.byWidgetPredicate(
+          (w) =>
+              w is DecoratedBox &&
+              w.decoration is BoxDecoration &&
+              (w.decoration as BoxDecoration).border ==
+                  Border.all(color: const Color(0xffdf9438), width: 3),
+        );
+        expect(active, findsOneWidget);
+        await tap(find.byTooltip('Next discussion (Alt/Option+↓)'));
+        expect(find.text('2 / 3'), findsOneWidget);
+        expect(
+          find
+              .text('Could we document the maximum retry delay here?')
+              .hitTestable(),
+          findsOneWidget,
+        );
+        expect(active, findsOneWidget);
+        await tap(find.byTooltip('Next discussion (Alt/Option+↓)'));
+        expect(find.text('3 / 3'), findsOneWidget);
+        expect(find.text('Resolved').hitTestable(), findsOneWidget);
+        expect(active, findsOneWidget);
+        await tap(find.text('Load sample threads'));
+        expect(find.text('1 / 3'), findsOneWidget);
+        await tap(find.text('Default highlight'));
+        expect(active, findsNothing);
+        expect(find.text('2 unresolved'), findsAtLeastNWidgets(1));
+        expect(tester.takeException(), isNull);
+      },
+    );
+    testWidgets(
       '${fileMode ? 'file' : 'diff'} custom shortcut guide and thread commands work',
       (tester) async {
         await launch(tester, 0, size: const Size(1200, 1100));

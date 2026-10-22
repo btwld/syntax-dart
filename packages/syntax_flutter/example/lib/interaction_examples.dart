@@ -143,6 +143,7 @@ class _InteractionExamplesState extends State<_InteractionExample> {
   FileSelectionDetails? fileComment;
   DiffSelectionDetails? diffComment;
   bool customComposer = false, customThreads = false, customShortcuts = false;
+  bool customHighlight = false;
   final threads = ExampleCommentThreads();
   late final diffComments = CommentNavigationController.patch(review);
   late final fileComments = CommentNavigationController.file(
@@ -177,6 +178,54 @@ class _InteractionExamplesState extends State<_InteractionExample> {
   String? inspected;
   void changed() {
     if (mounted) setState(() {});
+  }
+
+  void loadSampleThreads() {
+    const lines = [2, 8, 14];
+    const messages = [
+      'The fallback name makes empty input easier to read.',
+      'Could we document the maximum retry delay here?',
+      'Rate limits are covered. This discussion is resolved.',
+    ];
+    final snapshots = [
+      for (var i = 0; i < lines.length; i++)
+        threads
+            .create(messages[i], id: '${fileMode ? 'file' : 'diff'}-sample-$i')
+            .copyWith(resolved: i == 2),
+    ];
+    if (fileMode) {
+      final existing = file.annotations.map((a) => a.id).toSet();
+      file.setAnnotations([
+        ...file.annotations,
+        for (var i = 0; i < lines.length; i++)
+          if (!existing.contains(snapshots[i].id))
+            LineAnnotation(
+              id: snapshots[i].id,
+              start: file.document.lineStart(lines[i]),
+              end: file.document.lineStart(lines[i]),
+              data: snapshots[i],
+            ),
+      ]);
+    } else {
+      final existing = review.annotations.map((a) => a.id).toSet();
+      review.setAnnotations([
+        ...review.annotations,
+        for (var i = 0; i < lines.length; i++)
+          if (!existing.contains(snapshots[i].id))
+            ReviewAnnotation(
+              id: snapshots[i].id,
+              fileId: 'policy',
+              side: DiffSide.newer,
+              line: lines[i] + 1,
+              data: snapshots[i],
+            ),
+      ]);
+    }
+    comments.reveal(
+      comments.threads.firstWhere(
+        (entry) => entry.annotationId == snapshots.first.id,
+      ),
+    );
   }
 
   void selectPreset({bool cross = false}) {
@@ -521,6 +570,11 @@ class _InteractionExamplesState extends State<_InteractionExample> {
             customShortcuts ? 'Default shortcuts' : 'Custom shortcuts',
             () => setState(() => customShortcuts = !customShortcuts),
           ),
+          button(
+            customHighlight ? 'Default highlight' : 'Custom highlight',
+            () => setState(() => customHighlight = !customHighlight),
+          ),
+          button('Load sample threads', loadSampleThreads),
           const ExampleCommentShortcutHelp(),
           Text(selectionLabel, style: const TextStyle(fontSize: 12)),
         ],
@@ -837,7 +891,18 @@ class _InteractionExamplesState extends State<_InteractionExample> {
       bindings: customShortcuts
           ? exampleCommentShortcuts
           : defaultCommentShortcuts,
-      child: content,
+      child: SyntaxCommentHighlightTheme(
+        style: customHighlight
+            ? const CommentThreadHighlightStyle(
+                borderColor: Color(0xffdf9438),
+                backgroundColor: Color(0x18df9438),
+                borderWidth: 3,
+                borderRadius: BorderRadius.all(Radius.circular(16)),
+              )
+            : const CommentThreadHighlightStyle(),
+        scrollPadding: customHighlight ? 24 : 12,
+        child: content,
+      ),
     );
   }
 

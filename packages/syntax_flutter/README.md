@@ -412,3 +412,45 @@ Custom builders can read `SyntaxCommentShortcuts.bindingsOf(context)` or call
 The **Discussion shortcuts** guide in both review examples displays the active
 mapping. **Line selection → Custom shortcuts** demonstrates J/K navigation,
 R to reply and X to resolve/reopen, with normal typing preserved in inputs.
+### Active discussion highlights
+
+File, collection and patch views highlight the current `commentNavigation`
+thread with a paint-only outline and translucent tint. This works with custom
+annotations and collapsed resolved summaries. Clicking or focusing a thread
+updates the same active identity without moving the scroll position.
+
+Wrap a review area in `SyntaxCommentHighlightTheme` to customize all its views:
+
+```dart
+SyntaxCommentHighlightTheme(
+  style: const CommentThreadHighlightStyle(
+    borderColor: Color(0xffdf9438),
+    backgroundColor: Color(0x18df9438),
+    borderWidth: 3,
+    borderRadius: BorderRadius.all(Radius.circular(16)),
+    inset: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+  ),
+  scrollPadding: 24,
+  child: reviewArea,
+)
+```
+
+The tint paints above the annotation, so use a translucent color. The default
+highlight does not intercept input or change row size. `enabled: false` removes
+it while preserving selected semantics and navigation. For a completely custom
+presentation, `builder(context, details, child)` receives the file ID, annotation
+ID, `isActive`, and the original annotation widget. It runs for both active and
+inactive annotations; preserve the child and a stable widget structure to retain
+input focus. For example, wrap it in a `DecoratedBox` with a conditional border or
+add a noninteractive active badge in a `Stack`.
+
+Navigation reveals the whole thread when it fits; long threads open at their
+heading. The selected thread stays visible as row heights or viewport dimensions
+change. Manual scrolling suspends this behavior until the next jump, and native
+reply input keeps its caret scrolling. `keepVisible: false` disables maintenance
+through layout changes while retaining explicit navigation. `scrollPadding` is
+preferred spacing, constrained by the available scroll extent.
+
+**Line selection → Load sample threads** adds three discussions without removing
+existing notes. Navigate between them and switch **Custom highlight** to see a
+custom outline, tint, shape and scroll spacing in both file and diff views.

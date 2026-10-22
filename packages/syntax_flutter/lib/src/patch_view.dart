@@ -674,7 +674,9 @@ class _PatchViewState extends State<PatchView> {
             },
           );
 
-    list = LineSelectionRegion(controller: _scroll, child: list);
+    list = CommentNavigationViewport(
+      child: LineSelectionRegion(controller: _scroll, child: list),
+    );
 
     if (widget.stickyHeaders && _files.isNotEmpty) {
       final index = _stickyFile.clamp(0, _files.length - 1);

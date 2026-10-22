@@ -56,6 +56,7 @@ class ExampleCommentShortcutHelp extends StatelessWidget {
                   ),
                 const Text(
                   'Click a discussion or use next/previous to select it. '
+                  'The active outline follows the selected thread and keeps it in view. '
                   'Shortcuts apply inside this review area and pause while typing. '
                   'Ctrl/Cmd+Enter submits a reply; Escape cancels its draft.',
                 ),

@@ -30,3 +30,4 @@ export 'src/comment_navigation.dart'
         SyntaxCommentNavigation;
 export 'src/comment_thread_controller.dart';
 export 'src/comment_shortcuts.dart';
+export 'src/comment_highlight.dart';
