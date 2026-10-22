@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:syntax/syntax.dart';
 
 import 'highlighter_scope.dart';
+import 'slices.dart';
 import 'styles.dart';
 
 /// A syntax-highlighted view of code changes.
@@ -143,6 +144,7 @@ class _PatchViewState extends State<PatchView> {
 
   Object? _highlightKey;
   DiffHighlightCache? _highlights;
+  bool _slicing = false;
   _Palette? _palette;
 
   void _syncSource() {
@@ -174,6 +176,18 @@ class _PatchViewState extends State<PatchView> {
       );
     }
     return _highlights!;
+  }
+
+  /// Highlights the files shown so far between frames, repainting the
+  /// rows as their lines get colors.
+  void _finishLater() {
+    if (_slicing) return;
+    _slicing = true;
+    tokenizeBetweenFrames(
+      slice: (budget) => _highlights?.tokenize(budget: budget) ?? true,
+      stop: () => !mounted,
+      onSlice: (_) => setState(() {}),
+    ).whenComplete(() => _slicing = false);
   }
 
   _Palette _paletteFor(BuildContext context) {
@@ -336,10 +350,15 @@ class _PatchViewState extends State<PatchView> {
       DiffLineKind.removed => palette.removedText,
       DiffLineKind.context => null,
     };
+    final highlights = _highlightsFor(highlighter);
+    final diff = _files[file];
+    final highlighted = highlights.highlighted(diff, budget: firstSliceBudget);
+    if (!highlighted.isComplete) _finishLater();
     return [
-      for (final segment in _highlightsFor(
-        highlighter,
-      ).segmentsFor(_files[file], line))
+      for (final segment in highlighted.segmentsFor(
+        line,
+        highlights.words(diff),
+      ))
         TextSpan(
           text: segment.text,
           style: segment.changed && emphasis != null

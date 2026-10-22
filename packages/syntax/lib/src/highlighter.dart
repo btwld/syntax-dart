@@ -241,17 +241,12 @@ final class Highlighter {
     String code, {
     required String language,
     required SyntaxTheme theme,
-  }) {
-    final grammar = this.grammar(language);
-    final result = <List<ThemedToken>>[];
-    StateStack? state;
-    for (final line in splitLines(code)) {
-      final tokens = grammar.tokenizeLine(line, state);
-      result.add(themeTokens(line, tokens.tokens, theme));
-      state = tokens.endState;
-    }
-    return result;
-  }
+  }) => [
+    for (final line in (TokenizedDocument(
+      grammar(language),
+    )..update(code)).lines)
+      line.themed(theme),
+  ];
 
   /// Styled ranges over the whole of [code], as UTF-16 offsets into it:
   /// the shape renderers that style one string at a time want. To

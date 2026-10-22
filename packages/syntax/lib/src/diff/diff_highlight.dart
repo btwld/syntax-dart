@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import '../document.dart';
 import '../grammar/grammar.dart';
 import '../grammar/scope_stack.dart';
 import '../highlighter.dart';
@@ -11,23 +12,52 @@ import 'word_diff.dart';
 ///
 /// Removed lines are highlighted as part of the old file and the other
 /// lines as part of the new one. With the full texts, both files are
-/// tokenized from the top when the diff is highlighted, so highlighting is
-/// exact and costs time in proportion to the files, not the hunks. A
-/// parsed patch only has its hunks, so each hunk is tokenized from a fresh
-/// state, which is what GitHub does too. A construct that opens before a
-/// hunk, such as a block comment, may be colored wrongly inside it.
+/// tokenized from the top, so highlighting is exact and costs time in
+/// proportion to the files, not the hunks. A parsed patch only has its
+/// hunks, so each hunk is tokenized from a fresh state, which is what
+/// GitHub does too. A construct that opens before a hunk, such as a block
+/// comment, may be colored wrongly inside it.
 final class HighlightedDiff {
-  HighlightedDiff._(this._old, this._new, this._plain);
+  HighlightedDiff._(
+    this._theme,
+    this._old,
+    this._new, {
+    TokenizedDocument? oldDocument,
+    TokenizedDocument? newDocument,
+  }) : _oldDocument = oldDocument,
+       _newDocument = newDocument;
 
   /// Highlights [diff]. The language comes from [language] if given,
   /// otherwise from the file extension. Unknown languages stay plain.
+  ///
+  /// With a [budget], full texts are tokenized for at most that long, and
+  /// [tokenize] continues. Lines not tokenized yet are plain.
   factory HighlightedDiff.of(
     FileDiff diff, {
     required Highlighter highlighter,
     required SyntaxTheme theme,
     String? language,
+    Duration? budget,
   }) {
     final grammar = _grammarFor(diff, highlighter, language);
+    final oldLines = diff.oldLines;
+    final newLines = diff.newLines;
+    if (grammar != null && oldLines != null && newLines != null) {
+      final highlighted = HighlightedDiff._(
+        theme,
+        const {},
+        const {},
+        oldDocument: TokenizedDocument(grammar),
+        newDocument: TokenizedDocument(grammar),
+      );
+      final clock = Stopwatch()..start();
+      highlighted._newDocument!.update(newLines.join('\n'), budget: budget);
+      highlighted._oldDocument!.update(
+        oldLines.join('\n'),
+        budget: _left(budget, clock),
+      );
+      return highlighted;
+    }
 
     final old = <int, List<ThemedToken>>{};
     final newer = <int, List<ThemedToken>>{};
@@ -54,8 +84,6 @@ final class HighlightedDiff {
       }
     }
 
-    final oldLines = diff.oldLines;
-    final newLines = diff.newLines;
     if (oldLines != null && newLines != null) {
       tokenize([
         for (var i = 0; i < oldLines.length; i++) (i + 1, oldLines[i]),
@@ -77,11 +105,29 @@ final class HighlightedDiff {
         ], newer);
       }
     }
-    return HighlightedDiff._(
-      old,
-      newer,
-      TokenStyle(foreground: theme.foreground),
-    );
+    return HighlightedDiff._(theme, old, newer);
+  }
+
+  /// What's left of [budget] after [clock], or `null` for no budget.
+  static Duration? _left(Duration? budget, Stopwatch clock) {
+    if (budget == null) return null;
+    final left = budget - clock.elapsed;
+    return left.isNegative ? Duration.zero : left;
+  }
+
+  /// Whether every line has its colors.
+  bool get isComplete =>
+      (_newDocument?.isComplete ?? true) && (_oldDocument?.isComplete ?? true);
+
+  /// Continues highlighting that [HighlightedDiff.of] left unfinished, the
+  /// new file first, for at most [budget]. Returns [isComplete].
+  bool tokenize({Duration? budget}) {
+    final clock = Stopwatch()..start();
+    for (final document in [?_newDocument, ?_oldDocument]) {
+      if (document.isComplete) continue;
+      if (!document.tokenize(budget: _left(budget, clock))) break;
+    }
+    return isComplete;
   }
 
   /// The grammar for [diff], or `null` for plain text.
@@ -98,34 +144,55 @@ final class HighlightedDiff {
 
   static final ScopeStack _plainScopes = ScopeStack.root('text.plain');
 
+  final SyntaxTheme _theme;
+
+  /// Tokens per line number, for diffs tokenized by hunk or plain.
   final Map<int, List<ThemedToken>> _old;
   final Map<int, List<ThemedToken>> _new;
-  final TokenStyle _plain;
+
+  /// The full texts, for diffs that have them and a grammar.
+  final TokenizedDocument? _oldDocument;
+  final TokenizedDocument? _newDocument;
+
+  late final TokenStyle _plain = TokenStyle(foreground: _theme.foreground);
 
   /// Tokens for a line of the diff: removed lines from the old file, added
   /// and context lines from the new one.
   List<ThemedToken> tokensFor(DiffLine line) =>
-      (line.kind == DiffLineKind.removed
-          ? _old[line.oldNumber]
-          : _new[line.newNumber]) ??
-      const [];
+      line.kind == DiffLineKind.removed
+      ? _line(_oldDocument, _old, line.oldNumber)
+      : _line(_newDocument, _new, line.newNumber);
 
   /// Tokens for line [number] of the old file. Lines outside the hunks are
   /// only available when the diff has the full texts.
-  List<ThemedToken> oldLine(int number) => _old[number] ?? const [];
+  List<ThemedToken> oldLine(int number) => _line(_oldDocument, _old, number);
 
   /// Tokens for line [number] of the new file. Lines outside the hunks are
   /// only available when the diff has the full texts.
-  List<ThemedToken> newLine(int number) => _new[number] ?? const [];
+  List<ThemedToken> newLine(int number) => _line(_newDocument, _new, number);
+
+  List<ThemedToken> _line(
+    TokenizedDocument? document,
+    Map<int, List<ThemedToken>> byNumber,
+    int? number,
+  ) {
+    if (number == null) return const [];
+    if (document == null) return byNumber[number] ?? const [];
+    final lines = document.lines;
+    return number <= lines.length ? lines[number - 1].themed(_theme) : const [];
+  }
 
   /// [line] as styled segments, ready to paint. With [words], the segments
   /// are split where the line's changed words start and end, and those are
   /// marked [DiffSegment.changed]. A line without tokens, such as an
   /// expanded line of a parsed patch, is one plain segment.
   List<DiffSegment> segmentsFor(DiffLine line, [WordChanges? words]) {
-    final tokens = tokensFor(line);
+    if (line.text.isEmpty) return const [];
+    var tokens = tokensFor(line);
+    // Not tokenized yet, or outside the hunks: one plain token, so changed
+    // words are still marked.
     if (tokens.isEmpty) {
-      return line.text.isEmpty ? const [] : [DiffSegment(line.text, _plain)];
+      tokens = [ThemedToken(line.text, 0, _plain, _plainScopes)];
     }
     final ranges = words?.rangesFor(line) ?? const <CharRange>[];
     final segments = <DiffSegment>[];
@@ -183,12 +250,16 @@ final class DiffHighlightCache {
   final Map<FileDiff, WordChanges> _words = Map.identity();
 
   /// [file]'s highlighting.
-  HighlightedDiff highlighted(FileDiff file) {
+  ///
+  /// With a [budget], a file not highlighted yet gets at most that long,
+  /// and [tokenize] finishes it. Without one, the file is finished now.
+  HighlightedDiff highlighted(FileDiff file, {Duration? budget}) {
     final grammar = HighlightedDiff._grammarFor(file, highlighter, language);
     if (_highlights[file] case (
       final cached,
       final highlighted,
     ) when identical(cached, grammar)) {
+      if (budget == null) highlighted.tokenize();
       return highlighted;
     }
     final highlighted = HighlightedDiff.of(
@@ -196,9 +267,23 @@ final class DiffHighlightCache {
       highlighter: highlighter,
       theme: theme,
       language: language,
+      budget: budget,
     );
     _highlights[file] = (grammar, highlighted);
     return highlighted;
+  }
+
+  /// Continues highlighting the files [highlighted] left unfinished, in
+  /// the order they were first asked for, for at most [budget]. Returns
+  /// whether every file is finished.
+  bool tokenize({Duration? budget}) {
+    final clock = Stopwatch()..start();
+    for (final (_, highlighted) in _highlights.values) {
+      if (highlighted.isComplete) continue;
+      final left = HighlightedDiff._left(budget, clock);
+      if (!highlighted.tokenize(budget: left)) return false;
+    }
+    return true;
   }
 
   /// [file]'s changed words.

@@ -12,7 +12,9 @@
   patterns, such as TypeScript, no longer stall on first use.
 - VS Code theme resolution, plus HTML and ANSI rendering.
 - Renderer-neutral building blocks:
-  - `TokenizedDocument` for incremental highlighting;
+  - `TokenizedDocument` for incremental highlighting. With a time budget,
+    `update` and `tokenize` work a slice at a time, so a large file never
+    blocks a UI thread;
   - `StyledRange` and `Highlighter.highlightRanges` for styling a whole
     string;
   - editor colors on `SyntaxTheme`, and `alphaBlend`.
@@ -22,7 +24,8 @@
   - `diffTexts`, a Myers line diff that groups changes the way git does;
   - `WordChanges`;
   - `HighlightedDiff`, with a `language` override and `segmentsFor`, and
-    `DiffHighlightCache` to keep it per file;
+    `DiffHighlightCache` to keep it per file. Both can highlight a slice
+    at a time too;
   - `layoutDiff`, which lays out the rows of a diff view;
   - `DiffLabels`, the English words a diff view shows;
   - `FileDiff.changeBlocks` for a GitHub-style change bar;

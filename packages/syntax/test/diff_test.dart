@@ -528,6 +528,78 @@ int c() {
       expect(token.scopes.scopes, contains('comment.block.dart'));
     });
 
+    test('with a budget, lines get their colors a slice at a time', () {
+      final before = [for (var i = 0; i < 40; i++) 'final v$i = $i;'];
+      final after = [...before]..[30] = 'final v30 = 3000;';
+      final diff = diffTexts(
+        before.join('\n'),
+        after.join('\n'),
+        path: 'a.dart',
+      );
+      final full = HighlightedDiff.of(
+        diff,
+        highlighter: highlighter,
+        theme: githubDarkTheme,
+      );
+      final sliced = HighlightedDiff.of(
+        diff,
+        highlighter: highlighter,
+        theme: githubDarkTheme,
+        budget: Duration.zero,
+      );
+      expect(sliced.isComplete, isFalse);
+      final lines = diff.hunks.single.lines;
+      final added = lines.firstWhere((l) => l.kind == DiffLineKind.added);
+      // Not tokenized yet: plain, but the changed word is still marked.
+      expect(sliced.tokensFor(added), isEmpty);
+      final segments = sliced.segmentsFor(added, WordChanges.of(diff));
+      expect(segments.map((s) => s.text).join(), added.text);
+      expect(segments.where((s) => s.changed).map((s) => s.text), ['3000']);
+
+      var done = false;
+      while (!done) {
+        done = sliced.tokenize(budget: Duration.zero);
+      }
+      for (final line in lines) {
+        expect(
+          [for (final t in sliced.tokensFor(line)) (t.text, t.style)],
+          [for (final t in full.tokensFor(line)) (t.text, t.style)],
+        );
+      }
+    });
+
+    test('the cache finishes files in the order they were asked for', () {
+      final cache = DiffHighlightCache(
+        highlighter: highlighter,
+        theme: githubDarkTheme,
+      );
+      FileDiff file(String path) => diffTexts(
+        [for (var i = 0; i < 20; i++) 'var a$i = $i;'].join('\n'),
+        [for (var i = 0; i < 20; i++) 'var b$i = $i;'].join('\n'),
+        path: path,
+      );
+      final first = file('a.dart');
+      final second = file('b.dart');
+      final a = cache.highlighted(first, budget: Duration.zero);
+      final b = cache.highlighted(second, budget: Duration.zero);
+      expect([a.isComplete, b.isComplete], [false, false]);
+      expect(cache.tokenize(budget: Duration.zero), isFalse);
+      var done = false;
+      while (!a.isComplete) {
+        done = cache.tokenize(budget: Duration.zero);
+        expect(b.isComplete, isFalse);
+      }
+      expect(done, isFalse);
+      expect(cache.tokenize(), isTrue);
+      expect(b.isComplete, isTrue);
+      // Asking without a budget finishes a file at once.
+      final third = file('c.dart');
+      final c = cache.highlighted(third, budget: Duration.zero);
+      expect(c.isComplete, isFalse);
+      expect(cache.highlighted(third), same(c));
+      expect(c.isComplete, isTrue);
+    });
+
     test('a parsed patch highlights each side of each hunk', () {
       final diff = parsePatch('''
 --- a/a.dart
