@@ -3,6 +3,7 @@ import 'package:syntax/syntax.dart';
 import 'comment_composer.dart';
 import 'comment_thread_controller.dart';
 import 'inline_comment_region.dart';
+import 'comment_shortcuts.dart';
 
 /// Localizable labels used by the default inline discussion UI.
 @immutable
@@ -227,6 +228,16 @@ class SyntaxCommentThread extends StatelessWidget {
   /// Optional body typography. Rich rendering belongs in [commentBuilder].
   final TextStyle? textStyle;
 
+  Widget _shortcut(
+    BuildContext context,
+    CommentShortcutCommand command,
+    String label,
+    Widget child,
+  ) {
+    final hint = SyntaxCommentShortcuts.tooltip(context, command, label);
+    return hint == label ? child : Tooltip(message: hint, child: child);
+  }
+
   Widget _disclosure(CommentThreadDetails details) => Semantics(
     expanded: !details.isCollapsed,
     child: TextButton.icon(
@@ -269,9 +280,14 @@ class SyntaxCommentThread extends StatelessWidget {
               children: [
                 _disclosure(details),
                 if (controller.mayResolve)
-                  TextButton(
-                    onPressed: details.toggleResolved,
-                    child: Text(labels.reopen),
+                  _shortcut(
+                    context,
+                    CommentShortcutCommand.toggleResolved,
+                    labels.reopen,
+                    TextButton(
+                      onPressed: details.toggleResolved,
+                      child: Text(labels.reopen),
+                    ),
                   ),
               ],
             ),
@@ -507,18 +523,30 @@ class SyntaxCommentThread extends StatelessWidget {
                           children: [
                             if (thread.resolved) _disclosure(details),
                             if (controller.mayReply && !controller.isReplying)
-                              TextButton.icon(
-                                onPressed: details.reply,
-                                icon: const Icon(Icons.reply, size: 16),
-                                label: Text(labels.reply),
+                              _shortcut(
+                                context,
+                                CommentShortcutCommand.reply,
+                                labels.reply,
+                                TextButton.icon(
+                                  onPressed: details.reply,
+                                  icon: const Icon(Icons.reply, size: 16),
+                                  label: Text(labels.reply),
+                                ),
                               ),
                             if (controller.mayResolve)
-                              TextButton(
-                                onPressed: details.toggleResolved,
-                                child: Text(
-                                  thread.resolved
-                                      ? labels.reopen
-                                      : labels.resolve,
+                              _shortcut(
+                                context,
+                                CommentShortcutCommand.toggleResolved,
+                                thread.resolved
+                                    ? labels.reopen
+                                    : labels.resolve,
+                                TextButton(
+                                  onPressed: details.toggleResolved,
+                                  child: Text(
+                                    thread.resolved
+                                        ? labels.reopen
+                                        : labels.resolve,
+                                  ),
                                 ),
                               ),
                           ],

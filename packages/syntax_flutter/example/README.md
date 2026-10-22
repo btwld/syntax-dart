@@ -88,3 +88,11 @@ backward/forward through threads and filters all, unresolved, or resolved ones.
 Filtering preserves replies and drafts; counts update when discussions are
 posted, resolved, reopened, or deleted. **Custom threads** also replaces the
 header badges, previous/next buttons, and filter with app-supplied controls.
+
+**Discussion shortcuts** shows the active review keys. While the review area has
+focus, Alt/Option+Down/Up moves between threads, Alt/Option+R opens a reply, and
+Alt/Option+Enter resolves or reopens the selected thread. Click a discussion to
+select it, or select one by navigating. These commands pause while typing in an
+input; Ctrl/Cmd+Enter and Escape still submit or cancel reply drafts.
+**Line selection → Custom shortcuts** switches to J/K, R and X and updates the
+guide and tooltips. It works in both file and diff mode.

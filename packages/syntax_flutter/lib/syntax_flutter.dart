@@ -29,3 +29,4 @@ export 'src/comment_navigation.dart'
         SyntaxCommentCount,
         SyntaxCommentNavigation;
 export 'src/comment_thread_controller.dart';
+export 'src/comment_shortcuts.dart';

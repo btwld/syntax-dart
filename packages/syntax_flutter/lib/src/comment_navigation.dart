@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:syntax/syntax.dart';
 import 'inline_comment_region.dart';
+import 'comment_shortcuts.dart';
 
 /// Localizable text for discussion counts, filters and navigation.
 class CommentNavigationLabels {
@@ -184,7 +185,11 @@ class SyntaxCommentNavigation extends StatelessWidget {
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     IconButton(
-                      tooltip: labels.previous,
+                      tooltip: SyntaxCommentShortcuts.tooltip(
+                        context,
+                        CommentShortcutCommand.previous,
+                        labels.previous,
+                      ),
                       onPressed: details.previous,
                       icon: const Icon(Icons.arrow_upward, size: 18),
                     ),
@@ -194,7 +199,11 @@ class SyntaxCommentNavigation extends StatelessWidget {
                           '${details.position} / ${details.visible.length}',
                     ),
                     IconButton(
-                      tooltip: labels.next,
+                      tooltip: SyntaxCommentShortcuts.tooltip(
+                        context,
+                        CommentShortcutCommand.next,
+                        labels.next,
+                      ),
                       onPressed: details.next,
                       icon: const Icon(Icons.arrow_downward, size: 18),
                     ),
@@ -335,6 +344,7 @@ class CommentNavigationAnchor extends StatelessWidget {
         final selected = navigation.current?.key == (fileId, annotationId);
         final request = navigation.revealRequest;
         if (selected &&
+            navigation.revealTarget?.key == (fileId, annotationId) &&
             !navigation.isNavigating &&
             navigation.error == null &&
             _revealed[navigation] != request) {
@@ -344,6 +354,7 @@ class CommentNavigationAnchor extends StatelessWidget {
                 navigation.isNavigating ||
                 navigation.revealRequest != request ||
                 navigation.current?.key != (fileId, annotationId) ||
+                navigation.revealTarget?.key != (fileId, annotationId) ||
                 _revealed[navigation] == request) {
               return;
             }
@@ -355,20 +366,31 @@ class CommentNavigationAnchor extends StatelessWidget {
             );
           });
         }
-        return Semantics(
-          selected: selected,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              border: selected
-                  ? Border(
-                      left: BorderSide(
-                        color: Theme.of(context).colorScheme.primary,
-                        width: 2,
-                      ),
-                    )
-                  : null,
+        return Focus(
+          canRequestFocus: false,
+          onFocusChange: (focused) {
+            if (focused && !navigation.isDisposed) {
+              navigation.select(fileId, annotationId);
+            }
+          },
+          child: Listener(
+            onPointerDown: (_) => navigation.select(fileId, annotationId),
+            child: Semantics(
+              selected: selected,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  border: selected
+                      ? Border(
+                          left: BorderSide(
+                            color: Theme.of(context).colorScheme.primary,
+                            width: 2,
+                          ),
+                        )
+                      : null,
+                ),
+                child: child,
+              ),
             ),
-            child: child,
           ),
         );
       },

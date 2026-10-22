@@ -226,6 +226,7 @@ final class CommentNavigationController extends SyntaxObservable {
   final Map<String?, (int, int)> _counts = {};
   CommentThreadFilter _filter;
   (String, String)? _current;
+  (String, String)? _revealTarget;
   void Function()? _unbind;
   int _generation = 0;
   int _revealRequest = 0;
@@ -249,6 +250,24 @@ final class CommentNavigationController extends SyntaxObservable {
 
   /// Most recently requested visible discussion, or null after removal/filtering.
   CommentThreadLocation? get current => _byKey[_current];
+
+  /// Explicit navigation target, distinct from pointer/focus selection.
+  CommentThreadLocation? get revealTarget => _byKey[_revealTarget];
+
+  /// Selects a visible discussion by stable identity without scrolling.
+  /// Pointer and focus interactions can use this before invoking thread actions.
+  bool select(String fileId, String annotationId) {
+    checkAlive();
+    final key = (fileId, annotationId), entry = _byKey[(fileId, annotationId)];
+    if (entry == null || !isVisible(entry.thread)) return false;
+    if (_current == key) return true;
+    _cancel();
+    _current = key;
+    _revealTarget = null;
+    _error = null;
+    notifyListeners();
+    return true;
+  }
 
   /// Whether the latest source reveal is pending.
   bool get isNavigating => _navigating;
@@ -341,6 +360,7 @@ final class CommentNavigationController extends SyntaxObservable {
     final generation = ++_generation;
     _revealRequest++;
     _current = entry.key;
+    _revealTarget = entry.key;
     _navigating = true;
     _error = null;
     notifyListeners();
@@ -385,6 +405,7 @@ final class CommentNavigationController extends SyntaxObservable {
 
   void _cancel() {
     _generation++;
+    _revealTarget = null;
     if (_navigating) onCancelReveal?.call();
     _navigating = false;
   }

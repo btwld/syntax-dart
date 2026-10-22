@@ -2,6 +2,78 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:syntax_flutter/syntax_flutter.dart';
 
+const exampleCommentShortcuts = [
+  CommentShortcutBinding(
+    activator: SingleActivator(LogicalKeyboardKey.keyK),
+    command: CommentShortcutCommand.previous,
+    label: 'K',
+  ),
+  CommentShortcutBinding(
+    activator: SingleActivator(LogicalKeyboardKey.keyJ),
+    command: CommentShortcutCommand.next,
+    label: 'J',
+  ),
+  CommentShortcutBinding(
+    activator: SingleActivator(LogicalKeyboardKey.keyR),
+    command: CommentShortcutCommand.reply,
+    label: 'R',
+  ),
+  CommentShortcutBinding(
+    activator: SingleActivator(LogicalKeyboardKey.keyX),
+    command: CommentShortcutCommand.toggleResolved,
+    label: 'X',
+  ),
+];
+
+class ExampleCommentShortcutHelp extends StatelessWidget {
+  const ExampleCommentShortcutHelp({super.key});
+  @override
+  Widget build(BuildContext context) {
+    final bindings = SyntaxCommentShortcuts.bindingsOf(context);
+    return TextButton.icon(
+      icon: const Icon(Icons.keyboard_outlined, size: 16),
+      label: const Text('Discussion shortcuts'),
+      onPressed: () => showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Discussion shortcuts'),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final binding in bindings)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Text(
+                      '${binding.label} — ${switch (binding.command) {
+                        CommentShortcutCommand.previous => 'Previous thread',
+                        CommentShortcutCommand.next => 'Next thread',
+                        CommentShortcutCommand.reply => 'Reply to selected thread',
+                        CommentShortcutCommand.toggleResolved => 'Resolve / reopen selected thread',
+                      }}',
+                    ),
+                  ),
+                const Text(
+                  'Click a discussion or use next/previous to select it. '
+                  'Shortcuts apply inside this review area and pause while typing. '
+                  'Ctrl/Cmd+Enter submits a reply; Escape cancels its draft.',
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// Application-owned in-memory persistence and session lifetime for the gallery.
 class ExampleCommentThreads {
   final _sessions = <String, CommentThreadController>{};
@@ -62,10 +134,9 @@ class ExampleCommentThreads {
     };
   }
 
-  Widget view(
+  CommentThreadController session(
     ReviewThread thread, {
     required ValueChanged<ReviewThread> onChanged,
-    bool custom = false,
   }) {
     _callbacks[thread.id] = onChanged;
     final controller = _sessions.putIfAbsent(thread.id, () {
@@ -91,6 +162,15 @@ class ExampleCommentThreads {
       });
       return controller;
     });
+    return controller;
+  }
+
+  Widget view(
+    ReviewThread thread, {
+    required ValueChanged<ReviewThread> onChanged,
+    bool custom = false,
+  }) {
+    final controller = session(thread, onChanged: onChanged);
     return SyntaxCommentThread(
       key: ValueKey(thread.id),
       controller: controller,

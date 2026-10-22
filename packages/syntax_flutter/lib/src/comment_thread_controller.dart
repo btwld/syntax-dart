@@ -117,6 +117,9 @@ class CommentThreadController extends ChangeNotifier {
   /// Whether a save, delete or resolution request is pending.
   bool get isSubmitting => _busy;
 
+  /// Whether this retained session has been released by its application owner.
+  bool get isDisposed => _disposed;
+
   /// Last failure. The view supplies a safe default message or a custom builder.
   Object? get error => _error;
 

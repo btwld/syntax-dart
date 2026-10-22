@@ -619,15 +619,37 @@ class _ShowcaseHomeState extends State<ShowcaseHome> {
                                   ),
                                   borderRadius: BorderRadius.circular(12),
                                 ),
-                                child: Column(
-                                  children: [
-                                    if (_tab < 6) _toolbar(),
-                                    if (_tab == 0 &&
-                                        _review.mode == DiffMode.split)
-                                      _splitLabels(),
-                                    Expanded(child: _surface()),
-                                    _footer(),
-                                  ],
+                                child: SyntaxCommentShortcuts(
+                                  controller: _comments,
+                                  threadController: (location) =>
+                                      _threads.session(
+                                        location.thread,
+                                        onChanged: (thread) =>
+                                            _updateReviewThread(
+                                              location.annotationId,
+                                              thread,
+                                            ),
+                                      ),
+                                  enabled: _tab == 0,
+                                  autofocus: _tab == 0,
+                                  child: Column(
+                                    children: [
+                                      if (_tab < 6)
+                                        ConstrainedBox(
+                                          constraints: const BoxConstraints(
+                                            maxHeight: 180,
+                                          ),
+                                          child: SingleChildScrollView(
+                                            child: _toolbar(),
+                                          ),
+                                        ),
+                                      if (_tab == 0 &&
+                                          _review.mode == DiffMode.split)
+                                        _splitLabels(),
+                                      Expanded(child: _surface()),
+                                      _footer(),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
@@ -1048,6 +1070,7 @@ class _ShowcaseHomeState extends State<ShowcaseHome> {
               controller: _comments,
               padding: EdgeInsets.zero,
             ),
+          if (_tab == 0) const ExampleCommentShortcutHelp(),
           _tool('Reset', Icons.restart_alt_rounded, _reset),
         ],
       ),
@@ -1382,22 +1405,25 @@ class _ShowcaseHomeState extends State<ShowcaseHome> {
         ),
       );
 
+  void _updateReviewThread(String id, ReviewThread thread) =>
+      _review.setAnnotations([
+        for (final current in _review.annotations)
+          if (current.id != id)
+            current
+          else if (thread.comments.isNotEmpty)
+            ReviewAnnotation(
+              id: current.id,
+              fileId: current.fileId,
+              side: current.side,
+              line: current.line,
+              data: thread,
+            ),
+      ]);
+
   Widget _reviewNote(BuildContext context, ReviewAnnotation<Object?> note) =>
       _threads.view(
         note.data! as ReviewThread,
-        onChanged: (thread) => _review.setAnnotations([
-          for (final current in _review.annotations)
-            if (current.id != note.id)
-              current
-            else if (thread.comments.isNotEmpty)
-              ReviewAnnotation(
-                id: current.id,
-                fileId: current.fileId,
-                side: current.side,
-                line: current.line,
-                data: thread,
-              ),
-        ]),
+        onChanged: (thread) => _updateReviewThread(note.id, thread),
       );
 
   Widget _footer() {

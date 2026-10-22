@@ -25,6 +25,33 @@ CommentThreadLocation location(
 );
 
 void main() {
+  test(
+    'pointer selection updates the cursor without scrolling and invalidates pending reveals',
+    () async {
+      final gate = Completer<bool>();
+      var cancelled = 0;
+      final controller = CommentNavigationController(
+        onReveal: (_) => gate.future,
+        onCancelReveal: () => cancelled++,
+        threads: [location('a', 'one'), location('a', 'two', resolved: true)],
+      );
+      expect(controller.select('missing', 'one'), isFalse);
+      expect(controller.select('a', 'one'), isTrue);
+      expect(controller.current?.annotationId, 'one');
+      expect(controller.revealTarget, isNull);
+      final reveal = controller.next();
+      expect(controller.revealTarget?.annotationId, 'two');
+      expect(controller.select('a', 'one'), isTrue);
+      expect(controller.revealTarget, isNull);
+      expect(cancelled, 1);
+      gate.complete(true);
+      expect(await reveal, isFalse);
+      controller.filter = CommentThreadFilter.unresolved;
+      expect(controller.select('a', 'two'), isFalse);
+      expect(controller.current?.annotationId, 'one');
+      controller.dispose();
+    },
+  );
   test('counts discussions independently of replies and filters', () async {
     final controller = CommentNavigationController(
       onReveal: (_) => true,

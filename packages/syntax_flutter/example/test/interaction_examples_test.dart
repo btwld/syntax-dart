@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:syntax/themes/github_dark.dart';
 import 'package:syntax_flutter/syntax_flutter.dart';
@@ -27,6 +28,63 @@ Future<void> launch(
 
 void main() {
   for (final fileMode in [false, true]) {
+    testWidgets(
+      '${fileMode ? 'file' : 'diff'} custom shortcut guide and thread commands work',
+      (tester) async {
+        await launch(tester, 0, size: const Size(1200, 1100));
+        Future<void> tap(Finder finder) async {
+          await tester.ensureVisible(finder);
+          await tester.tap(finder);
+          await tester.pumpAndSettle();
+        }
+
+        if (fileMode) await tap(find.text('Show file'));
+        await tap(find.text('Select lines 2–4'));
+        await tap(find.byTooltip('Comment on selected lines'));
+        await tester.enterText(find.byType(TextField), 'Shortcut review');
+        await tester.pump();
+        await tap(find.text('Add note'));
+        await tap(find.text('Custom shortcuts'));
+        await tap(find.text('Discussion shortcuts'));
+        expect(find.text('J — Next thread'), findsOneWidget);
+        expect(
+          find.text('X — Resolve / reopen selected thread'),
+          findsOneWidget,
+        );
+        await tap(find.text('Close'));
+        await tester.sendKeyEvent(LogicalKeyboardKey.keyJ);
+        await tester.pumpAndSettle();
+        expect(find.text('1 / 1'), findsOneWidget);
+        final session = tester
+            .widget<SyntaxCommentThread>(find.byType(SyntaxCommentThread))
+            .controller;
+        await tester.sendKeyEvent(LogicalKeyboardKey.keyR);
+        await tester.pumpAndSettle();
+        expect(session.replyFocus.hasFocus, isTrue);
+        await tester.enterText(find.byType(TextField), 'Retained reply');
+        await tester.sendKeyEvent(LogicalKeyboardKey.keyX);
+        await tester.pumpAndSettle();
+        expect(session.thread.resolved, isFalse);
+        Focus.of(
+          tester.element(find.byType(SyntaxCommentNavigation)),
+        ).requestFocus();
+        await tester.pump();
+        await tester.sendKeyEvent(LogicalKeyboardKey.keyX);
+        await tester.pumpAndSettle();
+        expect(session.thread.resolved, isTrue);
+        expect(find.text('Resolved'), findsOneWidget);
+        await tester.sendKeyEvent(LogicalKeyboardKey.keyX);
+        await tester.pumpAndSettle();
+        expect(session.thread.resolved, isFalse);
+        expect(session.replyInput.text, 'Retained reply');
+        await tap(find.text('Default shortcuts'));
+        expect(
+          find.byTooltip('Next discussion (Alt/Option+↓)'),
+          findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
     testWidgets(
       '${fileMode ? 'file' : 'diff'} threads support custom reply edit delete and resolution actions',
       (tester) async {

@@ -353,3 +353,62 @@ header badge, including alongside custom headers. Return `SizedBox.shrink()` to
 hide it, or place `SyntaxCommentCount` in your own header. The **Custom threads**
 gallery option demonstrates custom count badges, navigation buttons, and a
 **Hide resolved** filter. Default controls also offer resolved-only review.
+
+### Discussion keyboard shortcuts
+
+Wrap a review toolbar and its file/diff view together in `SyntaxCommentShortcuts`.
+Use the same navigation controller as the view, and resolve thread actions to
+your retained application-owned sessions:
+
+```dart
+SyntaxCommentShortcuts(
+  controller: discussions,
+  threadController: (location) => threadSessions[(location.fileId, location.annotationId)],
+  child: reviewToolbarAndView,
+);
+```
+
+| Default binding | Command |
+| --- | --- |
+| Alt/Option+↓ | Next visible thread, wrapping at the end |
+| Alt/Option+↑ | Previous visible thread, wrapping at the beginning |
+| Alt/Option+R | Open and focus the selected thread's reply draft |
+| Alt/Option+Enter | Resolve or reopen the selected thread |
+
+Clicking or focusing an annotation selects it without scrolling. Navigation
+shortcuts select and reveal their destination, including folded sections.
+Reply and resolution require a selected, visible thread with a current session
+snapshot, permission and no pending save. Saves use the session's `onUpdate`;
+failed saves keep the existing inline error presentation. Held keys do not
+repeat commands. Filtering, file scoping and stale-content checks also apply.
+
+Shortcuts operate only while focus is inside the enabled review area. Nested
+scopes choose the innermost review; dialogs and controls outside it are unaffected.
+Native text fields, including source editors, search, comment inputs and IME,
+retain their normal behavior. `allowInTextFields: true` explicitly opts into
+review shortcuts there. Custom editors with their own focus model can disable
+the scope with `enabled: false` while editing. Use `focusNode` or `autofocus` to
+control initial keyboard focus.
+
+Replace `bindings` with `CommentShortcutBinding` entries to remap any command;
+an empty list disables all bindings. Each entry pairs a Flutter
+`ShortcutActivator` with a `CommentShortcutCommand` and a localizable key label:
+
+```dart
+bindings: const [
+  CommentShortcutBinding(
+    activator: SingleActivator(LogicalKeyboardKey.keyJ),
+    command: CommentShortcutCommand.next,
+    label: 'J',
+  ),
+],
+```
+
+Import `package:flutter/services.dart` for key constants. Include all desired
+bindings when replacing the defaults; the first matching entry wins.
+Default navigation and thread action tooltips show the active bindings.
+Custom builders can read `SyntaxCommentShortcuts.bindingsOf(context)` or call
+`SyntaxCommentShortcuts.tooltip(context, command, label)` to build matching hints.
+The **Discussion shortcuts** guide in both review examples displays the active
+mapping. **Line selection → Custom shortcuts** demonstrates J/K navigation,
+R to reply and X to resolve/reopen, with normal typing preserved in inputs.

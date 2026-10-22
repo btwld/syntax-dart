@@ -142,7 +142,7 @@ class _InteractionExamplesState extends State<_InteractionExample> {
   FocusNode get commentFocus => fileMode ? fileCommentFocus : diffCommentFocus;
   FileSelectionDetails? fileComment;
   DiffSelectionDetails? diffComment;
-  bool customComposer = false, customThreads = false;
+  bool customComposer = false, customThreads = false, customShortcuts = false;
   final threads = ExampleCommentThreads();
   late final diffComments = CommentNavigationController.patch(review);
   late final fileComments = CommentNavigationController.file(
@@ -397,39 +397,54 @@ class _InteractionExamplesState extends State<_InteractionExample> {
     ),
   );
 
+  void updateFileThread(String id, ReviewThread thread) => file.setAnnotations([
+    for (final current in file.annotations)
+      if (current.id != id)
+        current
+      else if (thread.comments.isNotEmpty)
+        LineAnnotation(
+          id: current.id,
+          start: current.start,
+          end: current.end,
+          data: thread,
+        ),
+  ]);
+
+  void updateDiffThread(String id, ReviewThread thread) =>
+      review.setAnnotations([
+        for (final current in review.annotations)
+          if (current.id != id)
+            current
+          else if (thread.comments.isNotEmpty)
+            ReviewAnnotation(
+              id: current.id,
+              fileId: current.fileId,
+              side: current.side,
+              line: current.line,
+              data: thread,
+            ),
+      ]);
+
+  CommentThreadController threadSession(CommentThreadLocation location) {
+    final update = location.fileId == file.file.id
+        ? updateFileThread
+        : updateDiffThread;
+    return threads.session(
+      location.thread,
+      onChanged: (thread) => update(location.annotationId, thread),
+    );
+  }
+
   Widget fileThread(LineAnnotation<Object?> annotation) => threads.view(
     annotation.data! as ReviewThread,
     custom: customThreads,
-    onChanged: (thread) => file.setAnnotations([
-      for (final current in file.annotations)
-        if (current.id != annotation.id)
-          current
-        else if (thread.comments.isNotEmpty)
-          LineAnnotation(
-            id: current.id,
-            start: current.start,
-            end: current.end,
-            data: thread,
-          ),
-    ]),
+    onChanged: (thread) => updateFileThread(annotation.id, thread),
   );
 
   Widget diffThread(ReviewAnnotation<Object?> annotation) => threads.view(
     annotation.data! as ReviewThread,
     custom: customThreads,
-    onChanged: (thread) => review.setAnnotations([
-      for (final current in review.annotations)
-        if (current.id != annotation.id)
-          current
-        else if (thread.comments.isNotEmpty)
-          ReviewAnnotation(
-            id: current.id,
-            fileId: current.fileId,
-            side: current.side,
-            line: current.line,
-            data: thread,
-          ),
-    ]),
+    onChanged: (thread) => updateDiffThread(annotation.id, thread),
   );
 
   Widget button(String label, VoidCallback? action) =>
@@ -502,6 +517,11 @@ class _InteractionExamplesState extends State<_InteractionExample> {
             customThreads ? 'Default threads' : 'Custom threads',
             () => setState(() => customThreads = !customThreads),
           ),
+          button(
+            customShortcuts ? 'Default shortcuts' : 'Custom shortcuts',
+            () => setState(() => customShortcuts = !customShortcuts),
+          ),
+          const ExampleCommentShortcutHelp(),
           Text(selectionLabel, style: const TextStyle(fontSize: 12)),
         ],
         if (widget.kind == 1) ...[
@@ -605,7 +625,7 @@ class _InteractionExamplesState extends State<_InteractionExample> {
     final style = (widget.fontStyles[fontName] ?? widget.textStyle).copyWith(
       fontSize: fontSize,
     );
-    return Column(
+    final content = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (widget.kind == 5)
@@ -808,6 +828,16 @@ class _InteractionExamplesState extends State<_InteractionExample> {
           child: Text(status ?? help, style: const TextStyle(fontSize: 11)),
         ),
       ],
+    );
+    return SyntaxCommentShortcuts(
+      controller: comments,
+      threadController: threadSession,
+      enabled: widget.kind == 0,
+      autofocus: widget.kind == 0,
+      bindings: customShortcuts
+          ? exampleCommentShortcuts
+          : defaultCommentShortcuts,
+      child: content,
     );
   }
 
