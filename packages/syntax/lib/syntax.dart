@@ -19,6 +19,7 @@ export 'src/edit/text_document.dart';
 export 'src/edit/editor.dart';
 export 'src/diff/review.dart';
 export 'src/diff/comment_thread.dart';
+export 'src/diff/comment_navigation.dart';
 export 'src/diff/merge_colors.dart';
 export 'src/diff/patch_controller.dart';
 export 'src/highlight_session.dart';

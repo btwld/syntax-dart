@@ -82,3 +82,9 @@ message actions, reply/edit inputs, resolution buttons, and **Copy discussion**.
 Its custom resolved summary shows the message count and **Show discussion** /
 **Reopen thread** actions; expanded resolved threads offer **Hide discussion**.
 Drafts survive switching the presentation, folding files, and scrolling away.
+
+File headers show unresolved discussion counts. The discussion toolbar jumps
+backward/forward through threads and filters all, unresolved, or resolved ones.
+Filtering preserves replies and drafts; counts update when discussions are
+posted, resolved, reopened, or deleted. **Custom threads** also replaces the
+header badges, previous/next buttons, and filter with app-supplied controls.

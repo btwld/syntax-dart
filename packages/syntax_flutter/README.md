@@ -298,3 +298,58 @@ copy-discussion command. Default expand/collapse labels are customizable through
 `CommentThreadLabels`; default controls support Tab traversal and Enter/Space.
 The [gallery session store](example/lib/comment_threads.dart) demonstrates local
 persistence, permission checks, annotation updates, and controller disposal.
+
+### Discussion counts, navigation and filters
+
+Bind `CommentNavigationController` to the same source that holds your
+`ReviewThread` annotations, and pass it to the view. Headers then show the live
+number of unresolved discussions. Counts include hidden threads and count each
+discussion once, regardless of how many replies it contains.
+
+```dart
+// Retain outside build; dispose before disposing review.
+final discussions = CommentNavigationController.patch(review);
+
+Column(children: [
+  SyntaxCommentNavigation(controller: discussions),
+  Expanded(child: PatchView.controlled(
+    controller: review,
+    highlighter: highlighter,
+    theme: theme,
+    commentNavigation: discussions,
+    annotationBuilder: (context, annotation) => SyntaxCommentThread(
+      controller: threadSessions[annotation.id]!,
+    ),
+  )),
+]);
+```
+
+Use `.file(editor)` for `SyntaxFileView`, or `.files(files)` for
+`SyntaxFileList`. The file binding accepts `annotationLine` when your view's
+`annotationLineBuilder` anchors discussions at a range endpoint. The file-list
+binding observes retained sessions without mounting their views. Applications
+with persisted discussions beyond that bounded cache can use the ordinary
+constructor with `CommentThreadLocation` entries and `onReveal`, updating anchors
+through `setThreads`. `onCancelReveal` cancels application scroll requests when
+navigation is superseded, filtered or disposed.
+
+Previous/next wraps through visible threads in source order, unfolds the target,
+loads missing patch context, and reveals the individual discussion even when
+several share a line. Pass `fileId` to `SyntaxCommentNavigation` to restrict
+navigation and counts to one file. `CommentThreadFilter.all`, `.unresolved`, and
+`.resolved` control both annotation visibility and navigation; other annotation
+types stay visible. Filtering leaves the underlying annotations and app-owned
+thread sessions intact, including reply/edit drafts.
+
+Controls can live in any application toolbar. `builder` replaces or wraps the
+whole `SyntaxCommentNavigation`; `countBuilder`, `actionsBuilder`, and
+`errorBuilder` customize individual parts. `CommentNavigationDetails` exposes
+counts, current position, visible threads, guarded previous/next commands, and
+`setFilter`. `CommentNavigationLabels`, padding and decoration customize defaults.
+Native buttons support Tab traversal and Enter/Space.
+
+File, collection and patch views expose `commentCountBuilder` to replace the
+header badge, including alongside custom headers. Return `SizedBox.shrink()` to
+hide it, or place `SyntaxCommentCount` in your own header. The **Custom threads**
+gallery option demonstrates custom count badges, navigation buttons, and a
+**Hide resolved** filter. Default controls also offer resolved-only review.

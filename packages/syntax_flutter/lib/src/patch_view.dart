@@ -10,6 +10,7 @@ import 'line_selection.dart';
 import 'selection_actions.dart';
 import 'selection_action_overlay.dart';
 import 'inline_comment_region.dart';
+import 'comment_navigation.dart';
 import 'package:syntax/syntax.dart';
 
 import 'highlighter_scope.dart';
@@ -69,6 +70,8 @@ class PatchView extends StatefulWidget {
     this.headerBuilder,
     this.hunkBuilder,
     this.annotationBuilder,
+    this.commentNavigation,
+    this.commentCountBuilder,
     this.gutterActionBuilder,
     this.onComment,
     this.commentSelection,
@@ -111,6 +114,8 @@ class PatchView extends StatefulWidget {
     this.headerBuilder,
     this.hunkBuilder,
     this.annotationBuilder,
+    this.commentNavigation,
+    this.commentCountBuilder,
     this.gutterActionBuilder,
     this.onComment,
     this.commentSelection,
@@ -159,6 +164,8 @@ class PatchView extends StatefulWidget {
     this.headerBuilder,
     this.hunkBuilder,
     this.annotationBuilder,
+    this.commentNavigation,
+    this.commentCountBuilder,
     this.gutterActionBuilder,
     this.onComment,
     this.commentSelection,
@@ -200,6 +207,8 @@ class PatchView extends StatefulWidget {
     this.headerBuilder,
     this.hunkBuilder,
     this.annotationBuilder,
+    this.commentNavigation,
+    this.commentCountBuilder,
     this.gutterActionBuilder,
     this.onComment,
     this.commentSelection,
@@ -253,6 +262,13 @@ class PatchView extends StatefulWidget {
 
   /// Replaces a hunk separator.
   final Widget Function(BuildContext, FileDiff, DiffHunk)? hunkBuilder;
+
+  /// Shared discussion counts, filtering and source navigation.
+  final CommentNavigationController? commentNavigation;
+
+  /// Replaces unresolved counts appended to default or custom file headers.
+  final Widget Function(BuildContext, CommentNavigationDetails)?
+  commentCountBuilder;
 
   /// Renders annotations beneath their corresponding source line.
   final Widget Function(BuildContext, ReviewAnnotation<Object?>)?
@@ -499,10 +515,12 @@ class _PatchViewState extends State<PatchView> {
     _scroll = widget.scrollController ?? ScrollController();
     widget.controller?.addListener(_controllerChanged);
     _syncSource();
+    widget.commentNavigation?.addListener(_selectionChanged);
   }
 
   @override
   void dispose() {
+    widget.commentNavigation?.removeListener(_selectionChanged);
     widget.controller?.removeListener(_controllerChanged);
     _localSelection?.dispose();
     if (widget.scrollController == null) _scroll.dispose();
@@ -513,6 +531,10 @@ class _PatchViewState extends State<PatchView> {
   @override
   void didUpdateWidget(PatchView oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.commentNavigation != widget.commentNavigation) {
+      oldWidget.commentNavigation?.removeListener(_selectionChanged);
+      widget.commentNavigation?.addListener(_selectionChanged);
+    }
     if (oldWidget.controller != widget.controller) {
       oldWidget.controller?.removeListener(_controllerChanged);
       widget.controller?.addListener(_controllerChanged);
@@ -629,6 +651,7 @@ class _PatchViewState extends State<PatchView> {
               widget.wrap,
               widget.textStyle,
               widget.controller?.annotations,
+              widget.commentNavigation?.filter,
               _actionWidth,
               commentRow,
               comment,
@@ -725,16 +748,28 @@ class _PatchViewState extends State<PatchView> {
           }
         }
         if (widget.headerBuilder case final builder?) {
-          return builder(context, _files[file], collapsed, toggle);
+          return commentFileHeader(
+            context,
+            builder(context, _files[file], collapsed, toggle),
+            widget.commentNavigation,
+            _files[file].id,
+            widget.commentCountBuilder,
+          );
         }
-        return SelectionContainer.disabled(
-          child: _FileHeaderBar(
-            file: _files[file],
-            collapsed: collapsed,
-            palette: palette,
-            labels: labels,
-            onToggle: toggle,
+        return commentFileHeader(
+          context,
+          SelectionContainer.disabled(
+            child: _FileHeaderBar(
+              file: _files[file],
+              collapsed: collapsed,
+              palette: palette,
+              labels: labels,
+              onToggle: toggle,
+            ),
           ),
+          widget.commentNavigation,
+          _files[file].id,
+          widget.commentCountBuilder,
         );
       case DiffNoticeRow(:final notice):
         return _notice(labels.notice(notice), palette);
@@ -979,13 +1014,20 @@ class _PatchViewState extends State<PatchView> {
             in controller?.annotations ?? const <ReviewAnnotation<Object?>>[]) {
           if (annotation.fileId == file.id &&
               annotation.side == side &&
-              annotation.line == number) {
+              annotation.line == number &&
+              (widget.commentNavigation?.isVisible(annotation.data) ?? true)) {
             additions.add(
-              widget.annotationBuilder?.call(context, annotation) ??
-                  Padding(
-                    padding: const EdgeInsets.all(8),
-                    child: Text('${annotation.data}'),
-                  ),
+              CommentNavigationAnchor(
+                controller: widget.commentNavigation,
+                fileId: file.id,
+                annotationId: annotation.id,
+                child:
+                    widget.annotationBuilder?.call(context, annotation) ??
+                    Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: Text('${annotation.data}'),
+                    ),
+              ),
             );
           }
         }

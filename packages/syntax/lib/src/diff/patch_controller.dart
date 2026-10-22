@@ -389,6 +389,12 @@ final class PatchController extends SyntaxObservable {
     }
   }
 
+  /// Cancels pending asynchronous reveals without cancelling shared content loads.
+  void cancelReveal() {
+    checkAlive();
+    _navigationGeneration++;
+  }
+
   /// Unfolds and optionally loads a one-based source line, returning its row.
   Future<int?> revealLine(
     String id,

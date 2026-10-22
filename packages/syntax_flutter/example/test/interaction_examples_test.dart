@@ -43,6 +43,9 @@ void main() {
         await tester.enterText(find.byType(TextField), 'Root comment');
         await tester.pump();
         await tap(find.text('Add note'));
+        expect(find.text('1 unresolved'), findsNWidgets(2));
+        await tap(find.widgetWithIcon(IconButton, Icons.arrow_downward));
+        expect(find.text('1 / 1'), findsOneWidget);
         final session = tester
             .widget<SyntaxCommentThread>(find.byType(SyntaxCommentThread))
             .controller;
@@ -63,13 +66,24 @@ void main() {
         await tester.enterText(find.byType(TextField), 'Reply draft');
         await tester.pumpAndSettle();
         await tap(find.text('Custom threads'));
+        expect(find.text('Needs attention: 1'), findsOneWidget);
+        expect(find.text('1 to review'), findsOneWidget);
+        await tap(find.text('Next thread'));
+        expect(find.text('1 / 1'), findsOneWidget);
         expect(find.widgetWithText(TextField, 'Reply draft'), findsOneWidget);
         expect(find.text('Team discussion'), findsOneWidget);
         await tap(find.text('Send reply'));
         expect(session.thread.comments.length, 2);
         await tap(find.text('Mark resolved'));
         expect(session.thread.resolved, isTrue);
+        expect(find.text('Needs attention: 0'), findsOneWidget);
+        expect(find.text('0 to review'), findsOneWidget);
         expect(find.text('Root comment'), findsNothing);
+        expect(find.text('Team review · 2 messages'), findsOneWidget);
+        await tap(find.text('Hide resolved'));
+        expect(find.byType(SyntaxCommentThread), findsNothing);
+        expect(find.text('0 / 0'), findsOneWidget);
+        await tap(find.text('Hide resolved'));
         expect(find.text('Team review · 2 messages'), findsOneWidget);
         await tap(find.text('Show discussion'));
         expect(find.text('Root comment'), findsOneWidget);
@@ -78,6 +92,8 @@ void main() {
         expect(find.text('Root comment'), findsNothing);
         await tap(find.text('Reopen thread'));
         expect(session.thread.resolved, isFalse);
+        expect(find.text('Needs attention: 1'), findsOneWidget);
+        expect(find.text('1 to review'), findsOneWidget);
         expect(find.text('Root comment'), findsOneWidget);
         await tap(
           find.descendant(

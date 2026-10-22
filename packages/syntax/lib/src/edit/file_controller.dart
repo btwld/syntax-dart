@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'editor.dart';
 import 'text_document.dart';
 
@@ -7,16 +8,29 @@ import 'text_document.dart';
 /// traversal, filesystem access, or tree management.
 final class FileListController extends SyntaxObservable {
   /// Retains up to [sessionLimit] inactive sessions, plus sessions in use.
-  FileListController(Iterable<SourceFile> files, {int sessionLimit = 32})
-    : sessions = SessionStore<EditorController>(
-        capacity: sessionLimit,
-        onEvict: (session) => session.dispose(),
-      ) {
+  FileListController(Iterable<SourceFile> files, {int sessionLimit = 32}) {
+    sessions = SessionStore<EditorController>(
+      capacity: sessionLimit,
+      onEvict: (session) {
+        _bases.remove(session.file.id);
+        session.dispose();
+        // Releases may happen while a renderer is unmounting rows. Publish the
+        // cache change after that lifecycle finishes, coalescing bulk eviction.
+        if (!_sessionChangePending) {
+          _sessionChangePending = true;
+          scheduleMicrotask(() {
+            _sessionChangePending = false;
+            if (!isDisposed) notifyListeners();
+          });
+        }
+      },
+    );
     setFiles(files);
   }
 
   /// Drafts remain available after their views release them.
-  final SessionStore<EditorController> sessions;
+  late final SessionStore<EditorController> sessions;
+  bool _sessionChangePending = false;
   List<SourceFile> _files = const [];
   final Set<String> _collapsed = {};
   final Map<String, SourceFile> _bases = {};
@@ -76,7 +90,9 @@ final class FileListController extends SyntaxObservable {
   EditorController acquire(String id) => sessions.acquire(id, () {
     final source = file(id);
     _bases[id] = source;
-    return EditorController(file: source);
+    return EditorController(file: source)..addListener(() {
+      if (!isDisposed && files.any((file) => file.id == id)) notifyListeners();
+    });
   });
 
   /// Whether a retained draft was based on a source the application replaced.

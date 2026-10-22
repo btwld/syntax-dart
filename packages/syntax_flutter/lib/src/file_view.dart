@@ -10,6 +10,7 @@ import 'line_selection.dart';
 import 'selection_actions.dart';
 import 'selection_action_overlay.dart';
 import 'inline_comment_region.dart';
+import 'comment_navigation.dart';
 
 /// A virtualized highlighted file with source-only line selection and copy.
 class SyntaxFileView extends StatefulWidget {
@@ -25,6 +26,8 @@ class SyntaxFileView extends StatefulWidget {
     this.textStyle,
     this.headerBuilder,
     this.annotationBuilder,
+    this.commentNavigation,
+    this.commentCountBuilder,
     this.annotationLineBuilder,
     this.gutterActionBuilder,
     this.onComment,
@@ -64,6 +67,13 @@ class SyntaxFileView extends StatefulWidget {
 
   /// Custom fixed file header.
   final Widget Function(BuildContext, SourceFile)? headerBuilder;
+
+  /// Shared discussion counts, visibility and source navigation.
+  final CommentNavigationController? commentNavigation;
+
+  /// Replaces the unresolved count appended to the file header.
+  final Widget Function(BuildContext, CommentNavigationDetails)?
+  commentCountBuilder;
 
   /// Custom content below an annotated line.
   final Widget Function(BuildContext, LineAnnotation<Object?>)?
@@ -188,11 +198,16 @@ class _SyntaxFileViewState extends State<SyntaxFileView> {
   void initState() {
     super.initState();
     _attach();
+    widget.commentNavigation?.addListener(_changed);
   }
 
   @override
   void didUpdateWidget(SyntaxFileView oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.commentNavigation != widget.commentNavigation) {
+      oldWidget.commentNavigation?.removeListener(_changed);
+      widget.commentNavigation?.addListener(_changed);
+    }
     if (oldWidget.controller != editor ||
         oldWidget.highlighter != widget.highlighter ||
         oldWidget.scrollController != widget.scrollController ||
@@ -289,22 +304,31 @@ class _SyntaxFileViewState extends State<SyntaxFileView> {
             child: Column(
               children: [
                 if (widget.showHeader)
-                  widget.headerBuilder?.call(context, editor.file) ??
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Padding(
-                              padding: const EdgeInsets.all(8),
-                              child: Text(editor.file.path, style: styles.base),
+                  commentFileHeader(
+                    context,
+                    widget.headerBuilder?.call(context, editor.file) ??
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.all(8),
+                                child: Text(
+                                  editor.file.path,
+                                  style: styles.base,
+                                ),
+                              ),
                             ),
-                          ),
-                          IconButton(
-                            tooltip: 'Copy selection',
-                            onPressed: _copy,
-                            icon: const Icon(Icons.copy),
-                          ),
-                        ],
-                      ),
+                            IconButton(
+                              tooltip: 'Copy selection',
+                              onPressed: _copy,
+                              icon: const Icon(Icons.copy),
+                            ),
+                          ],
+                        ),
+                    widget.commentNavigation,
+                    editor.file.id,
+                    widget.commentCountBuilder,
+                  ),
                 Expanded(
                   child: LineSelectionRegion(
                     controller: _scroll,
@@ -320,6 +344,7 @@ class _SyntaxFileViewState extends State<SyntaxFileView> {
                         widget.executor,
                         widget.highlighter.revision,
                         editor.annotations,
+                        widget.commentNavigation?.filter,
                         widget.annotationLineBuilder,
                         editor.diagnostics,
                         editor.carets,
@@ -510,21 +535,31 @@ class _SyntaxFileViewState extends State<SyntaxFileView> {
                                   ),
                                 ),
                               for (final a in editor.annotations)
-                                if (widget.annotationLineBuilder != null
-                                    ? widget.annotationLineBuilder!(a) == line
-                                    : a.start >= start &&
-                                          (a.start < end + 1 ||
-                                              line == doc.lineCount - 1))
-                                  SelectionContainer.disabled(
-                                    child:
-                                        widget.annotationBuilder?.call(
-                                          context,
-                                          a,
+                                if ((widget.commentNavigation?.isVisible(
+                                          a.data,
                                         ) ??
-                                        Padding(
-                                          padding: const EdgeInsets.all(8),
-                                          child: Text('${a.data}'),
-                                        ),
+                                        true) &&
+                                    (widget.annotationLineBuilder != null
+                                        ? widget.annotationLineBuilder!(a) ==
+                                              line
+                                        : a.start >= start &&
+                                              (a.start < end + 1 ||
+                                                  line == doc.lineCount - 1)))
+                                  SelectionContainer.disabled(
+                                    child: CommentNavigationAnchor(
+                                      controller: widget.commentNavigation,
+                                      fileId: editor.file.id,
+                                      annotationId: a.id,
+                                      child:
+                                          widget.annotationBuilder?.call(
+                                            context,
+                                            a,
+                                          ) ??
+                                          Padding(
+                                            padding: const EdgeInsets.all(8),
+                                            child: Text('${a.data}'),
+                                          ),
+                                    ),
                                   ),
                               for (final caret in editor.carets)
                                 if (caret.selection.active >= start &&
@@ -556,6 +591,7 @@ class _SyntaxFileViewState extends State<SyntaxFileView> {
 
   @override
   void dispose() {
+    widget.commentNavigation?.removeListener(_changed);
     _detach(editor, widget.scrollController);
     _focus.dispose();
     super.dispose();
@@ -581,6 +617,8 @@ class SyntaxFileList extends StatefulWidget {
     this.selectionActionBuilder,
     this.selectionActionStyle = const SelectionActionStyle(),
     this.annotationBuilder,
+    this.commentNavigation,
+    this.commentCountBuilder,
     this.annotationLineBuilder,
   });
 
@@ -624,6 +662,13 @@ class SyntaxFileList extends StatefulWidget {
   /// Presentation and shortcuts shared by preview selection actions.
   final SelectionActionStyle selectionActionStyle;
 
+  /// Shared discussion counts and filtering for retained file sessions.
+  final CommentNavigationController? commentNavigation;
+
+  /// Replaces each file header's unresolved discussion count.
+  final Widget Function(BuildContext, CommentNavigationDetails)?
+  commentCountBuilder;
+
   /// Application-owned annotation content below preview source lines.
   final Widget Function(BuildContext, LineAnnotation<Object?>)?
   annotationBuilder;
@@ -644,11 +689,16 @@ class _SyntaxFileListState extends State<SyntaxFileList> {
   void initState() {
     super.initState();
     widget.controller.addListener(_changed);
+    widget.commentNavigation?.addListener(_changed);
   }
 
   @override
   void didUpdateWidget(SyntaxFileList oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.commentNavigation != widget.commentNavigation) {
+      oldWidget.commentNavigation?.removeListener(_changed);
+      widget.commentNavigation?.addListener(_changed);
+    }
     if (oldWidget.controller != widget.controller) {
       oldWidget.controller.removeListener(_changed);
       widget.controller.addListener(_changed);
@@ -688,14 +738,20 @@ class _SyntaxFileListState extends State<SyntaxFileList> {
           key: ValueKey(file.id),
           mainAxisSize: MainAxisSize.min,
           children: [
-            ListTile(
-              title: Text(file.path),
-              trailing: Icon(
-                widget.controller.isCollapsed(file.id)
-                    ? Icons.expand_more
-                    : Icons.expand_less,
+            commentFileHeader(
+              context,
+              ListTile(
+                title: Text(file.path),
+                trailing: Icon(
+                  widget.controller.isCollapsed(file.id)
+                      ? Icons.expand_more
+                      : Icons.expand_less,
+                ),
+                onTap: () => widget.controller.toggle(file.id),
               ),
-              onTap: () => widget.controller.toggle(file.id),
+              widget.commentNavigation,
+              file.id,
+              widget.commentCountBuilder,
             ),
             if (widget.controller.hasSourceConflict(file.id))
               TextButton(
@@ -718,6 +774,7 @@ class _SyntaxFileListState extends State<SyntaxFileList> {
   );
   @override
   void dispose() {
+    widget.commentNavigation?.removeListener(_changed);
     widget.controller.removeListener(_changed);
     _scroll.dispose();
     super.dispose();
@@ -794,6 +851,7 @@ class _SessionFileState extends State<_SessionFile> {
             selectionActionBuilder: owner.selectionActionBuilder,
             selectionActionStyle: owner.selectionActionStyle,
             annotationBuilder: owner.annotationBuilder,
+            commentNavigation: owner.commentNavigation,
             annotationLineBuilder: owner.annotationLineBuilder,
           );
   }

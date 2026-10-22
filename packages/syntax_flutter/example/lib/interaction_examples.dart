@@ -144,6 +144,13 @@ class _InteractionExamplesState extends State<_InteractionExample> {
   DiffSelectionDetails? diffComment;
   bool customComposer = false, customThreads = false;
   final threads = ExampleCommentThreads();
+  late final diffComments = CommentNavigationController.patch(review);
+  late final fileComments = CommentNavigationController.file(
+    file,
+    annotationLine: (a) => file.document.positionAt(a.end).line,
+  );
+  CommentNavigationController get comments =>
+      fileMode ? fileComments : diffComments;
   final oldInput = TextEditingController(text: interactionBefore);
   final newInput = TextEditingController(text: interactionAfter);
   bool fileMode = false,
@@ -647,7 +654,45 @@ class _InteractionExamplesState extends State<_InteractionExample> {
           ),
         ConstrainedBox(
           constraints: const BoxConstraints(maxHeight: 180),
-          child: SingleChildScrollView(child: controls),
+          child: SingleChildScrollView(
+            child: Column(
+              children: [
+                controls,
+                if (widget.kind == 0)
+                  SyntaxCommentNavigation(
+                    controller: comments,
+                    countBuilder: customThreads
+                        ? (_, details) =>
+                              Text('Needs attention: ${details.unresolved}')
+                        : null,
+                    actionsBuilder: customThreads
+                        ? (_, details) => Wrap(
+                            spacing: 8,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              button('Previous thread', details.previous),
+                              Text(
+                                '${details.position} / ${details.visible.length}',
+                              ),
+                              button('Next thread', details.next),
+                              FilterChip(
+                                label: const Text('Hide resolved'),
+                                selected:
+                                    details.controller.filter ==
+                                    CommentThreadFilter.unresolved,
+                                onSelected: (hide) => details.setFilter(
+                                  hide
+                                      ? CommentThreadFilter.unresolved
+                                      : CommentThreadFilter.all,
+                                ),
+                              ),
+                            ],
+                          )
+                        : null,
+                  ),
+              ],
+            ),
+          ),
         ),
         const Divider(height: 1),
         if (widget.kind == 3)
@@ -672,6 +717,13 @@ class _InteractionExamplesState extends State<_InteractionExample> {
                   annotationLineBuilder: (annotation) =>
                       file.document.positionAt(annotation.end).line,
                   commentBuilder: (context, selection) => composer(),
+                  commentNavigation: fileComments,
+                  commentCountBuilder: customThreads
+                      ? (_, details) => Padding(
+                          padding: const EdgeInsets.all(8),
+                          child: Text('${details.unresolved} to review'),
+                        )
+                      : null,
                   annotationBuilder: (context, annotation) =>
                       fileThread(annotation),
                   selectionActionStyle: SelectionActionStyle(
@@ -687,6 +739,13 @@ class _InteractionExamplesState extends State<_InteractionExample> {
                   onComment: (selection) => annotate(diff: selection),
                   commentSelection: diffComment,
                   commentBuilder: (context, selection) => composer(),
+                  commentNavigation: diffComments,
+                  commentCountBuilder: customThreads
+                      ? (_, details) => Padding(
+                          padding: const EdgeInsets.all(8),
+                          child: Text('${details.unresolved} to review'),
+                        )
+                      : null,
                   annotationBuilder: (context, annotation) =>
                       diffThread(annotation),
                   selectionActionStyle: SelectionActionStyle(
@@ -756,6 +815,8 @@ class _InteractionExamplesState extends State<_InteractionExample> {
   void dispose() {
     review.removeListener(changed);
     file.removeListener(changed);
+    diffComments.dispose();
+    fileComments.dispose();
     review.dispose();
     file.dispose();
     threads.dispose();

@@ -218,6 +218,8 @@ class _ShowcaseHomeState extends State<ShowcaseHome> {
   final _highlighter = Highlighter(languages: [dartLanguage]);
   final _night = _codeTheme(true), _day = _codeTheme(false);
   late PatchController _review = _newReview();
+  late CommentNavigationController _comments =
+      CommentNavigationController.patch(_review);
   final _commentInput = TextEditingController();
   final _commentFocus = FocusNode();
   DiffSelectionDetails? _commentSelection;
@@ -361,7 +363,9 @@ class _ShowcaseHomeState extends State<ShowcaseHome> {
         _commentSelection = null;
         _commentInput.clear();
         final previous = _review..removeListener(_changed);
+        _comments.dispose();
         _review = _newReview()..addListener(_changed);
+        _comments = CommentNavigationController.patch(_review);
         _threads.clear();
         _contextExpanded = false;
         WidgetsBinding.instance.addPostFrameCallback((_) => previous.dispose());
@@ -1039,6 +1043,11 @@ class _ShowcaseHomeState extends State<ShowcaseHome> {
                   ),
               ],
             ),
+          if (_tab == 0)
+            SyntaxCommentNavigation(
+              controller: _comments,
+              padding: EdgeInsets.zero,
+            ),
           _tool('Reset', Icons.restart_alt_rounded, _reset),
         ],
       ),
@@ -1107,6 +1116,7 @@ class _ShowcaseHomeState extends State<ShowcaseHome> {
     0 => PatchView.controlled(
       key: const ValueKey('review'),
       controller: _review,
+      commentNavigation: _comments,
       highlighter: _highlighter,
       theme: codeTheme,
       padding: EdgeInsets.zero,
@@ -1455,6 +1465,7 @@ class _ShowcaseHomeState extends State<ShowcaseHome> {
     _commentInput.dispose();
     _commentFocus.dispose();
     _threads.dispose();
+    _comments.dispose();
     _review.dispose();
     _files.dispose();
     _editor.dispose();
