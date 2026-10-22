@@ -104,6 +104,119 @@ void main() {
     presentation.dispose();
     editor.dispose();
   });
+  for (final ending in ['\n', '\r\n', '\r']) {
+    test(
+      'stream retains completed line colors with ${ending.codeUnits}',
+      () async {
+        final stream = StreamDocumentController(
+          SourceFile(
+            id: 'stream',
+            path: 'stream.dart',
+            text: 'final stable = 1;$ending/*$ending',
+          ),
+        );
+        final executor = _Delayed();
+        final presentation = PresentationController(
+          editor: stream.editor,
+          highlighter: highlighter,
+          theme: githubDarkTheme,
+          executor: executor,
+          overscan: 0,
+        );
+        addTearDown(() {
+          presentation.dispose();
+          stream.dispose();
+        });
+        presentation.setViewport(0, 3);
+        final initial = presentation.flush();
+        executor.complete(0);
+        await initial;
+        final stable = presentation.line(0)!.first;
+        stream.add('comment 🙂');
+        expect(presentation.line(0)!.first, same(stable));
+        expect(presentation.line(1), isNotNull);
+        expect(presentation.line(2), isNull);
+        final pending = presentation.flush();
+        stream.add('$ending*/');
+        expect(presentation.line(0)!.first, same(stable));
+        expect(
+          presentation.snapshot!.revision,
+          stream.editor.document.revision,
+        );
+        presentation.setViewport(0, stream.editor.document.lineCount);
+        final latest = presentation.flush();
+        executor.complete(1);
+        await pending;
+        expect(presentation.line(0)!.first, same(stable));
+        expect(presentation.line(2), isNull);
+        executor.complete(2);
+        await latest;
+        expect(
+          presentation.snapshot!.toJson(),
+          computeHighlight(executor.requests.last.$1).toJson(),
+        );
+        stream.replaceProvisional('*/ // done');
+        expect(presentation.line(0), isNotNull);
+        expect(presentation.line(2), isNotNull);
+        expect(presentation.line(3), isNull);
+        final complete = presentation.flush();
+        executor.complete(3);
+        await complete;
+        stream.finish();
+        expect(
+          presentation.snapshot!.toJson(),
+          computeHighlight(executor.requests.last.$1).toJson(),
+        );
+      },
+    );
+  }
+  test(
+    'editing grammar state invalidates the suffix of a retained window',
+    () async {
+      final editor = EditorController(
+        file: const SourceFile(
+          id: 'edit',
+          path: 'edit.dart',
+          text: '// before\nfinal stable = 1;\n/* comment\nstill comment\n*/',
+        ),
+      );
+      final executor = _Delayed();
+      final presentation = PresentationController(
+        editor: editor,
+        highlighter: highlighter,
+        theme: githubDarkTheme,
+        executor: executor,
+        overscan: 0,
+      );
+      addTearDown(() {
+        presentation.dispose();
+        editor.dispose();
+      });
+      presentation.setViewport(1, 5);
+      final initial = presentation.flush();
+      executor.complete(0);
+      await initial;
+      editor.document.applyEdits([
+        const DocumentEdit(
+          DocumentRange(DocumentPosition(2, 0), DocumentPosition(2, 2)),
+          '//',
+        ),
+      ]);
+      expect(presentation.snapshot!.startLine, 1);
+      expect(presentation.line(1), isNotNull);
+      expect(presentation.line(2), isNull);
+      expect(presentation.line(3), isNull);
+      final changed = presentation.flush();
+      executor.complete(1);
+      await changed;
+      expect(
+        presentation.snapshot!.toJson(),
+        computeHighlight(executor.requests.last.$1).toJson(),
+      );
+      editor.document.applyOffsetEdits([const OffsetEdit(0, 0, '/*')]);
+      expect(presentation.snapshot, isNull);
+    },
+  );
   test(
     'consumer cancellation is immediate and cache clearing rejects inflight results',
     () async {
@@ -139,6 +252,9 @@ class _Delayed implements HighlightExecutor {
     requests.add((request, completer));
     return completer.future;
   }
+
+  void complete(int index) =>
+      requests[index].$2.complete(computeHighlight(requests[index].$1));
 
   @override
   void dispose() {}

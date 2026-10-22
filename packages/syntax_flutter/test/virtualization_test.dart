@@ -1,9 +1,63 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:syntax/langs/dart.dart';
 import 'package:syntax/themes/github_dark.dart';
 import 'package:syntax_flutter/syntax_flutter.dart';
 
 void main() {
+  testWidgets(
+    'stream keeps existing text colored while highlighting catches up',
+    (tester) async {
+      final stream = StreamDocumentController(
+        const SourceFile(
+          id: 'stream',
+          path: 'stream.dart',
+          text: 'final stable = 1;\n',
+        ),
+      );
+      final executor = _DelayedExecutor();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SyntaxFileView(
+              controller: stream.editor,
+              highlighter: Highlighter(languages: [dartLanguage]),
+              theme: githubDarkTheme,
+              executor: executor,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(executor.requests, isNotEmpty);
+      executor.completeLatest();
+      await tester.pumpAndSettle();
+      final line = find.text('final stable = 1;', findRichText: true);
+      final element = tester.element(line);
+      final original = tester.widget<RichText>(line).text;
+      final colored = <InlineSpan>[];
+      original.visitChildren((span) {
+        if (span.style?.color != null) colored.add(span);
+        return true;
+      });
+      expect(colored.length, greaterThan(1));
+      for (final chunk in ['final next', ' = 2;', '\n// done']) {
+        stream.add(chunk);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 16));
+        expect(tester.widget<RichText>(line).text, original);
+        expect(tester.element(line), same(element));
+      }
+      executor.completeLatest();
+      await tester.pumpAndSettle();
+      expect(tester.widget<RichText>(line).text, original);
+      expect(find.text('final next = 2;', findRichText: true), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+      stream.dispose();
+    },
+  );
   testWidgets(
     '100000 lines jump directly and retain mounted rows while scrolling',
     (tester) async {
@@ -83,6 +137,29 @@ class _RecordingExecutor implements HighlightExecutor {
   }) async {
     requests.add(request);
     return computeHighlight(request);
+  }
+
+  @override
+  void dispose() {}
+}
+
+class _DelayedExecutor implements HighlightExecutor {
+  final requests = <(HighlightRequest, Completer<HighlightResult>)>[];
+
+  @override
+  Future<HighlightResult> highlight(
+    HighlightRequest request, {
+    CancellationToken? cancellation,
+  }) {
+    final completer = Completer<HighlightResult>();
+    requests.add((request, completer));
+    return completer.future;
+  }
+
+  void completeLatest() {
+    for (final (request, completer) in requests) {
+      if (!completer.isCompleted) completer.complete(computeHighlight(request));
+    }
   }
 
   @override

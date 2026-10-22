@@ -50,7 +50,8 @@ final class PresentationController extends SyntaxObservable {
 
   HighlightResult? _snapshot;
 
-  /// Most recently accepted presentation data, or null while none is ready.
+  /// Valid presentation data, or null while none is ready. During an edit this
+  /// may retain only the unchanged lines preceding the first changed line.
   HighlightResult? get snapshot => _snapshot;
 
   /// Last non-cancellation worker error; a later request can retry.
@@ -94,7 +95,32 @@ final class PresentationController extends SyntaxObservable {
   }
 
   void _invalidate() {
+    final ready = _snapshot;
+    final document = editor.document;
+    final change = document.lastChange;
     _snapshot = null;
+    if (ready != null &&
+        _grammarRevision == highlighter.revision &&
+        change != null &&
+        change.previousRevision == ready.revision &&
+        change.edits.isNotEmpty) {
+      // Appending a chunk cannot change tokens on preceding complete lines.
+      // Drop the edited line and everything after it: even unchanged suffix
+      // text can inherit a different multiline grammar state from the edit.
+      final changedLine = document.positionAt(change.edits.first.start).line;
+      final retained = (changedLine - ready.startLine).clamp(
+        0,
+        ready.lines.length,
+      );
+      if (retained > 0) {
+        _snapshot = HighlightResult(
+          fileId: ready.fileId,
+          revision: document.revision,
+          startLine: ready.startLine,
+          lines: ready.lines.take(retained),
+        );
+      }
+    }
     _schedule();
   }
 
