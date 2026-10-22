@@ -81,15 +81,48 @@ class InteractionExamples extends StatefulWidget {
     required this.kind,
     required this.theme,
     required this.textStyle,
+    this.fontStyles = const {},
   });
   final int kind;
   final SyntaxTheme theme;
   final TextStyle textStyle;
+  final Map<String, TextStyle> fontStyles;
   @override
-  State<InteractionExamples> createState() => _InteractionExamplesState();
+  State<InteractionExamples> createState() => _InteractionExamplesHostState();
 }
 
-class _InteractionExamplesState extends State<InteractionExamples> {
+class _InteractionExamplesHostState extends State<InteractionExamples> {
+  int reset = 0;
+  @override
+  Widget build(BuildContext context) => _InteractionExample(
+    key: ValueKey((widget.kind, reset)),
+    kind: widget.kind,
+    theme: widget.theme,
+    textStyle: widget.textStyle,
+    fontStyles: widget.fontStyles,
+    onReset: () => setState(() => reset++),
+  );
+}
+
+class _InteractionExample extends StatefulWidget {
+  const _InteractionExample({
+    super.key,
+    required this.kind,
+    required this.theme,
+    required this.textStyle,
+    required this.fontStyles,
+    required this.onReset,
+  });
+  final int kind;
+  final SyntaxTheme theme;
+  final TextStyle textStyle;
+  final Map<String, TextStyle> fontStyles;
+  final VoidCallback onReset;
+  @override
+  State<_InteractionExample> createState() => _InteractionExamplesState();
+}
+
+class _InteractionExamplesState extends State<_InteractionExample> {
   final highlighter = Highlighter(languages: [dartLanguage]);
   late final review = interactionReview()..addListener(changed);
   late final file = EditorController(
@@ -109,9 +142,17 @@ class _InteractionExamplesState extends State<InteractionExamples> {
   DiffIndicators indicators = DiffIndicators.classic;
   HunkSeparatorStyle separators = HunkSeparatorStyle.lineInfo;
   InlineDiffMode comparison = InlineDiffMode.mergedWords;
-  double fontSize = 13;
-  String fontFamily = 'monospace';
-  String status = 'Drag line numbers or Shift-click to extend a range.';
+  double? fontSize;
+  String fontName = 'Default';
+  String? status;
+  String get help => switch (widget.kind) {
+    0 => 'Drag line numbers or Shift-click to extend a range.',
+    1 => 'Click a section name to fold it. Reset restores accepted changes.',
+    2 => 'Appearance settings affect this sample only.',
+    3 => 'Select a line or activate a token to inspect its details.',
+    4 => 'Click the custom header to collapse or expand the file.',
+    _ => 'Edit either source, then compare to refresh the diff.',
+  };
   String? inspected;
   void changed() {
     if (mounted) setState(() {});
@@ -294,16 +335,17 @@ class _InteractionExamplesState extends State<InteractionExamples> {
           ),
           menu(
             'Size',
-            fontSize,
-            [11.0, 13.0, 16.0, 19.0],
+            fontSize ?? widget.textStyle.fontSize ?? 13,
+            ({11.0, 13.0, 16.0, 19.0, widget.textStyle.fontSize ?? 13}.toList()
+              ..sort()),
             (v) => fontSize = v,
-            (v) => '${v.toInt()}',
+            (v) => v == v.roundToDouble() ? '${v.toInt()}' : '$v',
           ),
           menu(
             'Font',
-            fontFamily,
-            ['monospace', 'Menlo', 'Courier New'],
-            (v) => fontFamily = v,
+            fontName,
+            ['Default', ...widget.fontStyles.keys],
+            (v) => fontName = v,
             (v) => v,
           ),
         ],
@@ -336,18 +378,18 @@ class _InteractionExamplesState extends State<InteractionExamples> {
           wrap ? 'Wrap on' : 'Wrap off',
           () => setState(() => wrap = !wrap),
         ),
+        button('Reset example', widget.onReset),
       ],
     ),
   );
 
   String tokenHelp(FileDiff source, DiffLine line, DiffSegment segment) =>
-      '${segment.text.trim().isEmpty ? 'Whitespace' : segment.text}\n${segment.changed ? 'Changed token' : 'Unchanged token'} · line ${line.newNumber ?? line.oldNumber}\nColor #${segment.style.foreground.toRadixString(16).substring(2)}';
+      '${segment.text.trim().isEmpty ? 'Whitespace' : segment.text}\n${segment.changed ? 'Changed token' : 'Syntax token'} · line ${line.newNumber ?? line.oldNumber}\nColor #${segment.style.foreground.toRadixString(16).substring(2)}';
 
   @override
   Widget build(BuildContext context) {
-    final style = widget.textStyle.copyWith(
+    final style = (widget.fontStyles[fontName] ?? widget.textStyle).copyWith(
       fontSize: fontSize,
-      fontFamily: fontFamily,
     );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -396,7 +438,10 @@ class _InteractionExamplesState extends State<InteractionExamples> {
               ],
             ),
           ),
-        controls,
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 180),
+          child: SingleChildScrollView(child: controls),
+        ),
         const Divider(height: 1),
         if (widget.kind == 3)
           Padding(
@@ -437,6 +482,12 @@ class _InteractionExamplesState extends State<InteractionExamples> {
                       ? (context, source, collapsed, toggle) => Material(
                           color: Theme.of(context).colorScheme.primaryContainer,
                           child: ListTile(
+                            textColor: Theme.of(
+                              context,
+                            ).colorScheme.onPrimaryContainer,
+                            iconColor: Theme.of(
+                              context,
+                            ).colorScheme.onPrimaryContainer,
                             leading: const Icon(Icons.description_outlined),
                             title: Text(source.path),
                             subtitle: Text(
@@ -462,7 +513,7 @@ class _InteractionExamplesState extends State<InteractionExamples> {
         const Divider(height: 1),
         Padding(
           padding: const EdgeInsets.all(10),
-          child: Text(status, style: const TextStyle(fontSize: 11)),
+          child: Text(status ?? help, style: const TextStyle(fontSize: 11)),
         ),
       ],
     );

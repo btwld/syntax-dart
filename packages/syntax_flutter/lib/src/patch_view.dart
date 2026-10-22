@@ -11,6 +11,7 @@ import 'package:syntax/syntax.dart';
 
 import 'highlighter_scope.dart';
 import 'styles.dart';
+import 'chrome.dart';
 
 /// A syntax-highlighted view of code changes.
 ///
@@ -296,6 +297,7 @@ class PatchView extends StatefulWidget {
 
 class _PatchViewState extends State<PatchView> {
   late ScrollController _scroll;
+  final _focus = FocusNode();
   int _stickyFile = 0;
   Object? _sourceKey;
   List<FileDiff> _files = const [];
@@ -421,6 +423,7 @@ class _PatchViewState extends State<PatchView> {
   void dispose() {
     widget.controller?.removeListener(_controllerChanged);
     if (widget.scrollController == null) _scroll.dispose();
+    _focus.dispose();
     super.dispose();
   }
 
@@ -557,17 +560,23 @@ class _PatchViewState extends State<PatchView> {
           const SingleActivator(LogicalKeyboardKey.keyC, meta: true): () =>
               Clipboard.setData(ClipboardData(text: controller.selectedText())),
         },
-        child: Focus(child: list),
+        child: Focus(focusNode: _focus, child: list),
       );
     }
-    return HorizontalCodeScope(
-      group: _horizontal,
-      child: DefaultSelectionStyle(
-        selectionColor: widget.theme.selectionColor,
-        child: ColoredBox(
-          color: palette.background,
-          // Code reads left to right whatever the app's direction.
-          child: Directionality(textDirection: TextDirection.ltr, child: list),
+    return SyntaxChrome(
+      theme: widget.theme,
+      child: HorizontalCodeScope(
+        group: _horizontal,
+        child: DefaultSelectionStyle(
+          selectionColor: widget.theme.selectionColor,
+          child: Material(
+            color: palette.background,
+            // Code reads left to right whatever the app's direction.
+            child: Directionality(
+              textDirection: TextDirection.ltr,
+              child: list,
+            ),
+          ),
         ),
       ),
     );
@@ -770,6 +779,7 @@ class _PatchViewState extends State<PatchView> {
     if (lines.isNotEmpty) {
       final lineChild = child;
       void selectAt(double x, double width, bool extend) {
+        _focus.requestFocus();
         final (line, side) = lines.length > 1 && x >= width / 2
             ? lines.last
             : lines.first;
@@ -938,6 +948,8 @@ class _PatchViewState extends State<PatchView> {
             highlighter: highlighter,
             theme: widget.theme,
             language: widget.language ?? file.language,
+            textStyle: widget.textStyle,
+            wrap: widget.wrap,
             onDismiss: () => Navigator.pop(context),
             onComplete: (_) async {
               final accepted = await controller.completeEdit(

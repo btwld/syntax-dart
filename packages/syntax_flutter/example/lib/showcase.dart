@@ -80,6 +80,13 @@ class _SyntaxShowcaseState extends State<SyntaxShowcase> {
       home: ShowcaseHome(
         dark: _dark,
         onBrightness: () => setState(() => _dark = !_dark),
+        fontStyles: {
+          'Roboto Mono': GoogleFonts.robotoMono(fontSize: 13.5, height: 1.72),
+          'Source Code Pro': GoogleFonts.sourceCodePro(
+            fontSize: 13.5,
+            height: 1.72,
+          ),
+        },
         codeStyle: GoogleFonts.jetBrainsMono(
           fontSize: 13.5,
           height: 1.72,
@@ -191,6 +198,7 @@ class ShowcaseHome extends StatefulWidget {
     super.key,
     required this.dark,
     required this.onBrightness,
+    this.fontStyles = const {},
     this.codeStyle = const TextStyle(
       fontFamily: 'monospace',
       fontSize: 13.5,
@@ -200,6 +208,7 @@ class ShowcaseHome extends StatefulWidget {
   final bool dark;
   final VoidCallback onBrightness;
   final TextStyle codeStyle;
+  final Map<String, TextStyle> fontStyles;
   @override
   State<ShowcaseHome> createState() => _ShowcaseHomeState();
 }
@@ -231,6 +240,7 @@ class _ShowcaseHomeState extends State<ShowcaseHome> {
   int _tab = 0, _streamLine = 0;
   int? _diagnosticRevision;
   bool _wrap = true, _backgrounds = true, _indicators = true;
+  bool _contextExpanded = false;
   bool get _activeWrap => _tab == 5 ? _largeWrap : _wrap;
   InlineDiffMode _comparison = InlineDiffMode.mergedWords;
   final _resolved = <String>{};
@@ -338,36 +348,45 @@ class _ShowcaseHomeState extends State<ShowcaseHome> {
   }
 
   void _reset() {
-    _timer?.cancel();
-    _timer = null;
-    final oldReview = _review, oldMerge = _merge, oldStream = _stream;
-    oldReview.removeListener(_changed);
-    oldMerge.removeListener(_changed);
-    setState(() {
-      _review = _newReview()..addListener(_changed);
-      _merge = _newMerge()..addListener(_changed);
-      _stream = _newStream();
-      _streamLine = 0;
-      _resolved.clear();
-      _diagnosticRevision = null;
-      _editor.replaceSource(
-        const SourceFile(
-          id: 'edit',
-          path: 'lib/client/retry_policy.dart',
-          text: retryAfter,
-        ),
-      );
-      _files.setFiles(showcaseFiles);
-      for (final file in showcaseFiles) {
-        _files.reload(file.id);
-      }
-      _status = 'Example reset. Ready for another review.';
-    });
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      oldReview.dispose();
-      oldMerge.dispose();
-      oldStream.dispose();
-    });
+    switch (_tab) {
+      case 0:
+        final previous = _review..removeListener(_changed);
+        _review = _newReview()..addListener(_changed);
+        _resolved.clear();
+        _contextExpanded = false;
+        WidgetsBinding.instance.addPostFrameCallback((_) => previous.dispose());
+      case 1:
+        _files.setFiles(showcaseFiles);
+        for (final file in showcaseFiles) {
+          _files.reload(file.id);
+        }
+      case 2:
+        _diagnosticRevision = null;
+        _editor.replaceSource(
+          const SourceFile(
+            id: 'edit',
+            path: 'lib/client/retry_policy.dart',
+            text: retryAfter,
+          ),
+        );
+      case 3:
+        final previous = _merge..removeListener(_changed);
+        _merge = _newMerge()..addListener(_changed);
+        WidgetsBinding.instance.addPostFrameCallback((_) => previous.dispose());
+      case 4:
+        _timer?.cancel();
+        _timer = null;
+        final previous = _stream;
+        _stream = _newStream();
+        _streamLine = 0;
+        WidgetsBinding.instance.addPostFrameCallback((_) => previous.dispose());
+      case 5:
+        _largeWrap = false;
+        _large?.reveal(
+          const DocumentRange(DocumentPosition(0, 0), DocumentPosition(0, 0)),
+        );
+    }
+    setState(() => _status = 'Example reset. Ready for another review.');
   }
 
   void _toggleAll() {
@@ -518,7 +537,9 @@ class _ShowcaseHomeState extends State<ShowcaseHome> {
 
   void _startStream() {
     if (_timer?.isActive == true || _stream.isComplete) return;
-    final lines = retryAfter.split('\n');
+    final lines = RegExp(
+      r'[^\n]*\n|[^\n]+$',
+    ).allMatches(retryAfter).map((match) => match.group(0)!).toList();
     _timer = Timer.periodic(const Duration(milliseconds: 160), (timer) {
       if (_streamLine == lines.length) {
         timer.cancel();
@@ -526,7 +547,7 @@ class _ShowcaseHomeState extends State<ShowcaseHome> {
         _message('Stream complete. All lines received.');
         return;
       }
-      _stream.add('${lines[_streamLine++]}\n');
+      _stream.add(lines[_streamLine++]);
       _message('Receiving source · $_streamLine / ${lines.length} lines');
     });
     setState(() {});
@@ -737,7 +758,9 @@ class _ShowcaseHomeState extends State<ShowcaseHome> {
         TextButton.icon(
           onPressed: () => Navigator.push(
             context,
-            MaterialPageRoute<void>(builder: (_) => const WorkflowsDemo()),
+            MaterialPageRoute<void>(
+              builder: (_) => WorkflowsDemo(textStyle: widget.codeStyle),
+            ),
           ),
           icon: const Icon(Icons.science_outlined, size: 15),
           label: const Text('Stress-test workflows'),
@@ -816,6 +839,34 @@ class _ShowcaseHomeState extends State<ShowcaseHome> {
     ],
   );
 
+  void _shortcuts() => showDialog<void>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Keyboard shortcuts'),
+      content: const SingleChildScrollView(
+        child: Text(
+          'Ctrl / Cmd + Z — Undo\n'
+          'Ctrl / Cmd + Shift + Z — Redo\n'
+          'Ctrl / Cmd + F — Find and replace\n'
+          'Ctrl / Cmd + / — Toggle comment\n'
+          'Tab / Shift + Tab — Indent / outdent\n'
+          'Alt + ↑ / ↓ — Move line\n'
+          'Alt + Shift + ↑ / ↓ — Duplicate line\n'
+          'Ctrl / Cmd + C — Copy selected source\n\n'
+          'Editing shortcuts apply while the code field is focused. '
+          'Search fields keep their normal text editing and Tab navigation.',
+          style: TextStyle(height: 1.8),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Close'),
+        ),
+      ],
+    ),
+  );
+
   Widget _toolbar() => Container(
     width: double.infinity,
     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -830,19 +881,32 @@ class _ShowcaseHomeState extends State<ShowcaseHome> {
         children: [
           if (_tab == 0) ...[
             _modeToggle(),
-            _tool('Expand context', Icons.unfold_more, () {
-              _review.expandAll();
-              _message(
-                'All unchanged context is visible. Reset to collapse context again.',
-              );
-            }),
+            _tool(
+              _contextExpanded ? 'Collapse context' : 'Expand context',
+              _contextExpanded ? Icons.unfold_less : Icons.unfold_more,
+              () {
+                _contextExpanded = !_contextExpanded;
+                if (_contextExpanded) {
+                  _review.expandAll();
+                } else {
+                  _review.collapseContext();
+                }
+                _message(
+                  _contextExpanded
+                      ? 'All unchanged context is visible.'
+                      : 'Unchanged context collapsed. Review decisions are preserved.',
+                );
+              },
+            ),
           ],
-          if (_tab == 2)
+          if (_tab == 2) ...[
             _tool(
               'Preview suggestion',
               Icons.auto_fix_high_outlined,
               _editor.requestProposal,
             ),
+            _tool('Keyboard shortcuts', Icons.keyboard_outlined, _shortcuts),
+          ],
           if (_tab == 0 || _tab == 1)
             _tool(
               (_tab == 1
@@ -1163,6 +1227,7 @@ class _ShowcaseHomeState extends State<ShowcaseHome> {
     ),
     _ => InteractionExamples(
       kind: _tab - 6,
+      fontStyles: widget.fontStyles,
       theme: codeTheme,
       textStyle: widget.codeStyle,
     ),

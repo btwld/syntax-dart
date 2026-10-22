@@ -6,6 +6,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:syntax/syntax.dart';
 
+import 'chrome.dart';
 import 'patch_view.dart';
 import 'styles.dart';
 
@@ -218,9 +219,7 @@ class DocumentTextEditingController extends TextEditingController {
           TextStyle(
             decoration: TextDecoration.underline,
             decorationStyle: TextDecorationStyle.wavy,
-            decorationColor: diagnostic.severity == DiagnosticSeverity.error
-                ? Colors.red
-                : Colors.orange,
+            decorationColor: theme.diagnosticColor(diagnostic.severity),
           ),
         ),
       for (final s in editor.selections.skip(1))
@@ -360,7 +359,7 @@ class _SyntaxEditorState extends State<SyntaxEditor> {
   Object? _widthKey;
   double _sourceWidth = 0;
   bool _viewportQueued = false;
-  final _focus = FocusNode();
+  final _focus = FocusNode(), _searchFocus = FocusNode();
   final _search = TextEditingController(),
       _replacement = TextEditingController();
   bool _finding = false, _saving = false;
@@ -503,7 +502,12 @@ class _SyntaxEditorState extends State<SyntaxEditor> {
     _focus.requestFocus();
   }
 
-  void _find({bool previous = false}) {
+  void _toggleFind() {
+    setState(() => _finding = !_finding);
+    (_finding ? _searchFocus : _focus).requestFocus();
+  }
+
+  bool _find({bool previous = false}) {
     final matches = editor
         .find(_search.text)
         .map(
@@ -515,7 +519,7 @@ class _SyntaxEditorState extends State<SyntaxEditor> {
         .toList();
     if (matches.isEmpty) {
       setState(() => _message = 'No matches');
-      return;
+      return false;
     }
     final current = editor.selections.first;
     final found = previous
@@ -535,6 +539,19 @@ class _SyntaxEditorState extends State<SyntaxEditor> {
       ),
     );
     setState(() => _message = '${matches.length} matches');
+    return true;
+  }
+
+  void _replaceMatch() {
+    final selection = editor.selections.first;
+    if (_search.text.isEmpty) return;
+    if (editor.document.text.substring(selection.start, selection.end) !=
+        _search.text) {
+      if (!_find()) return;
+    }
+    editor.setSelections([editor.selections.first]);
+    editor.insertText(_replacement.text, autoSurround: false);
+    _find();
   }
 
   Future<void> _complete() async {
@@ -585,7 +602,7 @@ class _SyntaxEditorState extends State<SyntaxEditor> {
           control: control,
           meta: !control,
         ): () =>
-            setState(() => _finding = !_finding),
+            _toggleFind(),
       },
       const SingleActivator(LogicalKeyboardKey.tab): () =>
           _command(EditorCommand.indent),
@@ -610,219 +627,243 @@ class _SyntaxEditorState extends State<SyntaxEditor> {
       for (final entry in widget.shortcuts.entries)
         entry.key: () => _command(entry.value),
     };
-    return CallbackShortcuts(
-      bindings: bindings,
-      child: Material(
-        color: widget.theme.backgroundColor,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (widget.selectionActionsBuilder != null)
-              widget.selectionActionsBuilder!(context, widget.controller),
-            if (widget.showToolbar)
-              Wrap(
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  IconButton(
-                    tooltip: 'Undo',
-                    onPressed: editor.canUndo
-                        ? () => _command(EditorCommand.undo)
-                        : null,
-                    icon: const Icon(Icons.undo),
-                  ),
-                  IconButton(
-                    tooltip: 'Redo',
-                    onPressed: editor.canRedo
-                        ? () => _command(EditorCommand.redo)
-                        : null,
-                    icon: const Icon(Icons.redo),
-                  ),
-                  IconButton(
-                    tooltip: 'Find and replace',
-                    onPressed: () => setState(() => _finding = !_finding),
-                    icon: const Icon(Icons.search),
-                  ),
-                  if (widget.onComplete != null)
-                    TextButton(
-                      onPressed: _saving ? null : _complete,
-                      child: const Text('Done'),
-                    ),
-                  if (widget.onDismiss != null)
-                    TextButton(
-                      onPressed: widget.onDismiss,
-                      child: const Text('Cancel'),
-                    ),
-                  if (_message != null)
-                    Text(
-                      _message!,
-                      style: TextStyle(color: widget.theme.foregroundColor),
-                    ),
-                ],
-              ),
-            if (_finding)
-              Wrap(
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  SizedBox(
-                    width: 180,
-                    child: TextField(
-                      controller: _search,
-                      decoration: const InputDecoration(labelText: 'Find'),
-                      onSubmitted: (_) => _find(),
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: 'Previous match',
-                    onPressed: () => _find(previous: true),
-                    icon: const Icon(Icons.arrow_upward),
-                  ),
-                  IconButton(
-                    tooltip: 'Next match',
-                    onPressed: _find,
-                    icon: const Icon(Icons.arrow_downward),
-                  ),
-                  SizedBox(
-                    width: 180,
-                    child: TextField(
-                      controller: _replacement,
-                      decoration: const InputDecoration(labelText: 'Replace'),
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: () {
-                      editor.insertText(_replacement.text, autoSurround: false);
-                      _find();
-                    },
-                    child: const Text('Replace'),
-                  ),
-                  TextButton(
-                    onPressed: () =>
-                        editor.replaceAll(_search.text, _replacement.text),
-                    child: const Text('Replace all'),
-                  ),
-                ],
-              ),
-            Expanded(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  _scrolled();
-                  final field = TextField(
-                    key: _fieldKey,
-                    controller: _input,
-                    focusNode: _focus,
-                    autofocus: widget.autofocus,
-                    scrollController: _scroll,
-                    expands: true,
-                    minLines: null,
-                    maxLines: null,
-                    autocorrect: false,
-                    enableSuggestions: false,
-                    smartDashesType: SmartDashesType.disabled,
-                    smartQuotesType: SmartQuotesType.disabled,
-                    style: widget.textStyle ?? defaultCodeTextStyle,
-                    decoration: const InputDecoration(
-                      border: InputBorder.none,
-                      contentPadding: EdgeInsets.all(12),
-                    ),
-                  );
-                  if (widget.wrap) return field;
-                  final style = widget.textStyle ?? defaultCodeTextStyle;
-                  final widthKey = (
-                    editor.document.id,
-                    editor.document.revision,
-                    style,
-                    MediaQuery.textScalerOf(context),
-                  );
-                  if (_widthKey != widthKey) {
-                    _widthKey = widthKey;
-                    final painter = TextPainter(
-                      text: TextSpan(text: editor.document.text, style: style),
-                      textDirection: TextDirection.ltr,
-                      textScaler: MediaQuery.textScalerOf(context),
-                    )..layout();
-                    _sourceWidth = painter.width + 32;
-                    painter.dispose();
-                  }
-                  return SingleChildScrollView(
-                    controller: _horizontal,
-                    scrollDirection: Axis.horizontal,
-                    child: SizedBox(
-                      width: math.max(constraints.maxWidth, _sourceWidth),
-                      height: constraints.maxHeight,
-                      child: field,
-                    ),
-                  );
-                },
-              ),
-            ),
-            if (editor.diagnostics.isNotEmpty)
-              SizedBox(
-                height: 72,
-                child: ListView(
+    return SyntaxChrome(
+      theme: widget.theme,
+      child: CallbackShortcuts(
+        bindings: {
+          for (final control in [true, false])
+            SingleActivator(
+              LogicalKeyboardKey.keyF,
+              control: control,
+              meta: !control,
+            ): _toggleFind,
+        },
+        child: Material(
+          color: widget.theme.backgroundColor,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (widget.selectionActionsBuilder != null)
+                widget.selectionActionsBuilder!(context, widget.controller),
+              if (widget.showToolbar)
+                Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    for (final d in editor.diagnostics)
-                      ListTile(
-                        dense: true,
-                        title: Text(d.message),
-                        leading: Icon(
-                          d.severity == DiagnosticSeverity.error
-                              ? Icons.error_outline
-                              : Icons.info_outline,
-                        ),
-                        onTap: () {
-                          editor.setSelections([
-                            DocumentSelection(d.start, d.end),
-                          ]);
-                          editor.reveal(
-                            DocumentRange(
-                              editor.document.positionAt(d.start),
-                              editor.document.positionAt(d.end),
-                            ),
-                          );
-                        },
+                    IconButton(
+                      tooltip: 'Undo',
+                      onPressed: editor.canUndo
+                          ? () => _command(EditorCommand.undo)
+                          : null,
+                      icon: const Icon(Icons.undo),
+                    ),
+                    IconButton(
+                      tooltip: 'Redo',
+                      onPressed: editor.canRedo
+                          ? () => _command(EditorCommand.redo)
+                          : null,
+                      icon: const Icon(Icons.redo),
+                    ),
+                    IconButton(
+                      tooltip: 'Find and replace',
+                      onPressed: _toggleFind,
+                      icon: const Icon(Icons.search),
+                    ),
+                    if (widget.onComplete != null)
+                      TextButton(
+                        onPressed: _saving ? null : _complete,
+                        child: const Text('Done'),
+                      ),
+                    if (widget.onDismiss != null)
+                      TextButton(
+                        onPressed: widget.onDismiss,
+                        child: const Text('Cancel'),
+                      ),
+                    if (_message != null)
+                      Text(
+                        _message!,
+                        style: TextStyle(color: widget.theme.foregroundColor),
                       ),
                   ],
                 ),
-              ),
-            if (editor.annotations.isNotEmpty)
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 100),
-                child: ListView(
-                  shrinkWrap: true,
+              if (_finding)
+                Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    for (final a in editor.annotations)
-                      widget.annotationBuilder?.call(context, a) ??
-                          Text(
-                            '${editor.document.positionAt(a.start).line + 1}: ${a.data}',
-                          ),
+                    SizedBox(
+                      width: 180,
+                      child: TextField(
+                        controller: _search,
+                        focusNode: _searchFocus,
+                        decoration: const InputDecoration(labelText: 'Find'),
+                        onSubmitted: (_) => _find(),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Previous match',
+                      onPressed: () => _find(previous: true),
+                      icon: const Icon(Icons.arrow_upward),
+                    ),
+                    IconButton(
+                      tooltip: 'Next match',
+                      onPressed: _find,
+                      icon: const Icon(Icons.arrow_downward),
+                    ),
+                    SizedBox(
+                      width: 180,
+                      child: TextField(
+                        controller: _replacement,
+                        decoration: const InputDecoration(labelText: 'Replace'),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: _replaceMatch,
+                      child: const Text('Replace'),
+                    ),
+                    TextButton(
+                      onPressed: () =>
+                          editor.replaceAll(_search.text, _replacement.text),
+                      child: const Text('Replace all'),
+                    ),
                   ],
                 ),
-              ),
-            if (editor.proposedEdits.isNotEmpty) ...[
-              SizedBox(
-                height: 140,
-                child: PatchView.fromTexts(
-                  oldText: editor.document.text,
-                  newText: _proposalText(),
-                  theme: widget.theme,
-                  highlighter: widget.highlighter,
-                  language: widget.language ?? editor.file.language,
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    _scrolled();
+                    final field = CallbackShortcuts(
+                      bindings: bindings,
+                      child: TextField(
+                        key: _fieldKey,
+                        controller: _input,
+                        focusNode: _focus,
+                        autofocus: widget.autofocus,
+                        scrollController: _scroll,
+                        expands: true,
+                        minLines: null,
+                        maxLines: null,
+                        autocorrect: false,
+                        enableSuggestions: false,
+                        smartDashesType: SmartDashesType.disabled,
+                        smartQuotesType: SmartQuotesType.disabled,
+                        style: widget.textStyle ?? defaultCodeTextStyle,
+                        decoration: const InputDecoration(
+                          border: InputBorder.none,
+                          contentPadding: EdgeInsets.all(12),
+                        ),
+                      ),
+                    );
+                    if (widget.wrap) return field;
+                    final style = widget.textStyle ?? defaultCodeTextStyle;
+                    final widthKey = (
+                      editor.document.id,
+                      editor.document.revision,
+                      style,
+                      MediaQuery.textScalerOf(context),
+                    );
+                    if (_widthKey != widthKey) {
+                      _widthKey = widthKey;
+                      final painter = TextPainter(
+                        text: TextSpan(
+                          text: editor.document.text,
+                          style: style,
+                        ),
+                        textDirection: TextDirection.ltr,
+                        textScaler: MediaQuery.textScalerOf(context),
+                      )..layout();
+                      _sourceWidth = painter.width + 32;
+                      painter.dispose();
+                    }
+                    return SingleChildScrollView(
+                      controller: _horizontal,
+                      scrollDirection: Axis.horizontal,
+                      child: SizedBox(
+                        width: math.max(constraints.maxWidth, _sourceWidth),
+                        height: constraints.maxHeight,
+                        child: field,
+                      ),
+                    );
+                  },
                 ),
               ),
-              Row(
-                children: [
-                  TextButton(
-                    onPressed: editor.acceptProposal,
-                    child: const Text('Accept suggestion'),
+              if (editor.diagnostics.isNotEmpty)
+                SizedBox(
+                  height: 72,
+                  child: ListView(
+                    children: [
+                      for (final d in editor.diagnostics)
+                        ListTile(
+                          dense: true,
+                          title: Text(d.message),
+                          leading: Icon(
+                            d.severity == DiagnosticSeverity.error
+                                ? Icons.error_outline
+                                : Icons.info_outline,
+                            color: widget.theme.diagnosticColor(d.severity),
+                          ),
+                          onTap: () {
+                            editor.setSelections([
+                              DocumentSelection(d.start, d.end),
+                            ]);
+                            editor.reveal(
+                              DocumentRange(
+                                editor.document.positionAt(d.start),
+                                editor.document.positionAt(d.end),
+                              ),
+                            );
+                          },
+                        ),
+                    ],
                   ),
-                  TextButton(
-                    onPressed: editor.dismissProposal,
-                    child: const Text('Dismiss suggestion'),
+                ),
+              if (editor.annotations.isNotEmpty)
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 100),
+                  child: ListView(
+                    shrinkWrap: true,
+                    children: [
+                      for (final a in editor.annotations)
+                        widget.annotationBuilder?.call(context, a) ??
+                            Text(
+                              '${editor.document.positionAt(a.start).line + 1}: ${a.data}',
+                            ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              if (editor.proposedEdits.isNotEmpty) ...[
+                SizedBox(
+                  height: 140,
+                  child: PatchView.fromTexts(
+                    oldText: editor.document.text,
+                    newText: _proposalText(),
+                    theme: widget.theme,
+                    highlighter: widget.highlighter,
+                    language:
+                        widget.language ??
+                        editor.file.language ??
+                        widget.highlighter
+                            .languageForPath(editor.file.path)
+                            ?.name,
+                    textStyle: widget.textStyle,
+                    wrap: widget.wrap,
+                    contextLines: 0,
+                    padding: EdgeInsets.zero,
+                  ),
+                ),
+                Wrap(
+                  children: [
+                    TextButton(
+                      onPressed: editor.acceptProposal,
+                      child: const Text('Accept suggestion'),
+                    ),
+                    TextButton(
+                      onPressed: editor.dismissProposal,
+                      child: const Text('Dismiss suggestion'),
+                    ),
+                  ],
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );
@@ -840,6 +881,7 @@ class _SyntaxEditorState extends State<SyntaxEditor> {
   void dispose() {
     _detach();
     _focus.dispose();
+    _searchFocus.dispose();
     _search.dispose();
     _replacement.dispose();
     super.dispose();

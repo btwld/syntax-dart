@@ -164,6 +164,59 @@ void main() {
       expect(review.files.single.newText, 'final value = 2;');
       expect(review.files.single.oldText, 'final value = 1;');
       expect(tester.takeException(), isNull);
+      await launch(tester, 3);
+      await tester.tap(find.text('Inspect selected line'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Line 4:'), findsOneWidget);
+      expect(
+        tester
+            .widget<PatchView>(find.byType(PatchView))
+            .controller!
+            .files
+            .single
+            .path,
+        'lib/request_policy.dart',
+      );
+      expect(tester.takeException(), isNull);
     },
   );
+  testWidgets('appearance preserves supplied fonts and resets locally', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: InteractionExamples(
+            kind: 2,
+            theme: githubDarkTheme,
+            textStyle: const TextStyle(
+              fontFamily: 'Gallery Mono',
+              fontSize: 13.5,
+            ),
+            fontStyles: const {
+              'Alternate': TextStyle(
+                fontFamily: 'Alternate Mono',
+                fontSize: 13.5,
+              ),
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    PatchView view() => tester.widget<PatchView>(find.byType(PatchView));
+    expect(view().textStyle!.fontFamily, 'Gallery Mono');
+    expect(view().textStyle!.fontSize, 13.5);
+    await tester.tap(find.text('Font: Default'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Font: Alternate').last);
+    await tester.pumpAndSettle();
+    expect(view().textStyle!.fontFamily, 'Alternate Mono');
+    await tester.tap(find.text('Hide backgrounds'));
+    await tester.ensureVisible(find.text('Reset example'));
+    await tester.tap(find.text('Reset example'));
+    await tester.pumpAndSettle();
+    expect(view().showBackgrounds, isTrue);
+    expect(view().textStyle!.fontFamily, 'Gallery Mono');
+  });
 }

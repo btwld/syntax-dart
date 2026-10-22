@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:syntax_flutter/syntax_flutter.dart';
 
 import 'package:syntax_example/showcase.dart';
+import 'package:syntax_example/showcase_samples.dart';
 
 Future<void> launch(
   WidgetTester tester, {
@@ -81,6 +82,9 @@ void main() {
       await tester.tap(find.text('Expand context'));
       await tester.pumpAndSettle();
       expect(review.layout.length, greaterThan(count));
+      await tester.tap(find.text('Collapse context'));
+      await tester.pumpAndSettle();
+      expect(review.layout.whereType<DiffGapRow>(), isNotEmpty);
       await tester.tap(find.text('Reset'));
       await tester.pumpAndSettle();
       review = tester.widget<PatchView>(find.byType(PatchView)).controller!;
@@ -140,6 +144,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('example-0')));
     await tester.pumpAndSettle();
+    await tester.tap(find.text('Reset'));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('example-2')));
     await tester.pumpAndSettle();
     expect(
@@ -170,6 +176,18 @@ void main() {
     await tester.tap(find.text('Reset'));
     await tester.pumpAndSettle();
     expect(find.text('Ready when you are.'), findsOneWidget);
+    await tester.tap(find.text('Start stream'));
+    await tester.pump(const Duration(seconds: 7));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<SyntaxFileView>(find.byType(SyntaxFileView))
+          .controller
+          .document
+          .text,
+      retryAfter,
+    );
+    expect(find.text('Complete'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -246,6 +264,32 @@ void main() {
     expect(find.text('Expand files'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  for (final dark in [true, false]) {
+    testWidgets(
+      'all gallery pages fit a compact ${dark ? 'dark' : 'light'} viewport',
+      (tester) async {
+        tester.view.physicalSize = const Size(420, 850);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: dark ? ThemeData.dark() : ThemeData.light(),
+            home: ShowcaseHome(dark: dark, onBrightness: () {}),
+          ),
+        );
+        await tester.pumpAndSettle();
+        for (var index = 0; index < 12; index++) {
+          final nav = find.byKey(ValueKey('example-$index'));
+          await tester.ensureVisible(nav);
+          await tester.tap(nav);
+          await tester.pumpAndSettle();
+          expect(tester.takeException(), isNull, reason: 'Example $index');
+        }
+      },
+    );
+  }
 
   testWidgets('large file exposes a virtual window and direct jumps', (
     tester,

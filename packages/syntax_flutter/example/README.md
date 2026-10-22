@@ -18,7 +18,7 @@ light and dark themes, responsive navigation, and project-owned code samples.
   wrapping switches to measured heights. Highlighting reuses bounded cached
   windows and grammar checkpoints.
 
-Click **Reset** to restore the samples. Review decisions, comments, and edits
+Click **Reset** to restore the current sample without changing other drafts. Review decisions, comments, and edits
 stay in memory for this browser session. **Languages & themes** opens the full
 catalog editor/preview; **Stress-test workflows** includes partial-patch loading
 and the 1,000-file fixture.
@@ -50,3 +50,10 @@ Focused gallery pages cover gutter drag selection, cross-side ranges, named
 section folding, separator styles, appearance and typography, token details,
 custom headers, and comparing pasted sources. See the
 [example matrix](../../../docs/example-matrix.md) for API mappings and limits.
+
+The Editing toolbar includes **Keyboard shortcuts**. While the code field is
+focused, use Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z for history, Ctrl/Cmd+F for search,
+Ctrl/Cmd+/ for comments, Tab/Shift+Tab for indentation, Alt+Up/Down to move lines,
+and Alt+Shift+Up/Down to duplicate them. Search inputs retain normal text editing
+and Tab navigation. After a gutter selection, Ctrl/Cmd+C copies the selected
+source in file and diff views.

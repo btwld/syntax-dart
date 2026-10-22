@@ -37,6 +37,30 @@ extension SyntaxThemeColors on SyntaxTheme {
   /// The selected text background.
   Color get selectionColor => Color(selectionBackground);
 
+  /// Diagnostic accent, honoring editor theme overrides for every severity.
+  Color diagnosticColor(DiagnosticSeverity severity) {
+    final dark = backgroundColor.computeLuminance() < .5;
+    final (key, fallback) = switch (severity) {
+      DiagnosticSeverity.error => (
+        'editorError.foreground',
+        dark ? 0xffff8080 : 0xffb42318,
+      ),
+      DiagnosticSeverity.warning => (
+        'editorWarning.foreground',
+        dark ? 0xffffce66 : 0xff8a5700,
+      ),
+      DiagnosticSeverity.information => (
+        'editorInfo.foreground',
+        dark ? 0xff79b8ff : 0xff075bbb,
+      ),
+      DiagnosticSeverity.hint => (
+        'editorHint.foreground',
+        lineNumberForeground,
+      ),
+    };
+    return editorColorOf(key) ?? Color(fallback);
+  }
+
   /// The cursor color.
   Color get cursorColor => Color(cursorForeground);
 }

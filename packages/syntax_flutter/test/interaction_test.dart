@@ -16,6 +16,37 @@ Offset gutter(WidgetTester tester, String text, {bool right = false}) {
 }
 
 Widget app(Widget child) => MaterialApp(home: Scaffold(body: child));
+Future<void> expectKeyboardCopy(WidgetTester tester, String expected) async {
+  String? copied;
+  tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+    SystemChannels.platform,
+    (call) async {
+      if (call.method == 'Clipboard.setData') {
+        copied = (call.arguments as Map)['text'] as String;
+      }
+      return null;
+    },
+  );
+  try {
+    for (final modifier in [
+      LogicalKeyboardKey.controlLeft,
+      LogicalKeyboardKey.metaLeft,
+    ]) {
+      copied = null;
+      await tester.sendKeyDownEvent(modifier);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyC);
+      await tester.sendKeyUpEvent(modifier);
+      await tester.pump();
+      expect(copied, expected);
+    }
+  } finally {
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      null,
+    );
+  }
+}
+
 void main() {
   testWidgets(
     'gutter drag selects complete lines upward and copies exact source',
@@ -50,6 +81,7 @@ void main() {
         editor.document.text.substring(selection.start, selection.end),
         'one\r\ntwo\r\nthree',
       );
+      await expectKeyboardCopy(tester, 'one\r\ntwo\r\nthree');
       await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
       await tester.tapAt(gutter(tester, 'four'));
       await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
@@ -89,6 +121,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(review.selection!.crossesSides, isTrue);
       expect(review.selectedText(), 'old\nnew');
+      await expectKeyboardCopy(tester, 'old\nnew');
       review.mode = DiffMode.split;
       await tester.pumpAndSettle();
       expect(review.selectedText(), 'old\nnew');

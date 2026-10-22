@@ -6,7 +6,8 @@ import 'package:syntax_flutter/syntax_flutter.dart';
 
 /// Interactive examples of persistent file, review, merge and stream sessions.
 class WorkflowsDemo extends StatefulWidget {
-  const WorkflowsDemo({super.key});
+  const WorkflowsDemo({super.key, this.textStyle});
+  final TextStyle? textStyle;
   @override
   State<WorkflowsDemo> createState() => _WorkflowsDemoState();
 }
@@ -80,9 +81,10 @@ class _WorkflowsDemoState extends State<WorkflowsDemo> {
           'void main() {\n<<<<<<< current\n  print("Current");\n||||||| base\n  print("Base");\n=======\n  print("Incoming");\n>>>>>>> incoming\n}\n',
     ),
   );
-  final _stream = StreamDocumentController(
+  static StreamDocumentController _newStream() => StreamDocumentController(
     const SourceFile(id: 'stream', path: 'live.dart', text: ''),
   );
+  var _stream = _newStream();
   Timer? _timer;
   int _streamLine = 0, _tab = 0;
   bool _wrap = true, _dark = true, _backgrounds = true, _indicators = true;
@@ -132,12 +134,15 @@ class _WorkflowsDemoState extends State<WorkflowsDemo> {
     _timer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
       if (_streamLine >= 100) {
         timer.cancel();
+        _timer = null;
         _stream.finish();
         setState(() {});
         return;
       }
       _stream.add('final streamed$_streamLine = ${_streamLine++};\n');
+      setState(() {});
     });
+    setState(() {});
   }
 
   @override
@@ -227,18 +232,48 @@ class _WorkflowsDemoState extends State<WorkflowsDemo> {
               ],
             ),
           if (_tab == 4)
-            Row(
+            Wrap(
               children: [
                 TextButton(
-                  onPressed: _startStream,
-                  child: const Text('Start stream'),
+                  onPressed:
+                      _timer != null ||
+                          _stream.isComplete ||
+                          _stream.isCancelled
+                      ? null
+                      : _startStream,
+                  child: Text(
+                    _stream.isComplete
+                        ? 'Complete'
+                        : _timer != null
+                        ? 'Receiving…'
+                        : 'Start stream',
+                  ),
+                ),
+                TextButton(
+                  onPressed: _stream.isComplete || _stream.isCancelled
+                      ? null
+                      : () {
+                          _timer?.cancel();
+                          _timer = null;
+                          _stream.cancel();
+                          setState(() {});
+                        },
+                  child: const Text('Cancel stream'),
                 ),
                 TextButton(
                   onPressed: () {
                     _timer?.cancel();
-                    _stream.cancel();
+                    _timer = null;
+                    final previous = _stream;
+                    setState(() {
+                      _stream = _newStream();
+                      _streamLine = 0;
+                    });
+                    WidgetsBinding.instance.addPostFrameCallback(
+                      (_) => previous.dispose(),
+                    );
                   },
-                  child: const Text('Cancel stream'),
+                  child: const Text('Reset stream'),
                 ),
               ],
             ),
@@ -271,6 +306,7 @@ class _WorkflowsDemoState extends State<WorkflowsDemo> {
                 controller: _editor,
                 highlighter: _highlighter,
                 theme: theme,
+                textStyle: widget.textStyle,
                 wrap: _wrap,
                 executor: _pool,
                 onComplete: (_) async => true,
@@ -279,6 +315,8 @@ class _WorkflowsDemoState extends State<WorkflowsDemo> {
                 controller: _files,
                 highlighter: _highlighter,
                 theme: theme,
+                textStyle: widget.textStyle,
+                wrap: _wrap,
                 editable: true,
                 onComplete: (_) async => true,
               ),
@@ -286,6 +324,7 @@ class _WorkflowsDemoState extends State<WorkflowsDemo> {
                 controller: _patch,
                 highlighter: _highlighter,
                 theme: theme,
+                textStyle: widget.textStyle,
                 wrap: _wrap,
                 showReviewActions: true,
                 stickyHeaders: true,
@@ -298,17 +337,21 @@ class _WorkflowsDemoState extends State<WorkflowsDemo> {
                 controller: _merge,
                 highlighter: _highlighter,
                 theme: theme,
+                textStyle: widget.textStyle,
                 wrap: _wrap,
               ),
               4 => StreamingCodeView(
                 controller: _stream,
                 highlighter: _highlighter,
+                wrap: _wrap,
                 theme: theme,
+                textStyle: widget.textStyle,
               ),
               _ => SyntaxFileView(
                 controller: _large,
                 highlighter: _highlighter,
                 theme: theme,
+                textStyle: widget.textStyle,
                 wrap: _wrap,
                 executor: _pool,
               ),

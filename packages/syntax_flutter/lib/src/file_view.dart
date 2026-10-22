@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:syntax/syntax.dart';
 import 'editor.dart';
 import 'styles.dart';
+import 'chrome.dart';
 import 'indexed_viewport.dart';
 import 'horizontal_scroll.dart';
 import 'line_selection.dart';
@@ -88,6 +89,7 @@ class SyntaxFileView extends StatefulWidget {
 
 class _SyntaxFileViewState extends State<SyntaxFileView> {
   late ScrollController _scroll;
+  final _focus = FocusNode();
   HighlightExecutor? _ownedExecutor;
   PresentationController? _presentation;
   void _presentationChanged() {
@@ -164,6 +166,7 @@ class _SyntaxFileViewState extends State<SyntaxFileView> {
   }
 
   void _selectLine(int line, {bool? extend}) {
+    _focus.requestFocus();
     final doc = editor.document;
     final existing = editor.selections.first;
     final anchor = (extend ?? HardwareKeyboard.instance.isShiftPressed)
@@ -187,238 +190,256 @@ class _SyntaxFileViewState extends State<SyntaxFileView> {
       widget.theme,
       base: widget.textStyle ?? defaultCodeTextStyle,
     );
-    return CallbackShortcuts(
-      bindings: {
-        const SingleActivator(LogicalKeyboardKey.keyC, control: true): _copy,
-        const SingleActivator(LogicalKeyboardKey.keyC, meta: true): _copy,
-      },
-      child: Focus(
-        child: ColoredBox(
-          color: widget.theme.backgroundColor,
-          child: Column(
-            children: [
-              if (widget.showHeader)
-                widget.headerBuilder?.call(context, editor.file) ??
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Padding(
-                            padding: const EdgeInsets.all(8),
-                            child: Text(editor.file.path, style: styles.base),
+    return SyntaxChrome(
+      theme: widget.theme,
+      child: CallbackShortcuts(
+        bindings: {
+          const SingleActivator(LogicalKeyboardKey.keyC, control: true): _copy,
+          const SingleActivator(LogicalKeyboardKey.keyC, meta: true): _copy,
+        },
+        child: Focus(
+          focusNode: _focus,
+          child: Material(
+            color: widget.theme.backgroundColor,
+            child: Column(
+              children: [
+                if (widget.showHeader)
+                  widget.headerBuilder?.call(context, editor.file) ??
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Padding(
+                              padding: const EdgeInsets.all(8),
+                              child: Text(editor.file.path, style: styles.base),
+                            ),
                           ),
-                        ),
-                        IconButton(
-                          tooltip: 'Copy selection',
-                          onPressed: _copy,
-                          icon: const Icon(Icons.copy),
-                        ),
-                      ],
-                    ),
-              Expanded(
-                child: LineSelectionRegion(
-                  controller: _scroll,
-                  child: IndexedCodeViewport(
+                          IconButton(
+                            tooltip: 'Copy selection',
+                            onPressed: _copy,
+                            icon: const Icon(Icons.copy),
+                          ),
+                        ],
+                      ),
+                Expanded(
+                  child: LineSelectionRegion(
                     controller: _scroll,
-                    count: doc.lineCount,
-                    layoutKey: (
-                      doc.id,
-                      doc.revision,
-                      widget.wrap,
-                      widget.textStyle,
-                      MediaQuery.textScalerOf(context),
-                      widget.executor,
-                      widget.highlighter.revision,
-                      editor.annotations,
-                      editor.diagnostics,
-                      editor.carets,
-                      widget.lineHeaderBuilder,
-                    ),
-                    identity: doc.lineIdentity,
-                    indexOf: doc.lineForIdentity,
-                    estimatedHeight: _height.ceilToDouble(),
-                    fixedHeight:
-                        !widget.wrap &&
-                        editor.annotations.isEmpty &&
-                        editor.diagnostics.isEmpty &&
-                        editor.carets.isEmpty &&
-                        widget.onTokenTap == null &&
-                        widget.lineHeaderBuilder == null,
-                    onVisibleRange: _viewportChanged,
-                    revealRow: editor.revealTarget?.start.line,
-                    revealRequest: editor.revealRequest,
-                    builder: (context, line) {
-                      final tokens = _presentation?.line(line);
-                      final text = doc.lineText(line);
-                      final start = doc.lineStart(line),
-                          end = start + text.length;
-                      final selected = editor.selections.any(
-                        (s) => s.start <= end && s.end > start,
-                      );
-                      Widget code = Text.rich(
-                        TextSpan(
-                          style: styles.base,
-                          children: tokens == null
-                              ? [TextSpan(text: text)]
-                              : [
-                                  for (final token in tokens)
-                                    if (widget.onTokenTap == null)
-                                      TextSpan(
-                                        text: token.text,
-                                        style: styles[token.style],
-                                      )
-                                    else
-                                      WidgetSpan(
-                                        alignment:
-                                            PlaceholderAlignment.baseline,
-                                        baseline: TextBaseline.alphabetic,
-                                        child: GestureDetector(
-                                          onTap: () =>
-                                              widget.onTokenTap!(line, token),
-                                          child: Text(
-                                            token.text,
-                                            style: styles.base.merge(
-                                              styles[token.style],
+                    child: IndexedCodeViewport(
+                      controller: _scroll,
+                      count: doc.lineCount,
+                      layoutKey: (
+                        doc.id,
+                        doc.revision,
+                        widget.wrap,
+                        widget.textStyle,
+                        MediaQuery.textScalerOf(context),
+                        widget.executor,
+                        widget.highlighter.revision,
+                        editor.annotations,
+                        editor.diagnostics,
+                        editor.carets,
+                        widget.lineHeaderBuilder,
+                      ),
+                      identity: doc.lineIdentity,
+                      indexOf: doc.lineForIdentity,
+                      estimatedHeight: _height.ceilToDouble(),
+                      fixedHeight:
+                          !widget.wrap &&
+                          editor.annotations.isEmpty &&
+                          editor.diagnostics.isEmpty &&
+                          editor.carets.isEmpty &&
+                          widget.onTokenTap == null &&
+                          widget.lineHeaderBuilder == null,
+                      onVisibleRange: _viewportChanged,
+                      revealRow: editor.revealTarget?.start.line,
+                      revealRequest: editor.revealRequest,
+                      builder: (context, line) {
+                        final tokens = _presentation?.line(line);
+                        final text = doc.lineText(line);
+                        final start = doc.lineStart(line),
+                            end = start + text.length;
+                        final selected = editor.selections.any(
+                          (s) => s.start <= end && s.end > start,
+                        );
+                        Widget code = Text.rich(
+                          TextSpan(
+                            style: styles.base,
+                            children: tokens == null
+                                ? [TextSpan(text: text)]
+                                : [
+                                    for (final token in tokens)
+                                      if (widget.onTokenTap == null)
+                                        TextSpan(
+                                          text: token.text,
+                                          style: styles[token.style],
+                                        )
+                                      else
+                                        WidgetSpan(
+                                          alignment:
+                                              PlaceholderAlignment.baseline,
+                                          baseline: TextBaseline.alphabetic,
+                                          child: GestureDetector(
+                                            onTap: () =>
+                                                widget.onTokenTap!(line, token),
+                                            child: Text(
+                                              token.text,
+                                              style: styles.base.merge(
+                                                styles[token.style],
+                                              ),
                                             ),
                                           ),
                                         ),
-                                      ),
-                                ],
-                        ),
-                        softWrap: widget.wrap,
-                      );
-                      if (!widget.wrap) {
-                        code = HorizontalCode(group: _horizontal, child: code);
-                      }
-                      code = SelectionArea(child: code);
-                      final background =
-                          widget.lineBackgroundBuilder?.call(line) ??
-                          widget.theme.backgroundColor;
-                      final header = widget.lineHeaderBuilder?.call(
-                        context,
-                        line,
-                      );
-                      return KeyedSubtree(
-                        key: ValueKey(doc.lineIdentity(line)),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (header != null)
-                              SelectionContainer.disabled(child: header),
-                            LineSelectionTarget(
-                              isGutter: (x, _) =>
-                                  widget.showLineNumbers &&
-                                  x <
-                                      doc.lineCount.toString().length *
-                                              (styles.base.fontSize ?? 14) +
-                                          20,
-                              onSelect: (_, _, extend) =>
-                                  _selectLine(line, extend: extend),
-                              child: Semantics(
-                                label: 'Line ${line + 1}',
-                                selected: selected,
-                                child: ColoredBox(
-                                  color: selected
-                                      ? Color.alphaBlend(
-                                          widget.theme.selectionColor,
-                                          background,
-                                        )
-                                      : background,
-                                  child: Row(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      if (widget.showLineNumbers)
-                                        SelectionContainer.disabled(
-                                          child: Semantics(
-                                            button: true,
-                                            label: 'Select line ${line + 1}',
-                                            onTap: () => _selectLine(line),
-                                            excludeSemantics: true,
-                                            child: MouseRegion(
-                                              cursor: SystemMouseCursors.click,
-                                              child: SizedBox(
-                                                width:
-                                                    doc.lineCount
-                                                            .toString()
-                                                            .length *
-                                                        (styles.base.fontSize ??
-                                                            14) +
-                                                    20,
-                                                child: Padding(
-                                                  padding:
-                                                      const EdgeInsets.only(
-                                                        right: 12,
-                                                      ),
-                                                  child: Text(
-                                                    '${line + 1}',
-                                                    textAlign: TextAlign.right,
-                                                    style: styles.base.copyWith(
-                                                      color: widget
-                                                          .theme
-                                                          .lineNumberColor,
+                                  ],
+                          ),
+                          softWrap: widget.wrap,
+                        );
+                        if (!widget.wrap) {
+                          code = HorizontalCode(
+                            group: _horizontal,
+                            child: code,
+                          );
+                        }
+                        code = SelectionArea(child: code);
+                        final background =
+                            widget.lineBackgroundBuilder?.call(line) ??
+                            widget.theme.backgroundColor;
+                        final header = widget.lineHeaderBuilder?.call(
+                          context,
+                          line,
+                        );
+                        return KeyedSubtree(
+                          key: ValueKey(doc.lineIdentity(line)),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (header != null)
+                                SelectionContainer.disabled(child: header),
+                              LineSelectionTarget(
+                                isGutter: (x, _) =>
+                                    widget.showLineNumbers &&
+                                    x <
+                                        doc.lineCount.toString().length *
+                                                (styles.base.fontSize ?? 14) +
+                                            20,
+                                onSelect: (_, _, extend) =>
+                                    _selectLine(line, extend: extend),
+                                child: Semantics(
+                                  label: 'Line ${line + 1}',
+                                  selected: selected,
+                                  child: ColoredBox(
+                                    color: selected
+                                        ? Color.alphaBlend(
+                                            widget.theme.selectionColor,
+                                            background,
+                                          )
+                                        : background,
+                                    child: Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        if (widget.showLineNumbers)
+                                          SelectionContainer.disabled(
+                                            child: Semantics(
+                                              button: true,
+                                              label: 'Select line ${line + 1}',
+                                              onTap: () => _selectLine(line),
+                                              excludeSemantics: true,
+                                              child: MouseRegion(
+                                                cursor:
+                                                    SystemMouseCursors.click,
+                                                child: SizedBox(
+                                                  width:
+                                                      doc.lineCount
+                                                              .toString()
+                                                              .length *
+                                                          (styles
+                                                                  .base
+                                                                  .fontSize ??
+                                                              14) +
+                                                      20,
+                                                  child: Padding(
+                                                    padding:
+                                                        const EdgeInsets.only(
+                                                          right: 12,
+                                                        ),
+                                                    child: Text(
+                                                      '${line + 1}',
+                                                      textAlign:
+                                                          TextAlign.right,
+                                                      style: styles.base
+                                                          .copyWith(
+                                                            color: widget
+                                                                .theme
+                                                                .lineNumberColor,
+                                                          ),
                                                     ),
                                                   ),
                                                 ),
                                               ),
                                             ),
                                           ),
-                                        ),
-                                      if (widget.gutterActionBuilder != null)
-                                        SelectionContainer.disabled(
-                                          child: widget.gutterActionBuilder!(
-                                            context,
-                                            line,
+                                        if (widget.gutterActionBuilder != null)
+                                          SelectionContainer.disabled(
+                                            child: widget.gutterActionBuilder!(
+                                              context,
+                                              line,
+                                            ),
                                           ),
-                                        ),
-                                      Expanded(child: code),
-                                    ],
+                                        Expanded(child: code),
+                                      ],
+                                    ),
                                   ),
                                 ),
                               ),
-                            ),
-                            for (final d in editor.diagnostics)
-                              if (d.start < end + 1 && d.end >= start)
-                                SelectionContainer.disabled(
-                                  child: Text(
-                                    d.message,
-                                    style: const TextStyle(color: Colors.red),
-                                  ),
-                                ),
-                            for (final a in editor.annotations)
-                              if (a.start >= start &&
-                                  (a.start < end + 1 ||
-                                      line == doc.lineCount - 1))
-                                SelectionContainer.disabled(
-                                  child:
-                                      widget.annotationBuilder?.call(
-                                        context,
-                                        a,
-                                      ) ??
-                                      Padding(
-                                        padding: const EdgeInsets.all(8),
-                                        child: Text('${a.data}'),
+                              for (final d in editor.diagnostics)
+                                if (d.start < end + 1 && d.end >= start)
+                                  SelectionContainer.disabled(
+                                    child: Text(
+                                      d.message,
+                                      style: TextStyle(
+                                        color: widget.theme.diagnosticColor(
+                                          d.severity,
+                                        ),
                                       ),
-                                ),
-                            for (final caret in editor.carets)
-                              if (caret.selection.active >= start &&
-                                  caret.selection.active <= end)
-                                SelectionContainer.disabled(
-                                  child: Text(
-                                    caret.label.isEmpty
-                                        ? caret.id
-                                        : caret.label,
-                                    style: TextStyle(color: Color(caret.color)),
+                                    ),
                                   ),
-                                ),
-                          ],
-                        ),
-                      );
-                    },
+                              for (final a in editor.annotations)
+                                if (a.start >= start &&
+                                    (a.start < end + 1 ||
+                                        line == doc.lineCount - 1))
+                                  SelectionContainer.disabled(
+                                    child:
+                                        widget.annotationBuilder?.call(
+                                          context,
+                                          a,
+                                        ) ??
+                                        Padding(
+                                          padding: const EdgeInsets.all(8),
+                                          child: Text('${a.data}'),
+                                        ),
+                                  ),
+                              for (final caret in editor.carets)
+                                if (caret.selection.active >= start &&
+                                    caret.selection.active <= end)
+                                  SelectionContainer.disabled(
+                                    child: Text(
+                                      caret.label.isEmpty
+                                          ? caret.id
+                                          : caret.label,
+                                      style: TextStyle(
+                                        color: Color(caret.color),
+                                      ),
+                                    ),
+                                  ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -428,6 +449,7 @@ class _SyntaxFileViewState extends State<SyntaxFileView> {
   @override
   void dispose() {
     _detach(editor, widget.scrollController);
+    _focus.dispose();
     super.dispose();
   }
 }
@@ -443,6 +465,8 @@ class SyntaxFileList extends StatefulWidget {
     this.editable = false,
     this.onComplete,
     this.fileHeight = 360,
+    this.wrap = true,
+    this.textStyle,
   });
 
   /// Files and session storage.
@@ -462,6 +486,12 @@ class SyntaxFileList extends StatefulWidget {
 
   /// Height of each independent file viewport.
   final double fileHeight;
+
+  /// Wraps source lines in each expanded file.
+  final bool wrap;
+
+  /// Code typography shared by file previews and editors.
+  final TextStyle? textStyle;
   @override
   State<SyntaxFileList> createState() => _SyntaxFileListState();
 }
@@ -488,62 +518,65 @@ class _SyntaxFileListState extends State<SyntaxFileList> {
   }
 
   @override
-  Widget build(BuildContext context) => IndexedCodeViewport(
-    controller: _scroll,
-    count: widget.controller.files.length,
-    layoutKey: (
-      widget.controller.files,
-      widget.fileHeight,
-      widget.controller.files
-          .map((file) => widget.controller.isCollapsed(file.id))
-          .join(','),
-    ),
-    estimatedHeight: widget.fileHeight + 56,
-    identity: (index) => widget.controller.files[index].id,
-    indexOf: (key) {
-      final index = widget.controller.files.indexWhere(
-        (file) => file.id == key,
-      );
-      return index < 0 ? null : index;
-    },
-    revealRow: widget.controller.revealTarget == null
-        ? null
-        : widget.controller.files.indexWhere(
-            (file) => file.id == widget.controller.revealTarget!.$1,
-          ),
-    revealRequest: widget.controller.revealRequest,
-    builder: (context, index) {
-      final file = widget.controller.files[index];
-      return Column(
-        key: ValueKey(file.id),
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ListTile(
-            title: Text(file.path),
-            trailing: Icon(
-              widget.controller.isCollapsed(file.id)
-                  ? Icons.expand_more
-                  : Icons.expand_less,
+  Widget build(BuildContext context) => SyntaxChrome(
+    theme: widget.theme,
+    child: IndexedCodeViewport(
+      controller: _scroll,
+      count: widget.controller.files.length,
+      layoutKey: (
+        widget.controller.files,
+        widget.fileHeight,
+        widget.controller.files
+            .map((file) => widget.controller.isCollapsed(file.id))
+            .join(','),
+      ),
+      estimatedHeight: widget.fileHeight + 56,
+      identity: (index) => widget.controller.files[index].id,
+      indexOf: (key) {
+        final index = widget.controller.files.indexWhere(
+          (file) => file.id == key,
+        );
+        return index < 0 ? null : index;
+      },
+      revealRow: widget.controller.revealTarget == null
+          ? null
+          : widget.controller.files.indexWhere(
+              (file) => file.id == widget.controller.revealTarget!.$1,
             ),
-            onTap: () => widget.controller.toggle(file.id),
-          ),
-          if (widget.controller.hasSourceConflict(file.id))
-            TextButton(
-              onPressed: () => widget.controller.reload(file.id),
-              child: const Text('Source changed — reload latest source'),
-            ),
-          if (!widget.controller.isCollapsed(file.id))
-            SizedBox(
-              height: widget.fileHeight,
-              child: _SessionFile(
-                key: ValueKey('${file.id}:session'),
-                file: file,
-                owner: widget,
+      revealRequest: widget.controller.revealRequest,
+      builder: (context, index) {
+        final file = widget.controller.files[index];
+        return Column(
+          key: ValueKey(file.id),
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              title: Text(file.path),
+              trailing: Icon(
+                widget.controller.isCollapsed(file.id)
+                    ? Icons.expand_more
+                    : Icons.expand_less,
               ),
+              onTap: () => widget.controller.toggle(file.id),
             ),
-        ],
-      );
-    },
+            if (widget.controller.hasSourceConflict(file.id))
+              TextButton(
+                onPressed: () => widget.controller.reload(file.id),
+                child: const Text('Source changed — reload latest source'),
+              ),
+            if (!widget.controller.isCollapsed(file.id))
+              SizedBox(
+                height: widget.fileHeight,
+                child: _SessionFile(
+                  key: ValueKey('${file.id}:session'),
+                  file: file,
+                  owner: widget,
+                ),
+              ),
+          ],
+        );
+      },
+    ),
   );
   @override
   void dispose() {
@@ -600,6 +633,8 @@ class _SessionFileState extends State<_SessionFile> {
             controller: _editor,
             highlighter: owner.highlighter,
             theme: owner.theme,
+            textStyle: owner.textStyle,
+            wrap: owner.wrap,
             onComplete: owner.onComplete == null
                 ? null
                 : (_) => owner.controller.complete(
@@ -612,6 +647,8 @@ class _SessionFileState extends State<_SessionFile> {
             controller: _editor,
             highlighter: owner.highlighter,
             theme: owner.theme,
+            textStyle: owner.textStyle,
+            wrap: owner.wrap,
             showHeader: false,
           );
   }
@@ -631,6 +668,8 @@ class StreamingCodeView extends StatelessWidget {
     required this.controller,
     required this.highlighter,
     required this.theme,
+    this.wrap = true,
+    this.textStyle,
   });
 
   /// Producer and live document.
@@ -641,11 +680,19 @@ class StreamingCodeView extends StatelessWidget {
 
   /// Current palette.
   final SyntaxTheme theme;
+
+  /// Wraps incoming source lines instead of scrolling horizontally.
+  final bool wrap;
+
+  /// Code typography, preserved across streaming updates.
+  final TextStyle? textStyle;
   @override
   Widget build(BuildContext context) => SyntaxFileView(
     controller: controller.editor,
     highlighter: highlighter,
     theme: theme,
+    wrap: wrap,
+    textStyle: textStyle,
   );
 }
 
