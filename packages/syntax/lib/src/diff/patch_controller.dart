@@ -61,6 +61,7 @@ final class ReviewAnnotation<T> {
     required this.side,
     required this.line,
     required this.data,
+    this.sourceSelection,
   });
 
   /// Stable annotation identity and the identity of its source file.
@@ -71,6 +72,11 @@ final class ReviewAnnotation<T> {
 
   /// One-based source line to which the annotation is attached.
   final int line;
+
+  /// Original inclusive source range, independent of the thread's display line.
+  /// Preserve both endpoints when a discussion spans old and new source. Null
+  /// links only [line] on [side]. Its file ID must match [fileId].
+  final DiffSelection? sourceSelection;
 
   /// Application-owned annotation payload, passed unchanged to renderers.
   final T data;
@@ -471,7 +477,18 @@ final class PatchController extends SyntaxObservable {
   /// Tests a source line against the selection in either display mode.
   bool isLineSelected(String id, DiffSide side, int number) {
     final selected = selection;
-    if (selected == null || selected.fileId != id) return false;
+    return selected != null && isLineInSelection(selected, id, side, number);
+  }
+
+  /// Tests an independent inclusive range without changing the live selection.
+  /// Cross-side ranges use canonical unified source order in both display modes.
+  bool isLineInSelection(
+    DiffSelection selected,
+    String id,
+    DiffSide side,
+    int number,
+  ) {
+    if (selected.fileId != id || number < 1) return false;
     if (!selected.crossesSides) {
       return selected.side == side &&
           number >= selected.start &&
@@ -490,7 +507,19 @@ final class PatchController extends SyntaxObservable {
 
   /// Replaces annotations and notifies mounted renderers.
   void setAnnotations(Iterable<ReviewAnnotation<Object?>> value) {
-    annotations = List.unmodifiable(value);
+    checkAlive();
+    final next = List<ReviewAnnotation<Object?>>.unmodifiable(value);
+    for (final annotation in next) {
+      final range = annotation.sourceSelection;
+      if (range == null) continue;
+      if (range.fileId != annotation.fileId) {
+        throw ArgumentError(
+          'Annotation source selection must use the same file',
+        );
+      }
+      RangeError.checkNotNegative(range.start - 1, 'sourceSelection');
+    }
+    annotations = next;
     notifyListeners();
   }
 

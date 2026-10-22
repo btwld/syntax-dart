@@ -43,6 +43,29 @@ void main() {
         expect(find.text('1 / 3'), findsOneWidget);
         expect(find.text('2 unresolved'), findsAtLeastNWidgets(1));
         await tap(find.text('Custom highlight'));
+        await tap(find.text('Custom source highlight'));
+        final source = find.byWidgetPredicate(
+          (w) =>
+              w is DecoratedBox &&
+              w.decoration is BoxDecoration &&
+              (w.decoration as BoxDecoration).color == const Color(0x2446b8d9),
+        );
+        final navigation = fileMode
+            ? tester
+                  .widget<SyntaxFileView>(find.byType(SyntaxFileView))
+                  .commentNavigation!
+            : tester
+                  .widget<PatchView>(find.byType(PatchView))
+                  .commentNavigation!;
+        expect(source, findsNWidgets(3));
+        expect(
+          navigation.isSourceLineActive(
+            fileMode ? 'source' : 'policy',
+            1,
+            side: fileMode ? null : DiffSide.newer,
+          ),
+          isTrue,
+        );
         final active = find.byWidgetPredicate(
           (w) =>
               w is DecoratedBox &&
@@ -52,6 +75,23 @@ void main() {
         );
         expect(active, findsOneWidget);
         await tap(find.byTooltip('Next discussion (Alt/Option+↓)'));
+        expect(source, findsNWidgets(3));
+        expect(
+          navigation.isSourceLineActive(
+            fileMode ? 'source' : 'policy',
+            1,
+            side: fileMode ? null : DiffSide.newer,
+          ),
+          isFalse,
+        );
+        expect(
+          navigation.isSourceLineActive(
+            fileMode ? 'source' : 'policy',
+            7,
+            side: fileMode ? null : DiffSide.newer,
+          ),
+          isTrue,
+        );
         expect(find.text('2 / 3'), findsOneWidget);
         expect(
           find
@@ -64,10 +104,14 @@ void main() {
         expect(find.text('3 / 3'), findsOneWidget);
         expect(find.text('Resolved').hitTestable(), findsOneWidget);
         expect(active, findsOneWidget);
+        expect(source, findsNWidgets(3));
         await tap(find.text('Load sample threads'));
         expect(find.text('1 / 3'), findsOneWidget);
         await tap(find.text('Default highlight'));
         expect(active, findsNothing);
+        expect(source, findsNWidgets(3));
+        await tap(find.text('Default source highlight'));
+        expect(source, findsNothing);
         expect(find.text('2 unresolved'), findsAtLeastNWidgets(1));
         expect(tester.takeException(), isNull);
       },
@@ -164,6 +208,11 @@ void main() {
         final anchor = editor != null
             ? (editor.annotations.single.start, editor.annotations.single.end)
             : (patch!.annotations.single.side, patch.annotations.single.line);
+        final linkedRange = patch?.annotations.single.sourceSelection;
+        if (patch != null) {
+          expect(linkedRange, isNotNull);
+          expect((linkedRange!.anchor, linkedRange.active), (2, 4));
+        }
         await tap(find.text('Reply'));
         await tester.enterText(find.byType(TextField), 'Reply draft');
         await tester.pumpAndSettle();
@@ -231,8 +280,9 @@ void main() {
             'Updated root',
           );
         } else {
+          expect(patch!.annotations.single.sourceSelection, same(linkedRange));
           expect((
-            patch!.annotations.single.side,
+            patch.annotations.single.side,
             patch.annotations.single.line,
           ), anchor);
           expect(

@@ -11,6 +11,7 @@ import 'selection_actions.dart';
 import 'selection_action_overlay.dart';
 import 'inline_comment_region.dart';
 import 'comment_navigation.dart';
+import 'comment_highlight.dart';
 import 'package:syntax/syntax.dart';
 
 import 'highlighter_scope.dart';
@@ -1100,6 +1101,20 @@ class _PatchViewState extends State<PatchView> {
           highlighted = true;
         }
       }
+      child = CommentSourceHighlight(
+        controller: widget.commentNavigation,
+        fileId: file.id,
+        sourceRevision: file.revision,
+        split: row is DiffPairRow,
+        lines: [
+          for (final (line, side) in lines)
+            (
+              (side == DiffSide.old ? line.oldNumber! : line.newNumber!) - 1,
+              side,
+            ),
+        ],
+        child: child,
+      );
       final details =
           widget.onComment != null || widget.selectionActionBuilder != null
           ? _selectionDetails()

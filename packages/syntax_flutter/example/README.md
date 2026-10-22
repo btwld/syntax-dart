@@ -99,7 +99,9 @@ guide and tooltips. It works in both file and diff mode.
 
 In **Line selection**, use **Load sample threads** to add three discussions,
 including a resolved one. Previous/next buttons and review hotkeys move the
-active outline between them and reveal the selected discussion. **Custom
+active outline and linked source tint between them and reveal the selected discussion.
+Each sample covers three source lines. **Custom source highlight** switches the
+line tint and gutter marker to cyan independently of the card. **Custom
 highlight** changes its color, tint, shape, thickness and scroll spacing; both
 file and diff modes demonstrate it. The main **Diff review** uses the default
 highlight. Selection stays visible through resizing and thread expansion;

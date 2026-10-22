@@ -480,6 +480,7 @@ class _ShowcaseHomeState extends State<ShowcaseHome> {
         fileId: details.file.id,
         side: endpoint.side,
         line: endpoint.line,
+        sourceSelection: details.selection,
         data: thread,
       ),
     ]);
@@ -1416,6 +1417,7 @@ class _ShowcaseHomeState extends State<ShowcaseHome> {
               fileId: current.fileId,
               side: current.side,
               line: current.line,
+              sourceSelection: current.sourceSelection,
               data: thread,
             ),
       ]);

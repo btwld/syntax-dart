@@ -143,7 +143,7 @@ class _InteractionExamplesState extends State<_InteractionExample> {
   FileSelectionDetails? fileComment;
   DiffSelectionDetails? diffComment;
   bool customComposer = false, customThreads = false, customShortcuts = false;
-  bool customHighlight = false;
+  bool customHighlight = false, customSourceHighlight = false;
   final threads = ExampleCommentThreads();
   late final diffComments = CommentNavigationController.patch(review);
   late final fileComments = CommentNavigationController.file(
@@ -181,7 +181,7 @@ class _InteractionExamplesState extends State<_InteractionExample> {
   }
 
   void loadSampleThreads() {
-    const lines = [2, 8, 14];
+    const lines = [3, 9, 16];
     const messages = [
       'The fallback name makes empty input easier to read.',
       'Could we document the maximum retry delay here?',
@@ -201,8 +201,10 @@ class _InteractionExamplesState extends State<_InteractionExample> {
           if (!existing.contains(snapshots[i].id))
             LineAnnotation(
               id: snapshots[i].id,
-              start: file.document.lineStart(lines[i]),
-              end: file.document.lineStart(lines[i]),
+              start: file.document.lineStart(lines[i] - 2),
+              end:
+                  file.document.lineStart(lines[i]) +
+                  file.document.lineText(lines[i]).length,
               data: snapshots[i],
             ),
       ]);
@@ -217,6 +219,12 @@ class _InteractionExamplesState extends State<_InteractionExample> {
               fileId: 'policy',
               side: DiffSide.newer,
               line: lines[i] + 1,
+              sourceSelection: DiffSelection(
+                'policy',
+                DiffSide.newer,
+                lines[i] - 1,
+                lines[i] + 1,
+              ),
               data: snapshots[i],
             ),
       ]);
@@ -374,6 +382,7 @@ class _InteractionExamplesState extends State<_InteractionExample> {
         fileId: s.fileId,
         side: endpoint.side,
         line: endpoint.line,
+        sourceSelection: s,
         data: thread,
       ),
     ]);
@@ -470,6 +479,7 @@ class _InteractionExamplesState extends State<_InteractionExample> {
               fileId: current.fileId,
               side: current.side,
               line: current.line,
+              sourceSelection: current.sourceSelection,
               data: thread,
             ),
       ]);
@@ -573,6 +583,13 @@ class _InteractionExamplesState extends State<_InteractionExample> {
           button(
             customHighlight ? 'Default highlight' : 'Custom highlight',
             () => setState(() => customHighlight = !customHighlight),
+          ),
+          button(
+            customSourceHighlight
+                ? 'Default source highlight'
+                : 'Custom source highlight',
+            () =>
+                setState(() => customSourceHighlight = !customSourceHighlight),
           ),
           button('Load sample threads', loadSampleThreads),
           const ExampleCommentShortcutHelp(),
@@ -901,6 +918,13 @@ class _InteractionExamplesState extends State<_InteractionExample> {
               )
             : const CommentThreadHighlightStyle(),
         scrollPadding: customHighlight ? 24 : 12,
+        sourceStyle: customSourceHighlight
+            ? const CommentSourceHighlightStyle(
+                backgroundColor: Color(0x2446b8d9),
+                markerColor: Color(0xff46b8d9),
+                markerWidth: 5,
+              )
+            : const CommentSourceHighlightStyle(),
         child: content,
       ),
     );

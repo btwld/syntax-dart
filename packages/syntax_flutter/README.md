@@ -412,12 +412,16 @@ Custom builders can read `SyntaxCommentShortcuts.bindingsOf(context)` or call
 The **Discussion shortcuts** guide in both review examples displays the active
 mapping. **Line selection → Custom shortcuts** demonstrates J/K navigation,
 R to reply and X to resolve/reopen, with normal typing preserved in inputs.
+
 ### Active discussion highlights
 
 File, collection and patch views highlight the current `commentNavigation`
 thread with a paint-only outline and translucent tint. This works with custom
 annotations and collapsed resolved summaries. Clicking or focusing a thread
 updates the same active identity without moving the scroll position.
+The linked source lines receive a matching translucent tint and gutter marker.
+Both highlights follow the same controller when navigating, clicking, or using
+review shortcuts, including collapsed resolved discussions.
 
 Wrap a review area in `SyntaxCommentHighlightTheme` to customize all its views:
 
@@ -429,6 +433,11 @@ SyntaxCommentHighlightTheme(
     borderWidth: 3,
     borderRadius: BorderRadius.all(Radius.circular(16)),
     inset: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+  ),
+  sourceStyle: const CommentSourceHighlightStyle(
+    backgroundColor: Color(0x2446b8d9),
+    markerColor: Color(0xff46b8d9),
+    markerWidth: 5,
   ),
   scrollPadding: 24,
   child: reviewArea,
@@ -444,6 +453,40 @@ inactive annotations; preserve the child and a stable widget structure to retain
 input focus. For example, wrap it in a `DecoratedBox` with a conditional border or
 add a noninteractive active badge in a `Stack`.
 
+`sourceStyle` independently sets the source tint and marker; zero marker width
+hides the marker. `sourceEnabled: false` hides only the source highlight.
+`sourceBuilder(context, details)` can return a custom overlay or null to hide
+it. Details include the current `CommentThreadLocation`, zero-based line, diff
+side, and `isFirst`/`isLast` boundaries on that side. Overlays paint only mounted
+source rows, cover only the matching split pane, ignore pointer input, and stay
+out of copy output and accessibility text. They do not change native selections,
+row measurements, syntax colors, or annotation backgrounds. Use translucent
+colors so source and diff colors remain readable.
+
+File discussions derive their linked lines from the half-open UTF-16 offsets
+on `LineAnnotation`; an end at the start of the next line excludes that line.
+An empty range links its containing line. Diff discussions should persist the
+original selection separately from the line where the thread is displayed:
+
+```dart
+ReviewAnnotation(
+  id: thread.id,
+  fileId: selection.fileId,
+  side: selection.activeSide,
+  line: selection.active,
+  sourceSelection: selection,
+  data: thread,
+)
+```
+
+Preserve `sourceSelection` when replacing the annotation after replies, edits,
+or resolution. Its inclusive one-based range retains direction and old/new
+endpoints. Without it, only the annotation's anchor is linked. Patch bindings
+use canonical source order for ranges crossing both sides in either layout.
+Custom navigation adapters can supply `sourceRange`, `sourceSelection`, and a
+`sourceLineMatcher`; `isSourceLineActive` exposes the same membership check with
+an optional source revision guard.
+
 Navigation reveals the whole thread when it fits; long threads open at their
 heading. The selected thread stays visible as row heights or viewport dimensions
 change. Manual scrolling suspends this behavior until the next jump, and native
@@ -452,5 +495,6 @@ through layout changes while retaining explicit navigation. `scrollPadding` is
 preferred spacing, constrained by the available scroll extent.
 
 **Line selection → Load sample threads** adds three discussions without removing
-existing notes. Navigate between them and switch **Custom highlight** to see a
-custom outline, tint, shape and scroll spacing in both file and diff views.
+existing notes. Each sample links three source lines. Navigate between them and
+switch **Custom highlight** for the card appearance and **Custom source
+highlight** for cyan line tints and markers in both file and diff views.

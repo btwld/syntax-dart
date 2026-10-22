@@ -30,6 +30,8 @@ final class CommentThreadLocation {
     required this.line,
     this.side,
     this.sourceRevision = 0,
+    this.sourceRange,
+    this.sourceSelection,
   });
 
   /// Stable source and annotation identities; annotation IDs may repeat in files.
@@ -47,6 +49,14 @@ final class CommentThreadLocation {
   /// Source revision used to discard obsolete navigation results.
   final int sourceRevision;
 
+  /// Half-open UTF-16 document range for file discussions. An empty range links
+  /// its containing line. Null falls back to the display anchor [line].
+  final DocumentRange? sourceRange;
+
+  /// Inclusive one-based diff selection, retaining direction and both sides.
+  /// Separate from [line], which positions the discussion itself.
+  final DiffSelection? sourceSelection;
+
   /// Stable navigation identity, including its containing file.
   (String, String) get key => (fileId, annotationId);
 }
@@ -61,6 +71,7 @@ final class CommentNavigationController extends SyntaxObservable {
   CommentNavigationController({
     required this.onReveal,
     this.onCancelReveal,
+    this.sourceLineMatcher,
     Iterable<CommentThreadLocation> threads = const [],
     CommentThreadFilter filter = CommentThreadFilter.all,
   }) : _filter = filter {
@@ -71,6 +82,20 @@ final class CommentNavigationController extends SyntaxObservable {
   factory CommentNavigationController.patch(PatchController source) {
     final result = CommentNavigationController(
       onCancelReveal: source.cancelReveal,
+      sourceLineMatcher: (location, line, side) =>
+          side != null &&
+          source.isLineInSelection(
+            location.sourceSelection ??
+                DiffSelection(
+                  location.fileId,
+                  location.side ?? DiffSide.newer,
+                  location.line + 1,
+                  location.line + 1,
+                ),
+            location.fileId,
+            side,
+            line + 1,
+          ),
       onReveal: (location) async =>
           await source.revealLine(
             location.fileId,
@@ -124,6 +149,7 @@ final class CommentNavigationController extends SyntaxObservable {
             line: a.line - 1,
             side: a.side,
             sourceRevision: source.files[index].revision,
+            sourceSelection: a.sourceSelection,
           ),
           index,
           order.rowForLine(index, a.line, oldSide: a.side == DiffSide.old) ??
@@ -205,6 +231,10 @@ final class CommentNavigationController extends SyntaxObservable {
           thread: a.data! as ReviewThread,
           line: line,
           sourceRevision: source.document.revision,
+          sourceRange: DocumentRange(
+            source.document.positionAt(a.start),
+            source.document.positionAt(a.end),
+          ),
         ),
       );
     }
@@ -221,6 +251,48 @@ final class CommentNavigationController extends SyntaxObservable {
   /// Cancels a pending reveal's scrolling when superseded, filtered or disposed.
   /// Loading may continue to populate the application's cache.
   final void Function()? onCancelReveal;
+
+  /// Optional source membership test for custom discussion adapters. Receives a
+  /// zero-based line. Patch bindings supply canonical cross-side comparisons.
+  final bool Function(CommentThreadLocation, int, DiffSide?)? sourceLineMatcher;
+
+  /// Whether a rendered source line belongs to the active discussion. This does
+  /// not change user selections or source-copy behavior. Revision checks keep
+  /// retained views from painting a range belonging to different source content.
+  bool isSourceLineActive(
+    String fileId,
+    int line, {
+    DiffSide? side,
+    int? sourceRevision,
+  }) {
+    final entry = current;
+    if (isDisposed ||
+        entry == null ||
+        line < 0 ||
+        entry.fileId != fileId ||
+        (sourceRevision != null && entry.sourceRevision != sourceRevision)) {
+      return false;
+    }
+    if (sourceLineMatcher case final matcher?) {
+      return matcher(entry, line, side);
+    }
+    if (entry.sourceSelection case final selection?) {
+      // A custom cross-side adapter must supply its source ordering explicitly.
+      return !selection.crossesSides &&
+          side == selection.side &&
+          line >= selection.start - 1 &&
+          line <= selection.end - 1;
+    }
+    if (entry.side != side) return false;
+    if (entry.sourceRange case final range?) {
+      final last = range.end.character == 0 && range.end.line > range.start.line
+          ? range.end.line - 1
+          : range.end.line;
+      return line >= range.start.line && line <= last;
+    }
+    return line == entry.line;
+  }
+
   List<CommentThreadLocation> _threads = const [];
   Map<(String, String), CommentThreadLocation> _byKey = const {};
   final Map<String?, (int, int)> _counts = {};
