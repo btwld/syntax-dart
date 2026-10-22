@@ -217,6 +217,9 @@ class _ShowcaseHomeState extends State<ShowcaseHome> {
   final _highlighter = Highlighter(languages: [dartLanguage]);
   final _night = _codeTheme(true), _day = _codeTheme(false);
   late PatchController _review = _newReview();
+  final _commentInput = TextEditingController();
+  final _commentFocus = FocusNode();
+  DiffSelectionDetails? _commentSelection;
   late final _files = FileListController(showcaseFiles);
   late final _editor = EditorController(
     file: const SourceFile(
@@ -350,6 +353,8 @@ class _ShowcaseHomeState extends State<ShowcaseHome> {
   void _reset() {
     switch (_tab) {
       case 0:
+        _commentSelection = null;
+        _commentInput.clear();
         final previous = _review..removeListener(_changed);
         _review = _newReview()..addListener(_changed);
         _resolved.clear();
@@ -416,66 +421,60 @@ class _ShowcaseHomeState extends State<ShowcaseHome> {
     );
   }
 
-  Future<void> _comment([DiffSelectionDetails? details]) async {
+  void _comment([DiffSelectionDetails? details]) {
     final selection = details?.selection ?? _review.selection;
     if (selection == null) return;
-    final source = details?.file ?? _review.file(selection.fileId);
-    final input = TextEditingController();
-    final text = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(
-          'Comment on ${selection.side.name} ${selection.anchor} → ${selection.activeSide.name} ${selection.active}',
-        ),
-        content: SizedBox(
-          width: 420,
-          child: TextField(
-            controller: input,
-            autofocus: true,
-            minLines: 3,
-            maxLines: 6,
-            decoration: const InputDecoration(
-              hintText: 'What would you like to point out?',
-              border: OutlineInputBorder(),
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              if (input.text.trim().isNotEmpty) {
-                Navigator.pop(context, input.text.trim());
-              }
-            },
-            child: const Text('Add comment'),
-          ),
-        ],
-      ),
-    );
-    // A dialog route can still be animating its text field out.
-    Future<void>.delayed(const Duration(milliseconds: 300), input.dispose);
-    if (!mounted ||
-        text == null ||
-        !_review.files.any((file) => identical(file, source))) {
+    if (_commentSelection != null &&
+        _review.files.any(_commentSelection!.matches)) {
+      _commentFocus.requestFocus();
+      final pending = _commentSelection!;
+      final endpoint = pending.endIn(_review.mode);
+      _review.revealLine(pending.file.id, endpoint.line, side: endpoint.side);
       return;
     }
+    final snapshot =
+        details ??
+        DiffSelectionDetails(
+          file: _review.file(selection.fileId),
+          selection: selection,
+        );
+    _commentInput.clear();
+    setState(() => _commentSelection = snapshot);
+    if (details == null) {
+      final endpoint = snapshot.endIn(_review.mode);
+      _review.revealLine(selection.fileId, endpoint.line, side: endpoint.side);
+    } else {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted &&
+            identical(_commentSelection, snapshot) &&
+            _commentFocus.context == null) {
+          _comment(snapshot);
+        }
+      });
+    }
+  }
+
+  void _cancelComment() {
+    _commentInput.clear();
+    setState(() => _commentSelection = null);
+  }
+
+  void _submitComment(String text) {
+    final details = _commentSelection;
+    if (details == null || !_review.files.any(details.matches)) return;
+    final endpoint = details.endIn(_review.mode);
     _review.setAnnotations([
       ..._review.annotations,
       ReviewAnnotation(
         id: 'note-${DateTime.now().microsecondsSinceEpoch}',
-        fileId: selection.fileId,
-        side: selection.activeSide,
-        line: selection.active,
+        fileId: details.file.id,
+        side: endpoint.side,
+        line: endpoint.line,
         data: text,
       ),
     ]);
-    _message(
-      'Comment added to line ${selection.active}. Only visible in this demo.',
-    );
+    _cancelComment();
+    _message('Comment added to the selected lines. Only visible in this demo.');
   }
 
   Future<void> _editFile(FileDiff file) async {
@@ -1120,6 +1119,13 @@ class _ShowcaseHomeState extends State<ShowcaseHome> {
       hunkBuilder: _hunkHeader,
       annotationBuilder: _reviewNote,
       onComment: _comment,
+      commentSelection: _commentSelection,
+      commentBuilder: (context, selection) => SyntaxCommentComposer(
+        controller: _commentInput,
+        focusNode: _commentFocus,
+        onSubmit: _submitComment,
+        onCancel: _cancelComment,
+      ),
       onLineTap: (file, side, line) => _message(
         '${file.path} · ${side == DiffSide.old ? 'before' : 'after'} · line $line selected',
       ),
@@ -1497,6 +1503,8 @@ class _ShowcaseHomeState extends State<ShowcaseHome> {
   @override
   void dispose() {
     _timer?.cancel();
+    _commentInput.dispose();
+    _commentFocus.dispose();
     _review.dispose();
     _files.dispose();
     _editor.dispose();

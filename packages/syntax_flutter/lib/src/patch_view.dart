@@ -9,6 +9,7 @@ import 'horizontal_scroll.dart';
 import 'line_selection.dart';
 import 'selection_actions.dart';
 import 'selection_action_overlay.dart';
+import 'inline_comment_region.dart';
 import 'package:syntax/syntax.dart';
 
 import 'highlighter_scope.dart';
@@ -70,6 +71,8 @@ class PatchView extends StatefulWidget {
     this.annotationBuilder,
     this.gutterActionBuilder,
     this.onComment,
+    this.commentSelection,
+    this.commentBuilder,
     this.selectionActionBuilder,
     this.selectionActionStyle = const SelectionActionStyle(),
     this.onLineTap,
@@ -110,6 +113,8 @@ class PatchView extends StatefulWidget {
     this.annotationBuilder,
     this.gutterActionBuilder,
     this.onComment,
+    this.commentSelection,
+    this.commentBuilder,
     this.selectionActionBuilder,
     this.selectionActionStyle = const SelectionActionStyle(),
     this.onLineTap,
@@ -156,6 +161,8 @@ class PatchView extends StatefulWidget {
     this.annotationBuilder,
     this.gutterActionBuilder,
     this.onComment,
+    this.commentSelection,
+    this.commentBuilder,
     this.selectionActionBuilder,
     this.selectionActionStyle = const SelectionActionStyle(),
     this.onLineTap,
@@ -195,6 +202,8 @@ class PatchView extends StatefulWidget {
     this.annotationBuilder,
     this.gutterActionBuilder,
     this.onComment,
+    this.commentSelection,
+    this.commentBuilder,
     this.selectionActionBuilder,
     this.selectionActionStyle = const SelectionActionStyle(),
     this.onLineTap,
@@ -256,6 +265,16 @@ class PatchView extends StatefulWidget {
   /// Opens an application-owned comment for the directed logical selection.
   /// Enables a button at its active endpoint and configurable shortcuts.
   final ValueChanged<DiffSelectionDetails>? onComment;
+
+  /// Snapshot anchoring an inline comment independently of the live selection.
+  /// A stale revision hides the form; the application owns its retained draft.
+  final DiffSelectionDetails? commentSelection;
+
+  /// Builds a full-width inline editor below the last selected display row.
+  /// Both direction and split/unified source ordering are respected. The form
+  /// is hidden with its source when folded. Retain input controllers outside
+  /// this builder so virtualization does not discard drafts.
+  final Widget Function(BuildContext, DiffSelectionDetails)? commentBuilder;
 
   /// Replaces the selected line's action; returning null hides it.
   /// The widget is constrained to the source row, within the active pane in
@@ -511,6 +530,21 @@ class _PatchViewState extends State<PatchView> {
     final palette = _paletteFor(context);
     final labels = widget.labels;
     final rows = _layout();
+    final comment = widget.commentSelection;
+    int? commentRow;
+    if (comment != null &&
+        widget.commentBuilder != null &&
+        rows is DiffLayout) {
+      final file = _files.indexWhere((file) => comment.matches(file));
+      if (file >= 0) {
+        final endpoint = comment.endIn(widget.controller?.mode ?? widget.mode);
+        commentRow = rows.rowForLine(
+          file,
+          endpoint.line,
+          oldSide: endpoint.side == DiffSide.old,
+        );
+      }
+    }
 
     Widget buildRow(BuildContext context, int index) {
       if (rows.isEmpty) return _notice(labels.noFiles, palette);
@@ -519,7 +553,26 @@ class _PatchViewState extends State<PatchView> {
       if (widget.selectable && (model is DiffLineRow || model is DiffPairRow)) {
         source = SelectionArea(child: source);
       }
-      final row = _decorateRow(context, model, source, palette, highlighter);
+      final decorated = _decorateRow(
+        context,
+        model,
+        source,
+        palette,
+        highlighter,
+      );
+      final row = index == commentRow
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                decorated,
+                InlineCommentRegion(
+                  key: ValueKey(comment),
+                  child: widget.commentBuilder!(context, comment!),
+                ),
+              ],
+            )
+          : decorated;
       return index > 0 && rows[index - 1].file != model.file
           ? Padding(padding: const EdgeInsets.only(top: 16), child: row)
           : row;
@@ -577,6 +630,8 @@ class _PatchViewState extends State<PatchView> {
               widget.textStyle,
               widget.controller?.annotations,
               _actionWidth,
+              commentRow,
+              comment,
             ),
             identity: identity,
             indexOf: indexOf,

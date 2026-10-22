@@ -37,7 +37,10 @@ void main() {
     expect(review.selectedText(), contains('cleaned.isEmpty'));
     await tester.tap(find.byTooltip('Comment on selected lines'));
     await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(find.byType(SyntaxCommentComposer), findsOneWidget);
     await tester.enterText(find.byType(TextField), 'Handle missing names');
+    await tester.pump();
     await tester.tap(find.text('Add note'));
     await tester.pumpAndSettle();
     expect(review.annotations.single.data, 'Handle missing names');
@@ -53,9 +56,19 @@ void main() {
         .controller;
     expect(file.document.positionAt(file.selections.single.start).line, 1);
     expect(file.document.positionAt(file.selections.single.end).line, 3);
+    final beforeComment = tester.getTopLeft(
+      find.textContaining('String formatName', findRichText: true).last,
+    );
     await tester.tap(find.byTooltip('Comment on selected lines'));
     await tester.pumpAndSettle();
+    expect(
+      tester.getTopLeft(
+        find.textContaining('String formatName', findRichText: true).last,
+      ),
+      beforeComment,
+    );
     await tester.enterText(find.byType(TextField), 'File range note');
+    await tester.pump();
     await tester.tap(find.text('Add note'));
     await tester.pumpAndSettle();
     expect(file.annotations.single.start, file.selections.single.start);
@@ -68,12 +81,117 @@ void main() {
     await tester.tap(find.byTooltip('Discuss this selection'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), 'Custom action note');
+    await tester.pump();
     await tester.tap(find.text('Add note'));
     await tester.pumpAndSettle();
     expect(file.annotations.length, 2);
     expect(find.text('Custom action note'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+  testWidgets(
+    'reverse ranges reveal an inline input outside the mounted viewport',
+    (tester) async {
+      await launch(tester, 0);
+      await tester.tap(find.text('Show file'));
+      await tester.pumpAndSettle();
+      final editor = tester
+          .widget<SyntaxFileView>(find.byType(SyntaxFileView))
+          .controller;
+      final end = editor.document.text.length;
+      editor.applyEdits([
+        OffsetEdit(
+          end,
+          end,
+          List.generate(1200, (i) => '// extra $i').join('\n'),
+        ),
+      ]);
+      editor.selectLines(1000, 0);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Comment on selected lines'));
+      await tester.pumpAndSettle();
+      expect(editor.revealTarget?.start.line, 1000);
+      expect(find.byType(SyntaxCommentComposer), findsOneWidget);
+      await tester.enterText(find.byType(TextField), 'Long range note');
+      await tester.pump();
+      await tester.ensureVisible(find.text('Add note'));
+      await tester.tap(find.text('Add note'));
+      await tester.pumpAndSettle();
+      expect(editor.annotations.single.data, 'Long range note');
+      expect(tester.takeException(), isNull);
+    },
+  );
+  testWidgets(
+    'inline inputs and actions are customizable and keep separate view drafts',
+    (tester) async {
+      await launch(tester, 0, size: const Size(520, 900));
+      Future<void> tapVisible(String label) async {
+        await tester.ensureVisible(find.text(label));
+        await tester.tap(find.text(label));
+        await tester.pumpAndSettle();
+      }
+
+      final review = tester
+          .widget<PatchView>(find.byType(PatchView))
+          .controller!;
+      await tapVisible('Select across sides');
+      await tester.tap(find.byTooltip('Comment on selected lines'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), 'Diff draft');
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Custom composer'));
+      await tapVisible('Custom composer');
+      expect(find.text('Your feedback'), findsOneWidget);
+      expect(find.widgetWithText(TextField, 'Diff draft'), findsOneWidget);
+      await tapVisible('Show file');
+      await tapVisible('Select lines 2–4');
+      await tester.tap(find.byTooltip('Comment on selected lines'));
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        isEmpty,
+      );
+      await tester.enterText(find.byType(TextField), 'File draft');
+      await tester.pumpAndSettle();
+      await tapVisible('Show diff');
+      expect(find.widgetWithText(TextField, 'Diff draft'), findsOneWidget);
+      await tester.ensureVisible(find.text('Clear draft'));
+      await tester.tap(find.text('Clear draft'));
+      await tester.pump();
+      expect(
+        tester
+            .widget<FilledButton>(
+              find.ancestor(
+                of: find.text('Post note'),
+                matching: find.byWidgetPredicate(
+                  (widget) => widget is FilledButton,
+                ),
+              ),
+            )
+            .onPressed,
+        isNull,
+      );
+      await tester.enterText(find.byType(TextField), 'Final review');
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Post note'));
+      await tapVisible('Post note');
+      expect(review.annotations.single.data, 'Final review');
+      expect(find.byType(SyntaxCommentComposer), findsNothing);
+      await tapVisible('Show file');
+      expect(find.widgetWithText(TextField, 'File draft'), findsOneWidget);
+      await tester.ensureVisible(find.text('Discard'));
+      await tapVisible('Discard');
+      expect(find.byType(SyntaxCommentComposer), findsNothing);
+      expect(
+        tester
+            .widget<SyntaxFileView>(find.byType(SyntaxFileView))
+            .controller
+            .annotations,
+        isEmpty,
+      );
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
   testWidgets(
     'custom diff actions retain range and discard notes for replaced source',
     (tester) async {
@@ -94,8 +212,8 @@ void main() {
       review.setFiles([
         diffTexts('before', 'after', id: 'policy', path: 'changed.dart'),
       ]);
-      await tester.tap(find.text('Add note'));
       await tester.pumpAndSettle();
+      expect(find.byType(SyntaxCommentComposer), findsNothing);
       expect(review.annotations, isEmpty);
       expect(tester.takeException(), isNull);
     },

@@ -132,6 +132,16 @@ class _InteractionExamplesState extends State<_InteractionExample> {
       text: interactionAfter,
     ),
   )..addListener(changed);
+  final fileCommentInput = TextEditingController();
+  final diffCommentInput = TextEditingController();
+  final fileCommentFocus = FocusNode();
+  final diffCommentFocus = FocusNode();
+  TextEditingController get commentInput =>
+      fileMode ? fileCommentInput : diffCommentInput;
+  FocusNode get commentFocus => fileMode ? fileCommentFocus : diffCommentFocus;
+  FileSelectionDetails? fileComment;
+  DiffSelectionDetails? diffComment;
+  bool customComposer = false;
   final oldInput = TextEditingController(text: interactionBefore);
   final newInput = TextEditingController(text: interactionAfter);
   bool fileMode = false,
@@ -203,10 +213,8 @@ class _InteractionExamplesState extends State<_InteractionExample> {
     }
   }
 
-  Future<void> annotate({
-    FileSelectionDetails? source,
-    DiffSelectionDetails? diff,
-  }) async {
+  void annotate({FileSelectionDetails? source, DiffSelectionDetails? diff}) {
+    var reveal = source == null && diff == null;
     if (source == null && diff == null) {
       if (fileMode) {
         final selection = file.selections.first;
@@ -225,34 +233,66 @@ class _InteractionExamplesState extends State<_InteractionExample> {
         );
       }
     }
-    var note = '';
-    final text = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Comment on selection'),
-        content: TextField(
-          onChanged: (value) => note = value,
-          autofocus: true,
-          decoration: const InputDecoration(labelText: 'Review note'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, note),
-            child: const Text('Add note'),
-          ),
-        ],
-      ),
-    );
-    if (!mounted || text == null || text.trim().isEmpty) return;
+    if (source != null && fileComment?.matches(file.file) == true) {
+      source = fileComment;
+      reveal = true;
+    } else if (diff != null &&
+        diffComment != null &&
+        review.files.any(diffComment!.matches)) {
+      diff = diffComment;
+      reveal = true;
+    } else {
+      commentInput.clear();
+      setState(() {
+        if (source != null) fileComment = source;
+        if (diff != null) diffComment = diff;
+      });
+    }
+    commentFocus.requestFocus();
+    if (!reveal) {
+      // Preserve visible code. A reverse selection can end offscreen, in which
+      // case the input is not mounted and needs an explicit reveal next frame.
+      final focus = commentFocus;
+      final pendingSource = source, pendingDiff = diff;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || focus.context != null) return;
+        if ((pendingSource != null && identical(fileComment, pendingSource)) ||
+            (pendingDiff != null && identical(diffComment, pendingDiff))) {
+          annotate(source: pendingSource, diff: pendingDiff);
+        }
+      });
+      return;
+    }
     if (source != null) {
-      if (file.document.revision != source.file.revision ||
-          file.file.id != source.file.id) {
-        return;
+      file.reveal(
+        DocumentRange(
+          DocumentPosition(source.endLine, 0),
+          DocumentPosition(source.endLine, 0),
+        ),
+      );
+    } else {
+      final endpoint = diff!.endIn(review.mode);
+      review.revealLine(diff.file.id, endpoint.line, side: endpoint.side);
+    }
+  }
+
+  void cancelComment() {
+    commentInput.clear();
+    setState(() {
+      if (fileMode) {
+        fileComment = null;
+      } else {
+        diffComment = null;
       }
+    });
+  }
+
+  void submitComment(String text) {
+    final source = fileMode ? fileComment : null;
+    final diff = fileMode ? null : diffComment;
+    if (source == null && diff == null) return;
+    if (source != null) {
+      if (!source.matches(file.file)) return;
       file.setAnnotations([
         ...file.annotations,
         LineAnnotation(
@@ -262,21 +302,72 @@ class _InteractionExamplesState extends State<_InteractionExample> {
           data: text,
         ),
       ]);
+      cancelComment();
       return;
     }
-    if (!review.files.any((file) => identical(file, diff!.file))) return;
-    final s = diff!.selection;
+    if (!review.files.any(diff!.matches)) return;
+    final s = diff.selection;
+    final endpoint = diff.endIn(review.mode);
     review.setAnnotations([
       ...review.annotations,
       ReviewAnnotation(
         id: 'note-${review.annotations.length}',
         fileId: s.fileId,
-        side: s.activeSide,
-        line: s.active,
+        side: endpoint.side,
+        line: endpoint.line,
         data: text,
       ),
     ]);
+    cancelComment();
   }
+
+  Widget composer() => SyntaxCommentComposer(
+    controller: commentInput,
+    focusNode: commentFocus,
+    onSubmit: submitComment,
+    onCancel: cancelComment,
+    submitLabel: 'Add note',
+    inputBuilder: customComposer
+        ? (context, details) => TextField(
+            controller: details.controller,
+            focusNode: details.focusNode,
+            autofocus: true,
+            enabled: !details.isSubmitting,
+            minLines: 2,
+            maxLines: 5,
+            decoration: const InputDecoration(
+              labelText: 'Your feedback',
+              prefixIcon: Icon(Icons.forum_outlined),
+              filled: true,
+              border: OutlineInputBorder(),
+            ),
+          )
+        : null,
+    actionsBuilder: customComposer
+        ? (context, details) => Wrap(
+            alignment: WrapAlignment.end,
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              TextButton(
+                onPressed: details.isSubmitting
+                    ? null
+                    : details.controller.clear,
+                child: const Text('Clear draft'),
+              ),
+              TextButton(
+                onPressed: details.cancel,
+                child: const Text('Discard'),
+              ),
+              FilledButton.icon(
+                onPressed: details.submit,
+                icon: const Icon(Icons.send_outlined, size: 16),
+                label: const Text('Post note'),
+              ),
+            ],
+          )
+        : null,
+  );
 
   Widget customAction(VoidCallback comment) => Tooltip(
     message: 'Discuss this selection',
@@ -385,6 +476,10 @@ class _InteractionExamplesState extends State<_InteractionExample> {
                 : 'Custom comment action',
             () =>
                 setState(() => customSelectionAction = !customSelectionAction),
+          ),
+          button(
+            customComposer ? 'Default composer' : 'Custom composer',
+            () => setState(() => customComposer = !customComposer),
           ),
           Text(selectionLabel, style: const TextStyle(fontSize: 12)),
         ],
@@ -559,6 +654,10 @@ class _InteractionExamplesState extends State<_InteractionExample> {
                   textStyle: style,
                   wrap: wrap,
                   onComment: (selection) => annotate(source: selection),
+                  commentSelection: fileComment,
+                  annotationLineBuilder: (annotation) =>
+                      file.document.positionAt(annotation.end).line,
+                  commentBuilder: (context, selection) => composer(),
                   annotationBuilder: (context, annotation) =>
                       noteCard(annotation.data),
                   selectionActionStyle: SelectionActionStyle(
@@ -572,6 +671,8 @@ class _InteractionExamplesState extends State<_InteractionExample> {
               : PatchView.controlled(
                   controller: review,
                   onComment: (selection) => annotate(diff: selection),
+                  commentSelection: diffComment,
+                  commentBuilder: (context, selection) => composer(),
                   annotationBuilder: (context, annotation) =>
                       noteCard(annotation.data),
                   selectionActionStyle: SelectionActionStyle(
@@ -643,6 +744,10 @@ class _InteractionExamplesState extends State<_InteractionExample> {
     file.removeListener(changed);
     review.dispose();
     file.dispose();
+    fileCommentInput.dispose();
+    diffCommentInput.dispose();
+    fileCommentFocus.dispose();
+    diffCommentFocus.dispose();
     oldInput.dispose();
     newInput.dispose();
     super.dispose();

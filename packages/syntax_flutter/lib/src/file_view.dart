@@ -9,6 +9,7 @@ import 'horizontal_scroll.dart';
 import 'line_selection.dart';
 import 'selection_actions.dart';
 import 'selection_action_overlay.dart';
+import 'inline_comment_region.dart';
 
 /// A virtualized highlighted file with source-only line selection and copy.
 class SyntaxFileView extends StatefulWidget {
@@ -24,8 +25,11 @@ class SyntaxFileView extends StatefulWidget {
     this.textStyle,
     this.headerBuilder,
     this.annotationBuilder,
+    this.annotationLineBuilder,
     this.gutterActionBuilder,
     this.onComment,
+    this.commentSelection,
+    this.commentBuilder,
     this.selectionActionBuilder,
     this.selectionActionStyle = const SelectionActionStyle(),
     this.onLineTap,
@@ -65,12 +69,25 @@ class SyntaxFileView extends StatefulWidget {
   final Widget Function(BuildContext, LineAnnotation<Object?>)?
   annotationBuilder;
 
+  /// Optional zero-based display line for a range annotation. By default it
+  /// appears below the range start; applications can anchor notes at its end.
+  final int Function(LineAnnotation<Object?>)? annotationLineBuilder;
+
   /// Custom per-line gutter actions.
   final Widget Function(BuildContext, int)? gutterActionBuilder;
 
   /// Opens an application-owned comment for the primary logical selection.
   /// Enables a button at its active line and configurable keyboard shortcuts.
   final ValueChanged<FileSelectionDetails>? onComment;
+
+  /// Snapshot for an app-owned inline comment, independent of live selection.
+  /// A stale source revision hides the composer; the application owns its draft.
+  final FileSelectionDetails? commentSelection;
+
+  /// Builds an inline editor below the last selected line in [commentSelection].
+  /// Supports variable heights. Retain input controllers outside this builder
+  /// so drafts survive scrolling, collapsing, and other row unmounts.
+  final Widget Function(BuildContext, FileSelectionDetails)? commentBuilder;
 
   /// Replaces the selected line's action; returning null hides it.
   /// The widget is constrained to the source row and must supply its own
@@ -231,6 +248,11 @@ class _SyntaxFileViewState extends State<SyntaxFileView> {
   @override
   Widget build(BuildContext context) {
     final doc = editor.document;
+    final comment =
+        widget.commentBuilder != null &&
+            widget.commentSelection?.matches(editor.file) == true
+        ? widget.commentSelection
+        : null;
     final selection =
         widget.onComment != null || widget.selectionActionBuilder != null
         ? _selectionDetails()
@@ -298,16 +320,19 @@ class _SyntaxFileViewState extends State<SyntaxFileView> {
                         widget.executor,
                         widget.highlighter.revision,
                         editor.annotations,
+                        widget.annotationLineBuilder,
                         editor.diagnostics,
                         editor.carets,
                         widget.lineHeaderBuilder,
                         gutterWidth,
+                        comment,
                       ),
                       identity: doc.lineIdentity,
                       indexOf: doc.lineForIdentity,
                       estimatedHeight: _height.ceilToDouble(),
                       fixedHeight:
                           !widget.wrap &&
+                          comment == null &&
                           editor.annotations.isEmpty &&
                           editor.diagnostics.isEmpty &&
                           editor.carets.isEmpty &&
@@ -476,10 +501,20 @@ class _SyntaxFileViewState extends State<SyntaxFileView> {
                                       ),
                                     ),
                                   ),
+                              if (comment != null && comment.endLine == line)
+                                InlineCommentRegion(
+                                  key: ValueKey(comment),
+                                  child: widget.commentBuilder!(
+                                    context,
+                                    comment,
+                                  ),
+                                ),
                               for (final a in editor.annotations)
-                                if (a.start >= start &&
-                                    (a.start < end + 1 ||
-                                        line == doc.lineCount - 1))
+                                if (widget.annotationLineBuilder != null
+                                    ? widget.annotationLineBuilder!(a) == line
+                                    : a.start >= start &&
+                                          (a.start < end + 1 ||
+                                              line == doc.lineCount - 1))
                                   SelectionContainer.disabled(
                                     child:
                                         widget.annotationBuilder?.call(
@@ -541,9 +576,12 @@ class SyntaxFileList extends StatefulWidget {
     this.wrap = true,
     this.textStyle,
     this.onComment,
+    this.commentSelection,
+    this.commentBuilder,
     this.selectionActionBuilder,
     this.selectionActionStyle = const SelectionActionStyle(),
     this.annotationBuilder,
+    this.annotationLineBuilder,
   });
 
   /// Files and session storage.
@@ -573,6 +611,12 @@ class SyntaxFileList extends StatefulWidget {
   /// Application-owned comment action for selections in file previews.
   final ValueChanged<FileSelectionDetails>? onComment;
 
+  /// Inline comment snapshot, routed to the matching file preview.
+  final FileSelectionDetails? commentSelection;
+
+  /// Builds the application's inline editor below its selected range.
+  final Widget Function(BuildContext, FileSelectionDetails)? commentBuilder;
+
   /// Replaces a preview's selection action, or returns null to hide it.
   final Widget? Function(BuildContext, FileSelectionDetails)?
   selectionActionBuilder;
@@ -583,6 +627,9 @@ class SyntaxFileList extends StatefulWidget {
   /// Application-owned annotation content below preview source lines.
   final Widget Function(BuildContext, LineAnnotation<Object?>)?
   annotationBuilder;
+
+  /// Optional zero-based anchor for range annotations in file previews.
+  final int Function(LineAnnotation<Object?>)? annotationLineBuilder;
   @override
   State<SyntaxFileList> createState() => _SyntaxFileListState();
 }
@@ -742,9 +789,12 @@ class _SessionFileState extends State<_SessionFile> {
             wrap: owner.wrap,
             showHeader: false,
             onComment: owner.onComment,
+            commentSelection: owner.commentSelection,
+            commentBuilder: owner.commentBuilder,
             selectionActionBuilder: owner.selectionActionBuilder,
             selectionActionStyle: owner.selectionActionStyle,
             annotationBuilder: owner.annotationBuilder,
+            annotationLineBuilder: owner.annotationLineBuilder,
           );
   }
 

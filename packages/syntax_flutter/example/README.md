@@ -59,7 +59,10 @@ and Tab navigation. After a gutter selection, Ctrl/Cmd+C copies the selected
 source in file and diff views.
 
 Drag line numbers to reveal a comment icon at the moving end of the selection.
-Click it or use Ctrl/Cmd+Shift+M to open a note. **Line selection** supports file
-and diff notes, plus a **Custom comment action** toggle demonstrating a supplied
-button builder. The library exposes the range and source revision to the app;
-the gallery owns its forms and temporary notes.
+Click it or use Ctrl/Cmd+Shift+M to open an inline editor below the selected
+lines. Ctrl/Cmd+Enter posts the note and Escape discards it. **Line selection**
+supports file and diff notes, a **Custom comment action** toggle for the gutter
+button, and **Custom composer** for application-supplied input and actions.
+Try changing the composer while typing or switching between file and diff views:
+each draft stays with its original range. The library exposes the source
+snapshot and range; the gallery owns its inputs, actions and temporary notes.

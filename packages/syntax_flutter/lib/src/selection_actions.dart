@@ -35,6 +35,12 @@ final class FileSelectionDetails {
   /// Selected source without line numbers, annotations or other decorations.
   String get selectedText =>
       file.text.substring(selection.start, selection.end);
+
+  /// Whether this range still addresses the same document contents.
+  bool matches(SourceFile source) =>
+      source.id == file.id &&
+      source.revision == file.revision &&
+      source.text == file.text;
 }
 
 /// Immutable diff selection passed to application-owned review actions.
@@ -50,6 +56,34 @@ final class DiffSelectionDetails {
 
   /// Inclusive one-based endpoints, including the active endpoint's side.
   final DiffSelection selection;
+
+  /// Whether this selection still addresses the same source revision.
+  bool matches(FileDiff source) =>
+      source.id == file.id &&
+      source.revision == file.revision &&
+      source.oldText == file.oldText &&
+      source.newText == file.newText &&
+      ((file.oldText != null && file.newText != null) ||
+          identical(source.hunks, file.hunks));
+
+  /// The endpoint appearing last in [mode], independent of drag direction.
+  /// Source numbers on opposite sides are not compared numerically.
+  ({DiffSide side, int line}) endIn(DiffMode mode) {
+    final rows = DiffLayout([file], mode: mode, expandAll: true);
+    final anchor = rows.rowForLine(
+      0,
+      selection.anchor,
+      oldSide: selection.side == DiffSide.old,
+    );
+    final active = rows.rowForLine(
+      0,
+      selection.active,
+      oldSide: selection.activeSide == DiffSide.old,
+    );
+    return anchor != null && active != null && anchor > active
+        ? (side: selection.side, line: selection.anchor)
+        : (side: selection.activeSide, line: selection.active);
+  }
 }
 
 /// Presentation and keyboard bindings for a selection's comment action.

@@ -107,6 +107,7 @@ void main() {
       find.byType(TextField),
       'Please add a timeout test.',
     );
+    await tester.pump();
     await tester.tap(find.text('Add comment'));
     await tester.pumpAndSettle();
     expect(review.annotations, hasLength(2));
@@ -115,6 +116,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Reopen'), findsOneWidget);
     final before = review.file('retry').additions;
+    await tester.drag(find.byType(PatchView), const Offset(0, 800));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Accept').first);
     await tester.pumpAndSettle();
     expect(review.file('retry').additions, lessThan(before));

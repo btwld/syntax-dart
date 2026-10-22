@@ -135,10 +135,70 @@ selection. Custom widgets supply their own callbacks and accessible labels.
 `gutterWidth`, the default icon/button/tooltip, and shortcut bindings. Increase
 the gutter width for a wider custom action, or use zero with trailing alignment.
 Actions fit within the source row, keep its height unchanged and leave the
-viewport with it. Put larger forms in annotations, dialogs or an overlay.
+viewport with it. Use `commentBuilder` for a form below the selected range.
 
 Shortcuts invoke `onComment` independently of a custom builder; pass
 `shortcuts: []` to disable them, or supply your own `ShortcutActivator`s. Omit
 both the callback and builder to disable selection actions entirely. The
 **Line selection** gallery page demonstrates default and custom actions in
 both file and diff views.
+
+### Inline comment editors
+
+Keep the selected snapshot and draft controller in application state, then pass
+`commentSelection` and `commentBuilder` to the view. The composer appears below
+the last selected display row, even for upward or cross-side selections. In a
+split diff it spans both panes. It stays attached to that snapshot when the live
+selection changes; folding or scrolling the row out of view preserves an
+application-owned draft. A changed source revision hides the stale form.
+
+```dart
+// State fields; dispose the controller with your review session.
+final draft = TextEditingController();
+DiffSelectionDetails? pendingComment;
+
+// In build:
+PatchView.controlled(
+  controller: review,
+  theme: githubDarkTheme,
+  onComment: (details) => setState(() => pendingComment = details),
+  commentSelection: pendingComment,
+  commentBuilder: (context, details) => SyntaxCommentComposer(
+    controller: draft,
+    onSubmit: (text) {
+      if (!review.files.any(details.matches)) return;
+      // Save text with details.selection in your application's review store.
+      draft.clear();
+      setState(() => pendingComment = null);
+    },
+    onCancel: () {
+      draft.clear();
+      setState(() => pendingComment = null);
+    },
+  ),
+);
+```
+
+`SyntaxFileView` and `SyntaxFileList` use the same properties with
+`FileSelectionDetails`. Use `matches` before saving to validate the captured
+source. An app can call `reveal` or `revealLine` when opening a hidden range;
+`DiffSelectionDetails.endIn(mode)` identifies the final display endpoint.
+
+`SyntaxCommentComposer` is optional: `commentBuilder` accepts any widget. Its
+`inputBuilder` and `actionsBuilder` receive `CommentComposerDetails`, containing
+the retained controller, optional focus node, submitting state, and nullable
+submit/cancel commands. Use them for rich inputs, attachments or custom buttons.
+The default form supports Ctrl/Cmd+Enter to submit and Escape to cancel;
+`shortcutsEnabled: false` lets your input supply its own commands. Native input
+shortcuts are isolated from the surrounding source viewer's shortcuts.
+
+Customize the heading, labels, input decoration, typography, card decoration,
+padding and margin, or replace the input and action area entirely. Applications
+own `isSubmitting`, `errorText`, persistence and permissions. Empty drafts and
+pending submissions disable the supplied submit command; pending submissions
+also disable cancellation. The form never saves or clears text itself. Retain
+controllers outside row builders to preserve drafts during virtualization.
+
+Saved notes remain controller annotations. `annotationLineBuilder` on file
+views can position a range annotation below its last line, while preserving its
+full source range. Diff annotations can use the endpoint from `endIn(mode)`.
