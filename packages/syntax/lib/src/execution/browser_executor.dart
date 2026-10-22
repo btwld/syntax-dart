@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:js_interop';
 import '../edit/editor.dart';
 import 'executor.dart';
+import 'transport.dart';
 
 @JS('Worker')
 extension type _Worker._(JSObject _) implements JSObject {
@@ -62,6 +63,7 @@ final class _BrowserExecutor implements HighlightExecutor {
   int _next = 0;
   bool _disposed = false, _failed = false;
   final _fallback = CooperativeHighlightExecutor();
+  final _sender = HighlightSender();
   @override
   Future<HighlightResult> highlight(
     HighlightRequest request, {
@@ -74,7 +76,9 @@ final class _BrowserExecutor implements HighlightExecutor {
     }
     final id = _next++;
     final completer = _pending[id] = Completer<HighlightResult>();
-    _worker.postMessage({'requestId': id, 'request': request.toJson()}.jsify());
+    _worker.postMessage(
+      {'requestId': id, 'request': _sender.encode(request)}.jsify(),
+    );
     try {
       final result =
           await (cancellation?.bind(completer.future) ?? completer.future)
@@ -83,6 +87,7 @@ final class _BrowserExecutor implements HighlightExecutor {
       return result;
     } finally {
       _pending.remove(id);
+      if (!_disposed && !_failed) _worker.postMessage({'cancel': id}.jsify());
     }
   }
 

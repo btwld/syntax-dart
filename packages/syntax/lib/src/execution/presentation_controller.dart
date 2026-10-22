@@ -58,6 +58,7 @@ final class PresentationController extends SyntaxObservable {
   CancellationToken? _cancellation;
   Timer? _timer;
   int _start = 0, _end = 1, _generation = 0, _grammarRevision = -1;
+  int _requestedStart = 0, _requestedEnd = 0;
 
   /// Whether a request is queued or executing.
   bool get isLoading => _cancellation != null || _timer != null;
@@ -66,23 +67,42 @@ final class PresentationController extends SyntaxObservable {
   void setViewport(int start, int end) {
     checkAlive();
     RangeError.checkValidRange(start, end, editor.document.lineCount);
-    if (_start == start &&
-        _end == end &&
-        _grammarRevision == highlighter.revision &&
-        (_snapshot != null || isLoading)) {
-      return;
-    }
     _start = start;
     _end = end;
-    _invalidate();
+    if (_grammarRevision == highlighter.revision) {
+      final ready = _snapshot;
+      if (ready != null &&
+          start >= ready.startLine &&
+          end <= ready.startLine + ready.lines.length) {
+        // A return to the retained window must not be overwritten later by a
+        // request for the viewport the user has just left.
+        if (isLoading) {
+          _generation++;
+          _cancellation?.cancel();
+          _cancellation = null;
+          _timer?.cancel();
+          _timer = null;
+          notifyListeners();
+        }
+        return;
+      }
+      if (isLoading && start >= _requestedStart && end <= _requestedEnd) return;
+    } else {
+      _snapshot = null;
+    }
+    _schedule();
   }
 
   void _invalidate() {
+    _snapshot = null;
+    _schedule();
+  }
+
+  void _schedule() {
     _generation++;
     _cancellation?.cancel();
     _cancellation = null;
     _timer?.cancel();
-    _snapshot = null;
     _timer = Timer(Duration.zero, () {
       _timer = null;
       unawaited(flush());
@@ -111,6 +131,8 @@ final class PresentationController extends SyntaxObservable {
     final generation = ++_generation;
     final grammarRevision = _grammarRevision = highlighter.revision;
     final length = editor.document.lineCount;
+    _requestedStart = (_start - overscan).clamp(0, length);
+    _requestedEnd = (_end + overscan).clamp(0, length);
     final source = editor.file;
     final file = SourceFile(
       id: source.id,
@@ -134,8 +156,8 @@ final class PresentationController extends SyntaxObservable {
           ],
           theme: theme,
           maxLineLength: highlighter.maxLineLength,
-          startLine: (_start - overscan).clamp(0, length),
-          endLine: (_end + overscan).clamp(0, length),
+          startLine: _requestedStart,
+          endLine: _requestedEnd,
         ),
         cancellation: cancellation,
       );

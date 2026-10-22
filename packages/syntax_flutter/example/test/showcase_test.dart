@@ -215,4 +215,23 @@ void main() {
     expect(find.text('Expand files'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('large file exposes a virtual window and direct jumps', (
+    tester,
+  ) async {
+    await launch(tester);
+    await tester.tap(find.byKey(const ValueKey('example-5')));
+    await tester.pumpAndSettle();
+    expect(find.text('Wrap off'), findsOneWidget);
+    final file = tester.widget<SyntaxFileView>(find.byType(SyntaxFileView));
+    expect(file.controller.document.lineCount, 100000);
+    await tester.tap(find.text('Line 90,001'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Visible lines 90001–'), findsOneWidget);
+    expect(find.byType(RichText).evaluate().length, lessThan(220));
+    await tester.tap(find.text('Back to top'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Visible lines 1–'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }

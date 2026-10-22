@@ -80,6 +80,14 @@ concurrency, queued distinct requests and cached results. Theme-only changes
 retheme retained scopes. Grammar changes invalidate compiled state. Failure,
 cancellation, timeout and disposal are explicit outcomes.
 
+Read-only Flutter files use fixed-extent virtualization when rows cannot wrap
+or contain variable-height decorations, retaining mounted rows during small
+scrolls. Measured indexed layouts handle other rows. Viewport highlighting
+reuses overscan and preserves its current presentation during asynchronous
+loading. Cooperative and persistent-worker backends keep bounded raw tokens
+and sparse grammar checkpoints; source snapshots cross worker boundaries only
+when they change or have been evicted.
+
 The package split and SDK minimums remain Dart 3.9 / Flutter 3.35 for the
 workspace and Dart 3.10 for `syntax_noir`. There is one TextMate engine and
 no additional WASM or native highlighting runtime.

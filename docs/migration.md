@@ -170,3 +170,11 @@ palettes, CSS variables and decoration hooks. `parseAnsi` interprets SGR
 styles while removing executable terminal control sequences. Serializable
 `HighlightResult` snapshots can be reused across renderers; see
 [background execution](execution.md).
+
+For large Flutter read-only files, use `SyntaxFileView` with `wrap: false` for
+direct fixed-extent scrolling, or retain wrapping for measured rows. The
+default executor now yields cooperatively and retains bounded token windows.
+Supply a shared worker pool to move grammar work off the UI isolate. The
+optional `onVisibleLinesChanged(startLine, endLine)` callback reports visible
+zero-based lines without overscan. Recompile browser-worker assets when
+upgrading; the application and worker must use the same package version.

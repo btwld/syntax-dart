@@ -8,6 +8,8 @@ import '../grammar/scope_stack.dart';
 import '../highlighter.dart';
 import '../theme/theme.dart';
 
+part 'window_cache.dart';
+
 /// Fully serializable input; compiled grammars never cross isolate boundaries.
 final class HighlightRequest {
   /// Captures serializable source, grammars, palette and viewport options.
@@ -94,6 +96,21 @@ final class HighlightRequest {
 
   /// Complete serialized request identity, including content and options.
   late final String cacheKey = jsonEncode(toJson());
+
+  // Hash the small metadata, then compare exact source on collision. Putting
+  // the multi-megabyte source into JSON for each scroll request blocks the UI.
+  late final _sourceKey = _HighlightSourceKey(this);
+
+  /// Exact identity of content, grammar and tokenization options, independent
+  /// of palette or viewport. Useful for retaining worker-side document state.
+  Object get sourceIdentity => _sourceKey;
+  late final Object _poolKey = (
+    _sourceKey,
+    jsonEncode(theme.json),
+    theme.name,
+    startLine,
+    endLine,
+  );
 }
 
 /// A reusable presentation snapshot. Tokens retain scope information for hover
@@ -296,72 +313,45 @@ final class CooperativeHighlightExecutor implements HighlightExecutor {
     HighlightRequest request, {
     CancellationToken? cancellation,
   }) async {
-    final highlighter = Highlighter(
-      languages: request.languages,
-      maxLineLength: request.maxLineLength,
-    );
-    final language =
-        request.file.language ??
-        highlighter.languageForPath(request.file.path)?.name;
-    final grammar = language == null || highlighter.language(language) == null
-        ? null
-        : highlighter.grammar(language);
-    final doc = TextDocument(request.file.text);
-    StateStack? state;
-    final lines = <List<ThemedToken>>[];
-    try {
-      RangeError.checkValidRange(
-        request.startLine,
-        request.endLine ?? doc.lineCount,
-        doc.lineCount,
-      );
-      for (var i = 0; i < (request.endLine ?? doc.lineCount); i++) {
+    if (_disposed) throw StateError('Executor is disposed');
+    cancellation?.throwIfCancelled();
+    final session =
+        _sessions.remove(request._sourceKey) ?? _HighlightWindow(request);
+    _sessions[request._sourceKey] = session;
+    while (_sessions.length > 4) {
+      _sessions.remove(_sessions.keys.first);
+    }
+    return session.highlight(
+      request,
+      sliceLines: sliceLines,
+      checkCancelled: () {
         if (_disposed) throw const OperationCancelled();
         cancellation?.throwIfCancelled();
-        final text = doc.lineText(i);
-        if (grammar == null) {
-          if (i < request.startLine) continue;
-          lines.add([
-            ThemedToken(
-              text,
-              0,
-              TokenStyle(foreground: request.theme.foreground),
-              ScopeStack.root('text.plain'),
-            ),
-          ]);
-        } else {
-          final result = grammar.tokenizeLine(text, state);
-          state = result.endState;
-          if (i >= request.startLine) {
-            lines.add([
-              for (final token in result.tokens)
-                ThemedToken(
-                  text.substring(token.start, token.end),
-                  token.start,
-                  request.theme.styleFor(token.scopes),
-                  token.scopes,
-                ),
-            ]);
-          }
-        }
-        if ((i + 1) % sliceLines == 0) {
-          await Future<void>.delayed(Duration.zero);
-        }
-      }
-      cancellation?.throwIfCancelled();
-      return HighlightResult(
-        fileId: request.file.id,
-        revision: request.file.revision,
-        startLine: request.startLine,
-        lines: lines,
-      );
-    } finally {
-      doc.dispose();
-    }
+      },
+    );
   }
 
+  final _sessions = <_HighlightSourceKey, _HighlightWindow>{};
+
+  /// Retained document, token and checkpoint counts for performance inspection.
+  HighlightWorkStats get stats => HighlightWorkStats(
+    documents: _sessions.length,
+    cachedLines: _sessions.values.fold(0, (sum, s) => sum + s.tokens.length),
+    checkpoints: _sessions.values.fold(
+      0,
+      (sum, s) => sum + s.checkpoints.length,
+    ),
+    tokenizedLines: _sessions.values.fold(
+      0,
+      (sum, s) => sum + s.tokenizedLines,
+    ),
+  );
+
   @override
-  void dispose() => _disposed = true;
+  void dispose() {
+    _disposed = true;
+    _sessions.clear();
+  }
 }
 
 /// Current queue, cache and completed-request counters.
@@ -408,8 +398,8 @@ final class HighlightPool extends SyntaxObservable
 
   /// Maximum duration of a backend request before cancellation.
   final Duration timeout;
-  final _cache = <String, HighlightResult>{};
-  final Map<String, _Task> _pending = {};
+  final _cache = <Object, HighlightResult>{};
+  final Map<Object, _Task> _pending = {};
   final Queue<_Task> _queue = Queue();
   int _active = 0, _completed = 0, _generation = 0;
   final Map<String, int> _fileGenerations = {};
@@ -424,7 +414,7 @@ final class HighlightPool extends SyntaxObservable
   }) async {
     checkAlive();
     cancellation?.throwIfCancelled();
-    final key = request.cacheKey;
+    final key = request._poolKey;
     final cached = _cache.remove(key);
     if (cached != null) {
       _cache[key] = cached;
@@ -495,7 +485,7 @@ final class HighlightPool extends SyntaxObservable
         while (_cache.length >= cacheSize) {
           _cache.remove(_cache.keys.first);
         }
-        _cache[task.request.cacheKey] = result;
+        _cache[task.request._poolKey] = result;
       }
       if (!task.result.isCompleted) task.result.complete(result);
     } on Object catch (error, stack) {
@@ -503,8 +493,8 @@ final class HighlightPool extends SyntaxObservable
     } finally {
       _active--;
       _completed++;
-      if (identical(_pending[task.request.cacheKey], task)) {
-        _pending.remove(task.request.cacheKey);
+      if (identical(_pending[task.request._poolKey], task)) {
+        _pending.remove(task.request._poolKey);
       }
       _pump();
     }

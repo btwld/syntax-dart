@@ -75,6 +75,7 @@ jobs:
           test/presentation_test.dart
           test/lifecycle_test.dart
           test/browser_worker_test.dart
+          test/virtualization_test.dart
 
       - name: Test syntax_flutter
         working-directory: packages/syntax_flutter

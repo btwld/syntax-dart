@@ -22,6 +22,8 @@ class IndexedCodeViewport extends StatefulWidget {
     this.revealRow,
     this.revealRequest = 0,
     this.onFirstRow,
+    this.onVisibleRange,
+    this.fixedHeight = false,
   });
 
   /// Caller-owned vertical scrolling.
@@ -59,6 +61,12 @@ class IndexedCodeViewport extends StatefulWidget {
 
   /// Reports the first visible logical row for sticky headers.
   final ValueChanged<int>? onFirstRow;
+
+  /// Reports visible logical rows as a half-open range after layout.
+  final void Function(int start, int end)? onVisibleRange;
+
+  /// Uses Flutter's direct indexed sliver when every row has estimatedHeight.
+  final bool fixedHeight;
   @override
   State<IndexedCodeViewport> createState() => _IndexedCodeViewportState();
 }
@@ -71,6 +79,8 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
   Object? _anchor;
   double _within = 0;
   bool _queued = false;
+  bool _rangeQueued = false;
+  (int, int)? _reportedRange;
   final Map<int, double> _measurements = {};
   double get _offset => widget.controller.hasClients
       ? widget.controller.offset
@@ -81,6 +91,7 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
       estimatedHeight: widget.estimatedHeight,
     );
     _measurements.clear();
+    _reportedRange = null;
   }
 
   void _range() {
@@ -96,12 +107,32 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
     );
     _anchor = widget.identity(_visible);
     _within = _offset - _heights.offsetFor(_visible);
+    _reportRange();
+  }
+
+  void _reportRange() {
+    if (widget.onVisibleRange == null || _rangeQueued) return;
+    _rangeQueued = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _rangeQueued = false;
+      if (!mounted) return;
+      final end = (_heights.rowAt(_offset + _extent) + 1).clamp(
+        0,
+        widget.count,
+      );
+      final range = (_visible, end);
+      if (range == _reportedRange) return;
+      _reportedRange = range;
+      widget.onVisibleRange?.call(range.$1, range.$2);
+    });
   }
 
   void _scroll() {
     final previous = (_first, _last);
     _range();
-    if ((_first, _last) != previous && mounted) setState(() {});
+    if (!widget.fixedHeight && (_first, _last) != previous && mounted) {
+      setState(() {});
+    }
     widget.onFirstRow?.call(_visible);
   }
 
@@ -165,6 +196,7 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
     }
     if (oldWidget.layoutKey != widget.layoutKey ||
         oldWidget.count != widget.count ||
+        oldWidget.fixedHeight != widget.fixedHeight ||
         oldWidget.estimatedHeight != widget.estimatedHeight) {
       final anchor = _anchor;
       final within = _within;
@@ -204,43 +236,60 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
       return CustomScrollView(
         controller: widget.controller,
         physics: widget.physics,
+        // Supported by the package's minimum Flutter SDK.
+        // ignore: deprecated_member_use
+        cacheExtent: 300,
         slivers: [
           SliverPadding(
             padding: widget.padding,
-            sliver: SliverMainAxisGroup(
-              slivers: [
-                SliverToBoxAdapter(
-                  child: SizedBox(height: _heights.offsetFor(_first)),
-                ),
-                SliverList(
-                  // The local sliver indexes restart at zero when the window
-                  // moves. Older Flutter versions otherwise apply scroll
-                  // corrections from the previous window's child offsets.
-                  key: ValueKey(_first),
-                  delegate: SliverChildBuilderDelegate(
-                    (context, local) {
-                      final index = _first + local;
-                      return _MeasuredRow(
+            sliver: widget.fixedHeight
+                ? SliverFixedExtentList(
+                    itemExtent: widget.estimatedHeight,
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) => KeyedSubtree(
                         key: ValueKey(widget.identity(index)),
-                        onSize: (size) => _measure(index, size.height),
                         child: widget.builder(context, index),
-                      );
-                    },
-                    childCount: _last - _first,
-                    addAutomaticKeepAlives: false,
-                  ),
-                ),
-                SliverToBoxAdapter(
-                  child: SizedBox(
-                    height: math.max(
-                      0,
-                      _heights.offsetFor(widget.count) -
-                          _heights.offsetFor(_last),
+                      ),
+                      childCount: widget.count,
+                      findChildIndexCallback: (key) =>
+                          widget.indexOf((key as ValueKey<Object>).value),
+                      addAutomaticKeepAlives: false,
                     ),
+                  )
+                : SliverMainAxisGroup(
+                    slivers: [
+                      SliverToBoxAdapter(
+                        child: SizedBox(height: _heights.offsetFor(_first)),
+                      ),
+                      SliverList(
+                        // The local sliver indexes restart at zero when the window
+                        // moves. Older Flutter versions otherwise apply scroll
+                        // corrections from the previous window's child offsets.
+                        key: ValueKey(_first),
+                        delegate: SliverChildBuilderDelegate(
+                          (context, local) {
+                            final index = _first + local;
+                            return _MeasuredRow(
+                              key: ValueKey(widget.identity(index)),
+                              onSize: (size) => _measure(index, size.height),
+                              child: widget.builder(context, index),
+                            );
+                          },
+                          childCount: _last - _first,
+                          addAutomaticKeepAlives: false,
+                        ),
+                      ),
+                      SliverToBoxAdapter(
+                        child: SizedBox(
+                          height: math.max(
+                            0,
+                            _heights.offsetFor(widget.count) -
+                                _heights.offsetFor(_last),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-              ],
-            ),
           ),
         ],
       );

@@ -13,7 +13,10 @@ light and dark themes, responsive navigation, and project-owned code samples.
   and an application-supplied suggestion to increase the sample retry budget.
 - **Merge conflicts:** resolve current, incoming, or both, with a source preview.
 - **Streaming:** start, pause, and reset a line-by-line code stream.
-- **Large files:** jump to line 90,001 in a 100,000-line document.
+- **Large files:** a 100,000-line virtual list with a draggable scrollbar,
+  visible-line counter, and direct jumps. Unwrapped rows use fixed extents;
+  wrapping switches to measured heights. Highlighting reuses bounded cached
+  windows and grammar checkpoints.
 
 Click **Reset** to restore the samples. Review decisions, comments, and edits
 stay in memory for this browser session. **Languages & themes** opens the full

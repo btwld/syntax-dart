@@ -2,29 +2,80 @@ import 'dart:async';
 import 'dart:isolate';
 import '../edit/editor.dart';
 import 'executor.dart';
+import 'transport.dart';
 
-/// Executes each request in a cancellable native Dart isolate.
+/// Retains bounded grammar checkpoints and token windows in a native isolate.
 /// Use [HighlightPool] to bound concurrency and share identical requests.
 HighlightExecutor createNativeHighlightExecutor() => _NativeExecutor();
 
-final class _NativeJob {
-  final result = Completer<HighlightResult>();
-  final port = ReceivePort();
-  Isolate? isolate;
-  void fail(Object error, [StackTrace? stack]) {
-    if (!result.isCompleted) result.completeError(error, stack);
-    close();
-  }
-
-  void close() {
-    isolate?.kill(priority: Isolate.immediate);
-    port.close();
-  }
-}
-
 final class _NativeExecutor implements HighlightExecutor {
+  final _port = ReceivePort();
+  final _ready = Completer<SendPort>();
+  final _pending = <int, Completer<HighlightResult>>{};
+  final _sender = HighlightSender();
+  Isolate? _isolate;
+  SendPort? _worker;
+  int _next = 0;
   bool _disposed = false;
-  final Set<_NativeJob> _jobs = {};
+  Object? _failure;
+
+  _NativeExecutor() {
+    // Observe initialization failures even if disposal wins before first use.
+    unawaited(_ready.future.then<void>((_) {}, onError: (Object _) {}));
+    _port.listen((Object? message) {
+      if (message is SendPort) {
+        _worker = message;
+        if (!_ready.isCompleted) _ready.complete(message);
+      } else if (message is Map) {
+        final pending = _pending.remove(message['requestId']);
+        if (pending == null) return;
+        if (message['error'] case final String error) {
+          pending.completeError(StateError(error));
+        } else {
+          try {
+            pending.complete(
+              HighlightResult.fromJson(
+                Map<String, Object?>.from(message['result'] as Map),
+              ),
+            );
+          } on Object catch (error, stack) {
+            pending.completeError(error, stack);
+          }
+        }
+      } else if (!_disposed) {
+        _fail(
+          message is List
+              ? RemoteError('${message.first}', '${message.last}')
+              : StateError('Highlight isolate exited'),
+        );
+      }
+    });
+    unawaited(
+      Isolate.spawn<SendPort>(
+        _nativeMain,
+        _port.sendPort,
+        onError: _port.sendPort,
+        onExit: _port.sendPort,
+      ).then((isolate) {
+        _isolate = isolate;
+        if (_disposed || _failure != null) {
+          isolate.kill(priority: Isolate.immediate);
+        }
+      }, onError: (Object error) => _fail(error)),
+    );
+  }
+
+  void _fail(Object error) {
+    _failure = error;
+    if (!_ready.isCompleted) _ready.completeError(error);
+    for (final pending in _pending.values) {
+      pending.completeError(error);
+    }
+    _pending.clear();
+    _isolate?.kill(priority: Isolate.immediate);
+    _port.close();
+  }
+
   @override
   Future<HighlightResult> highlight(
     HighlightRequest request, {
@@ -32,49 +83,18 @@ final class _NativeExecutor implements HighlightExecutor {
   }) async {
     if (_disposed) throw StateError('Executor is disposed');
     cancellation?.throwIfCancelled();
-    final job = _NativeJob();
-    _jobs.add(job);
-    final unsubscribe = cancellation?.onCancel(
-      () => job.fail(const OperationCancelled()),
-    );
-    job.port.listen((Object? message) {
-      if (message is Map) {
-        try {
-          final result = HighlightResult.fromJson(
-            Map<String, Object?>.from(message),
-          );
-          if (!job.result.isCompleted) job.result.complete(result);
-          job.close();
-        } on Object catch (error, stack) {
-          job.fail(error, stack);
-        }
-      } else if (message is List) {
-        job.fail(RemoteError('${message.first}', '${message.last}'));
-      } else if (!job.result.isCompleted) {
-        job.fail(
-          StateError('Highlight isolate exited before delivering a result'),
-        );
-      }
-    });
-    // Await spawn independently so disposal and cancellation can close the
-    // result before the new isolate has reached its entry point.
-    unawaited(
-      Isolate.spawn<(SendPort, Map<String, Object?>)>(
-        _nativeMain,
-        (job.port.sendPort, request.toJson()),
-        onError: job.port.sendPort,
-        onExit: job.port.sendPort,
-      ).then((isolate) {
-        job.isolate = isolate;
-        if (job.result.isCompleted) job.close();
-      }, onError: (Object error, StackTrace stack) => job.fail(error, stack)),
-    );
+    if (_failure case final failure?) throw failure;
+    final worker = await (cancellation?.bind(_ready.future) ?? _ready.future);
+    if (_disposed) throw const OperationCancelled();
+    cancellation?.throwIfCancelled();
+    final id = _next++;
+    final pending = _pending[id] = Completer<HighlightResult>();
+    worker.send({'requestId': id, 'request': _sender.encode(request)});
     try {
-      return await job.result.future;
+      return await (cancellation?.bind(pending.future) ?? pending.future);
     } finally {
-      unsubscribe?.call();
-      job.close();
-      _jobs.remove(job);
+      _pending.remove(id);
+      _worker?.send({'cancel': id});
     }
   }
 
@@ -82,16 +102,40 @@ final class _NativeExecutor implements HighlightExecutor {
   void dispose() {
     if (_disposed) return;
     _disposed = true;
-    for (final job in _jobs.toList()) {
-      job.fail(const OperationCancelled());
-    }
-    _jobs.clear();
+    _fail(const OperationCancelled());
   }
 }
 
-void _nativeMain((SendPort, Map<String, Object?>) input) {
-  Isolate.exit(
-    input.$1,
-    computeHighlight(HighlightRequest.fromJson(input.$2)).toJson(),
-  );
+void _nativeMain(SendPort output) {
+  final input = ReceivePort();
+  final executor = CooperativeHighlightExecutor();
+  final receiver = HighlightReceiver();
+  final pending = <int, CancellationToken>{};
+  Future<void> run(Map<Object?, Object?> data) async {
+    final id = data['requestId'] as int;
+    final cancellation = pending[id] = CancellationToken();
+    try {
+      final result = await executor.highlight(
+        receiver.decode(Map<String, Object?>.from(data['request'] as Map)),
+        cancellation: cancellation,
+      );
+      output.send({'requestId': id, 'result': result.toJson()});
+    } on OperationCancelled {
+      // A superseding viewport keeps any useful grammar checkpoints.
+    } on Object catch (error, stack) {
+      output.send({'requestId': id, 'error': '$error\n$stack'});
+    } finally {
+      pending.remove(id);
+    }
+  }
+
+  output.send(input.sendPort);
+  input.listen((Object? message) {
+    final data = message as Map;
+    if (data['cancel'] case final int id) {
+      pending[id]?.cancel();
+    } else {
+      unawaited(run(data));
+    }
+  });
 }

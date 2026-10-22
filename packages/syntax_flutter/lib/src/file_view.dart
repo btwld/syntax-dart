@@ -25,6 +25,7 @@ class SyntaxFileView extends StatefulWidget {
     this.onTokenTap,
     this.scrollController,
     this.executor,
+    this.onVisibleLinesChanged,
   });
 
   /// The document and logical selection state.
@@ -67,82 +68,45 @@ class SyntaxFileView extends StatefulWidget {
   /// Optional externally owned vertical scroll controller.
   final ScrollController? scrollController;
 
-  /// Optional shared background executor. Omission uses incremental local work.
+  /// Optional shared background executor. Omission uses bounded cooperative work.
   final HighlightExecutor? executor;
+
+  /// Reports visible zero-based source lines as a half-open range after layout.
+  final void Function(int startLine, int endLine)? onVisibleLinesChanged;
   @override
   State<SyntaxFileView> createState() => _SyntaxFileViewState();
 }
 
 class _SyntaxFileViewState extends State<SyntaxFileView> {
   late ScrollController _scroll;
-  LiveHighlighter? _highlight;
-  Object? _grammarKey;
-  void _syncGrammar() {
-    final name =
-        editor.file.language ??
-        widget.highlighter.languageForPath(editor.file.path)?.name;
-    final key = (
-      widget.highlighter,
-      widget.highlighter.revision,
-      editor.document,
-      name,
-      widget.executor,
-    );
-    if (_grammarKey == key) return;
-    _grammarKey = key;
-    _highlight?.dispose();
-    _highlight =
-        widget.executor != null ||
-            name == null ||
-            widget.highlighter.language(name) == null
-        ? null
-        : (LiveHighlighter(editor.document, widget.highlighter.grammar(name))
-            ..pause());
-  }
-
+  HighlightExecutor? _ownedExecutor;
   PresentationController? _presentation;
-  int? _visibleStart, _visibleEnd;
-  bool _windowQueued = false;
   void _presentationChanged() {
     if (mounted) setState(() {});
   }
 
-  void _requestLine(int line) {
-    if (_presentation == null) return;
-    _visibleStart = _visibleStart == null || line < _visibleStart!
-        ? line
-        : _visibleStart;
-    _visibleEnd = _visibleEnd == null || line + 1 > _visibleEnd!
-        ? line + 1
-        : _visibleEnd;
-    if (_windowQueued) return;
-    _windowQueued = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _windowQueued = false;
-      if (!mounted || _visibleStart == null) return;
-      _presentation?.setViewport(_visibleStart!, _visibleEnd!);
-      _visibleStart = _visibleEnd = null;
-    });
+  void _viewportChanged(int start, int end) {
+    _presentation?.setViewport(start, end);
+    widget.onVisibleLinesChanged?.call(start, end);
   }
 
   final _horizontal = HorizontalCodeGroup();
   EditorController get editor => widget.controller;
   double get _height =>
-      (widget.textStyle?.fontSize ?? 14) * (widget.textStyle?.height ?? 1.5);
+      MediaQuery.textScalerOf(context).scale(widget.textStyle?.fontSize ?? 14) *
+      (widget.textStyle?.height ?? 1.5);
   void _attach() {
     _horizontal
       ..offset = editor.horizontalOffset
       ..onChanged = (offset) => editor.horizontalOffset = offset;
-    if (widget.executor case final executor?) {
-      _presentation = PresentationController(
-        editor: editor,
-        highlighter: widget.highlighter,
-        theme: widget.theme,
-        executor: executor,
-      )..addListener(_presentationChanged);
-    }
-    _grammarKey = null;
-    _syncGrammar();
+    final executor =
+        widget.executor ?? (_ownedExecutor = CooperativeHighlightExecutor());
+    _presentation = PresentationController(
+      editor: editor,
+      highlighter: widget.highlighter,
+      theme: widget.theme,
+      executor: executor,
+    )..addListener(_presentationChanged);
     editor.addListener(_changed);
     _scroll =
         widget.scrollController ??
@@ -162,10 +126,10 @@ class _SyntaxFileViewState extends State<SyntaxFileView> {
   void _detach(EditorController controller, ScrollController? external) {
     _horizontal.onChanged = null;
     controller.removeListener(_changed);
-    _highlight?.dispose();
-    _highlight = null;
     _presentation?.dispose();
     _presentation = null;
+    _ownedExecutor?.dispose();
+    _ownedExecutor = null;
     _scroll.removeListener(_scrolled);
     if (external == null) _scroll.dispose();
   }
@@ -210,7 +174,6 @@ class _SyntaxFileViewState extends State<SyntaxFileView> {
 
   @override
   Widget build(BuildContext context) {
-    _syncGrammar();
     final doc = editor.document;
     final styles = TokenTextStyles(
       widget.theme,
@@ -252,19 +215,27 @@ class _SyntaxFileViewState extends State<SyntaxFileView> {
                     doc.revision,
                     widget.wrap,
                     widget.textStyle,
+                    MediaQuery.textScalerOf(context),
+                    widget.executor,
+                    widget.highlighter.revision,
                     editor.annotations,
+                    editor.diagnostics,
+                    editor.carets,
                   ),
                   identity: doc.lineIdentity,
                   indexOf: doc.lineForIdentity,
-                  estimatedHeight: _height,
+                  estimatedHeight: _height.ceilToDouble(),
+                  fixedHeight:
+                      !widget.wrap &&
+                      editor.annotations.isEmpty &&
+                      editor.diagnostics.isEmpty &&
+                      editor.carets.isEmpty &&
+                      widget.onTokenTap == null,
+                  onVisibleRange: _viewportChanged,
                   revealRow: editor.revealTarget?.start.line,
                   revealRequest: editor.revealRequest,
                   builder: (context, line) {
-                    _requestLine(line);
-                    _highlight?.flush(endLine: line + 1);
-                    final tokens =
-                        _presentation?.line(line) ??
-                        _highlight?.themedLine(line, widget.theme);
+                    final tokens = _presentation?.line(line);
                     final text = doc.lineText(line);
                     final start = doc.lineStart(line),
                         end = start + text.length;

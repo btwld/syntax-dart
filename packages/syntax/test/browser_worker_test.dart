@@ -26,6 +26,17 @@ void main() {
       (await worker.highlight(request)).toJson(),
       computeHighlight(request).toJson(),
     );
+    final viewport = HighlightRequest(
+      file: request.file,
+      languages: request.languages,
+      theme: request.theme,
+      startLine: 1,
+      endLine: 2,
+    );
+    expect(
+      (await worker.highlight(viewport)).toJson(),
+      computeHighlight(viewport).toJson(),
+    );
     final cancellation = CancellationToken()..cancel();
     await expectLater(
       worker.highlight(request, cancellation: cancellation),

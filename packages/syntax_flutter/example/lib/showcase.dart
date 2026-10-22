@@ -127,7 +127,7 @@ const _examples = [
     Icons.speed_rounded,
     'Large files',
     'Go straight to the interesting part.',
-    'Explore 100,000 lines with a visible window and background highlighting.',
+    '100,000 lines, a small visible window. Drag the scrollbar or jump directly to a line.',
   ),
 ];
 
@@ -186,11 +186,15 @@ class _ShowcaseHomeState extends State<ShowcaseHome> {
   late MergeController _merge = _newMerge();
   StreamDocumentController _stream = _newStream();
   EditorController? _large;
+  final _largeScroll = ScrollController();
+  final _largeVisible = ValueNotifier<(int, int)>((0, 0));
+  bool _largeWrap = false;
   HighlightPool? _pool;
   Timer? _timer;
   int _tab = 0, _streamLine = 0;
   int? _diagnosticRevision;
   bool _wrap = true, _backgrounds = true, _indicators = true;
+  bool get _activeWrap => _tab == 5 ? _largeWrap : _wrap;
   InlineDiffMode _comparison = InlineDiffMode.mergedWords;
   final _resolved = <String>{};
   String _status = 'Click a line to select it. Shift-click to select a range.';
@@ -863,9 +867,15 @@ class _ShowcaseHomeState extends State<ShowcaseHome> {
           ],
           if (_tab != 3 && _tab != 4)
             _tool(
-              _wrap ? 'Wrap on' : 'Wrap off',
+              _activeWrap ? 'Wrap on' : 'Wrap off',
               Icons.wrap_text_rounded,
-              () => setState(() => _wrap = !_wrap),
+              () => setState(() {
+                if (_tab == 5) {
+                  _largeWrap = !_largeWrap;
+                } else {
+                  _wrap = !_wrap;
+                }
+              }),
             ),
           if (_tab == 0)
             PopupMenuButton<String>(
@@ -1084,14 +1094,25 @@ class _ShowcaseHomeState extends State<ShowcaseHome> {
               theme: codeTheme,
               textStyle: widget.codeStyle,
             ),
-    _ => SyntaxFileView(
-      key: const ValueKey('large'),
-      controller: _large!,
-      highlighter: _highlighter,
-      theme: codeTheme,
-      textStyle: widget.codeStyle,
-      executor: _pool,
-      wrap: _wrap,
+    _ => ScrollConfiguration(
+      behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+      child: Scrollbar(
+        controller: _largeScroll,
+        thumbVisibility: true,
+        interactive: true,
+        child: SyntaxFileView(
+          key: const ValueKey('large'),
+          controller: _large!,
+          highlighter: _highlighter,
+          theme: codeTheme,
+          textStyle: widget.codeStyle,
+          executor: _pool,
+          scrollController: _largeScroll,
+          onVisibleLinesChanged: (start, end) =>
+              _largeVisible.value = (start, end),
+          wrap: _largeWrap,
+        ),
+      ),
     ),
   };
 
@@ -1316,11 +1337,26 @@ class _ShowcaseHomeState extends State<ShowcaseHome> {
           ),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(
-              _status,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 10, color: colors.onSurfaceVariant),
-            ),
+            child: _tab == 5
+                ? ValueListenableBuilder<(int, int)>(
+                    valueListenable: _largeVisible,
+                    builder: (context, range, _) => Text(
+                      'Visible lines ${range.$1 + 1}–${range.$2} of 100,000 · virtualized',
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: colors.onSurfaceVariant,
+                      ),
+                    ),
+                  )
+                : Text(
+                    _status,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
           ),
           const SizedBox(width: 12),
           if (_tab == 0)
@@ -1342,6 +1378,8 @@ class _ShowcaseHomeState extends State<ShowcaseHome> {
     _merge.dispose();
     _stream.dispose();
     _large?.dispose();
+    _largeScroll.dispose();
+    _largeVisible.dispose();
     _pool?.dispose();
     super.dispose();
   }

@@ -50,3 +50,28 @@ compute 1,000 diffs, 2.4 ms to index them, 5.5 ms for source lookup, and
 20.2 ms for highlighting. It retained the same five layout blocks, eight cached
 files and unchanged highlighted-line identity, at approximately 183 MiB RSS.
 These repeat measurements are observational and are not performance thresholds.
+
+## Viewport reuse
+
+On 2026-10-22, `flutter pub run tool/benchmark_viewport.dart` on Dart 3.12.0,
+macOS arm64, measured this separate fixture of 100,000 event declarations:
+
+| Window (80 output lines) | Milliseconds | Newly tokenized lines |
+| --- | ---: | ---: |
+| Initial viewport | 47.7 | 80 |
+| First visit near line 90,001 | 5,144.3 | 90,000 |
+| Scroll forward 20 lines | 2.0 | 20 |
+| Return to the previous window | 0.5 | 0 |
+
+The executor retained 180 raw token lines and 1,580 sparse grammar checkpoints.
+Each retained document is capped at 512 token lines and 2,048 checkpoints;
+there are at most four retained documents. The cold distant visit still
+advances grammar state, without retaining tokens for all intervening lines.
+These are one JIT run's observations, not frame times or CI timing limits.
+
+The fixed-extent Flutter regression test jumps directly to line 90,001 and to
+the final line, with fewer than 160 mounted `RichText` widgets including gutters.
+A one-line scroll retains existing row elements and schedules no new highlight
+request while inside the cached overscan window. Wrapped/annotated rows retain
+their measured-layout tests. The browser demo runs this path with a persistent
+worker and reports the actual visible range.
