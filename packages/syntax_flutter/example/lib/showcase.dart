@@ -910,7 +910,7 @@ class _ShowcaseHomeState extends State<ShowcaseHome> {
               ),
             ),
           ],
-          if (_tab != 3 && _tab != 4)
+          if (_tab != 4)
             _tool(
               _activeWrap ? 'Wrap on' : 'Wrap off',
               Icons.wrap_text_rounded,
@@ -1108,6 +1108,8 @@ class _ShowcaseHomeState extends State<ShowcaseHome> {
       controller: _merge,
       highlighter: _highlighter,
       theme: codeTheme,
+      textStyle: widget.codeStyle,
+      wrap: _wrap,
     ),
     4 =>
       _stream.editor.document.length == 0

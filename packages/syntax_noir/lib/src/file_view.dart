@@ -22,6 +22,7 @@ class SyntaxFileView extends StatelessWidget {
     this.onLine,
     this.onToken,
     this.executor,
+    this.lineBackgroundBuilder,
   });
 
   /// Shared source, selections, annotations and diagnostics.
@@ -35,6 +36,9 @@ class SyntaxFileView extends StatelessWidget {
 
   /// Shared background executor; the application retains ownership.
   final syntax.HighlightExecutor? executor;
+
+  /// Optional ARGB background beneath a zero-based source line and its gutter.
+  final int? Function(int line)? lineBackgroundBuilder;
 
   /// Total height in terminal rows.
   final int? height;
@@ -84,6 +88,7 @@ class SyntaxFileView extends StatelessWidget {
     onLine: onLine,
     onToken: onToken,
     executor: executor,
+    lineBackgroundBuilder: lineBackgroundBuilder,
   );
 }
 
@@ -362,6 +367,7 @@ class _MergeConflictViewState extends State<MergeConflictView> {
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
       final conflicts = widget.controller.conflicts;
+      final colors = syntax.MergeColors.of(widget.theme);
       final height = widget.height ?? constraints.maxHeight ?? 24;
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -371,6 +377,15 @@ class _MergeConflictViewState extends State<MergeConflictView> {
             highlighter: widget.highlighter,
             theme: widget.theme,
             height: (height - 5).clamp(1, height),
+            lineBackgroundBuilder: (line) {
+              final offset = _editor.document.lineStart(line);
+              final section = widget.controller.sectionAt(offset);
+              if (section == null) return null;
+              final palette = colors.forSection(section.kind);
+              return offset == section.start
+                  ? palette.header
+                  : palette.background;
+            },
           ),
           if (conflicts.isEmpty)
             const Text('All conflicts resolved')

@@ -22,6 +22,37 @@ Future<void> launch(
 }
 
 void main() {
+  testWidgets('merge example colors its sections and resolves inline', (
+    tester,
+  ) async {
+    await launch(tester);
+    await tester.tap(find.byKey(const ValueKey('example-3')));
+    await tester.pumpAndSettle();
+    expect(find.text('Current change · current'), findsOneWidget);
+    expect(find.text('Common ancestor'), findsOneWidget);
+    expect(find.text('Incoming change · incoming'), findsOneWidget);
+    final view = tester.widget<MergeConflictView>(
+      find.byType(MergeConflictView),
+    );
+    expect(view.textStyle, isNotNull);
+    expect(view.wrap, isTrue);
+    await tester.tap(find.text('Wrap on'));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<MergeConflictView>(find.byType(MergeConflictView)).wrap,
+      isFalse,
+    );
+    await tester.tap(find.text('Keep incoming'));
+    await tester.pumpAndSettle();
+    expect(view.controller.file.text, contains('seconds: 5'));
+    expect(view.controller.file.text, isNot(contains('seconds: 10')));
+    expect(find.text('All conflicts resolved'), findsOneWidget);
+    await tester.tap(find.text('Reset'));
+    await tester.pumpAndSettle();
+    expect(find.text('Current change · current'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     'review has working file folds, context expansion and split view',
     (tester) async {

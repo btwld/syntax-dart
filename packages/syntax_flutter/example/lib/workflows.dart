@@ -298,6 +298,7 @@ class _WorkflowsDemoState extends State<WorkflowsDemo> {
                 controller: _merge,
                 highlighter: _highlighter,
                 theme: theme,
+                wrap: _wrap,
               ),
               4 => StreamingCodeView(
                 controller: _stream,

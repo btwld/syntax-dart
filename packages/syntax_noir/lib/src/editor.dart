@@ -128,6 +128,7 @@ class SyntaxEditor extends StatefulWidget {
     this.onToken,
     this.headerBuilder,
     this.executor,
+    this.lineBackgroundBuilder,
   });
 
   /// Optional keyboard-accessible actions for the current selection.
@@ -145,6 +146,9 @@ class SyntaxEditor extends StatefulWidget {
 
   /// Optional shared executor for viewport highlighting in the background.
   final syntax.HighlightExecutor? executor;
+
+  /// Optional ARGB background beneath a zero-based source line and its gutter.
+  final int? Function(int line)? lineBackgroundBuilder;
 
   /// Viewport height in terminal rows, including controls.
   final int? height;
@@ -440,9 +444,13 @@ class _SyntaxEditorState extends State<SyntaxEditor> {
     final tokens =
         _presentation?.line(line) ?? _highlight?.themedLine(line, widget.theme);
     final text = doc.lineText(line);
+    final lineBackground = widget.lineBackgroundBuilder?.call(line);
+    final background = lineBackground == null
+        ? widget.theme.background
+        : syntax.alphaBlend(lineBackground, widget.theme.background);
     final base = TextStyle(
       color: noirColor(widget.theme.foreground),
-      backgroundColor: noirColor(widget.theme.background),
+      backgroundColor: noirColor(background),
     );
     final spans = <InlineSpan>[
       TextSpan(
@@ -455,7 +463,7 @@ class _SyntaxEditorState extends State<SyntaxEditor> {
       ),
     ];
     final map = TextIndexMap(text);
-    var tokenIndex = 0, cell = 0;
+    var tokenIndex = 0, cell = 0, painted = 0;
     final from = widget.wrap ? subrow * _width : _horizontal;
     final startOffset = doc.lineStart(line);
     for (var i = 0; i <= map.graphemeCount; i++) {
@@ -473,10 +481,10 @@ class _SyntaxEditorState extends State<SyntaxEditor> {
         }
         var style = tokens == null || tokens.isEmpty
             ? base
-            : noirTextStyle(
-                tokens[tokenIndex].style,
-                background: widget.theme.background,
-              );
+            : noirTextStyle(tokens[tokenIndex].style, background: background);
+        if (style.backgroundColor == null) {
+          style = style.copyWith(backgroundColor: noirColor(background));
+        }
         final offset = startOffset + a;
         if (editor.selections.any((s) => s.start <= offset && s.end > offset)) {
           style = style.copyWith(
@@ -503,9 +511,13 @@ class _SyntaxEditorState extends State<SyntaxEditor> {
                   (math.min(cell + cells, from + _width) - math.max(cell, from))
             : grapheme;
         spans.add(TextSpan(text: visible, style: style));
+        painted += terminalStringWidth(visible);
       }
       cell += cells;
       if (cell >= from + _width) break;
+    }
+    if (lineBackground != null && painted < _width) {
+      spans.add(TextSpan(text: ' ' * (_width - painted), style: base));
     }
     return PointerListener(
       onPointerDown: (event) {
@@ -530,7 +542,7 @@ class _SyntaxEditorState extends State<SyntaxEditor> {
         widget.onLine?.call(line);
       },
       child: RichText(
-        text: TextSpan(children: spans),
+        text: TextSpan(style: base, children: spans),
         softWrap: false,
         maxLines: 1,
       ),

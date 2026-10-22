@@ -27,6 +27,8 @@ class SyntaxFileView extends StatefulWidget {
     this.scrollController,
     this.executor,
     this.onVisibleLinesChanged,
+    this.lineBackgroundBuilder,
+    this.lineHeaderBuilder,
   });
 
   /// The document and logical selection state.
@@ -74,6 +76,12 @@ class SyntaxFileView extends StatefulWidget {
 
   /// Reports visible zero-based source lines as a half-open range after layout.
   final void Function(int startLine, int endLine)? onVisibleLinesChanged;
+
+  /// Optional background for a zero-based source line, beneath selection.
+  final Color? Function(int line)? lineBackgroundBuilder;
+
+  /// Optional nonselectable content above a zero-based source line.
+  final Widget? Function(BuildContext context, int line)? lineHeaderBuilder;
   @override
   State<SyntaxFileView> createState() => _SyntaxFileViewState();
 }
@@ -223,6 +231,7 @@ class _SyntaxFileViewState extends State<SyntaxFileView> {
                       editor.annotations,
                       editor.diagnostics,
                       editor.carets,
+                      widget.lineHeaderBuilder,
                     ),
                     identity: doc.lineIdentity,
                     indexOf: doc.lineForIdentity,
@@ -232,7 +241,8 @@ class _SyntaxFileViewState extends State<SyntaxFileView> {
                         editor.annotations.isEmpty &&
                         editor.diagnostics.isEmpty &&
                         editor.carets.isEmpty &&
-                        widget.onTokenTap == null,
+                        widget.onTokenTap == null &&
+                        widget.lineHeaderBuilder == null,
                     onVisibleRange: _viewportChanged,
                     revealRow: editor.revealTarget?.start.line,
                     revealRequest: editor.revealRequest,
@@ -280,12 +290,21 @@ class _SyntaxFileViewState extends State<SyntaxFileView> {
                         code = HorizontalCode(group: _horizontal, child: code);
                       }
                       code = SelectionArea(child: code);
+                      final background =
+                          widget.lineBackgroundBuilder?.call(line) ??
+                          widget.theme.backgroundColor;
+                      final header = widget.lineHeaderBuilder?.call(
+                        context,
+                        line,
+                      );
                       return KeyedSubtree(
                         key: ValueKey(doc.lineIdentity(line)),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           mainAxisSize: MainAxisSize.min,
                           children: [
+                            if (header != null)
+                              SelectionContainer.disabled(child: header),
                             LineSelectionTarget(
                               isGutter: (x, _) =>
                                   widget.showLineNumbers &&
@@ -300,8 +319,11 @@ class _SyntaxFileViewState extends State<SyntaxFileView> {
                                 selected: selected,
                                 child: ColoredBox(
                                   color: selected
-                                      ? widget.theme.selectionColor
-                                      : widget.theme.backgroundColor,
+                                      ? Color.alphaBlend(
+                                          widget.theme.selectionColor,
+                                          background,
+                                        )
+                                      : background,
                                   child: Row(
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
@@ -635,6 +657,9 @@ class MergeConflictView extends StatefulWidget {
     required this.controller,
     required this.highlighter,
     required this.theme,
+    this.wrap = true,
+    this.textStyle,
+    this.showLineNumbers = true,
   });
 
   /// Parsed conflicts and resolution commands.
@@ -643,8 +668,18 @@ class MergeConflictView extends StatefulWidget {
   /// Registered grammars.
   final Highlighter highlighter;
 
-  /// Current palette.
+  /// Current palette, including optional standard `merge.*` editor colors.
   final SyntaxTheme theme;
+
+  /// Wraps long source lines.
+  final bool wrap;
+
+  /// Optional code typography, shared with the surrounding file views.
+  final TextStyle? textStyle;
+
+  /// Shows original source line numbers, including marker lines.
+  final bool showLineNumbers;
+
   @override
   State<MergeConflictView> createState() => _MergeConflictViewState();
 }
@@ -676,58 +711,153 @@ class _MergeConflictViewState extends State<MergeConflictView> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) => Column(
-    children: [
-      Expanded(
-        child: SyntaxFileView(
-          controller: _editor,
-          highlighter: widget.highlighter,
-          theme: widget.theme,
-        ),
+  Widget _sectionHeader(
+    int index,
+    MergeConflictSection section,
+    MergeSectionColors colors,
+  ) {
+    final conflict = widget.controller.conflicts[index];
+    final (title, label) = switch (section.kind) {
+      MergeSectionKind.current => ('Current change', conflict.currentLabel),
+      MergeSectionKind.base => ('Common ancestor', ''),
+      MergeSectionKind.incoming => ('Incoming change', conflict.incomingLabel),
+    };
+    return Container(
+      key: ValueKey(('merge-section', section.start)),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      decoration: BoxDecoration(
+        color: Color(colors.header),
+        border: Border(left: BorderSide(color: Color(colors.border), width: 3)),
       ),
-      if (widget.controller.conflicts.isEmpty)
-        const Padding(
-          padding: EdgeInsets.all(8),
-          child: Text('All conflicts resolved'),
-        )
-      else
-        SizedBox(
-          height: 160,
-          child: ListView.builder(
-            itemCount: widget.controller.conflicts.length,
-            itemBuilder: (context, index) {
-              final conflict = widget.controller.conflicts[index];
-              return ListTile(
-                title: Text(
-                  'Conflict ${index + 1}: ${conflict.currentLabel} / ${conflict.incomingLabel}',
-                ),
-                onTap: () => _editor.reveal(
-                  DocumentRange(
-                    _editor.document.positionAt(conflict.start),
-                    _editor.document.positionAt(conflict.end),
+      child: Wrap(
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 16,
+        runSpacing: 4,
+        children: [
+          Semantics(
+            header: true,
+            child: Text(
+              label.isEmpty ? title : '$title · $label',
+              style: TextStyle(
+                color: widget.theme.foregroundColor,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          if (section.kind != MergeSectionKind.base)
+            Wrap(
+              spacing: 4,
+              children: [
+                for (final (label, resolution) in [
+                  if (section.kind == MergeSectionKind.current) ...[
+                    ('Keep current', ChangeResolution.old),
+                    ('Keep both', ChangeResolution.both),
+                  ] else
+                    ('Keep incoming', ChangeResolution.newer),
+                ])
+                  TextButton(
+                    style: TextButton.styleFrom(
+                      foregroundColor: widget.theme.foregroundColor,
+                      textStyle: const TextStyle(fontSize: 12),
+                    ),
+                    onPressed: () =>
+                        widget.controller.resolve(index, resolution),
+                    child: Text(label),
+                  ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final merge = widget.controller;
+    final colors = MergeColors.of(widget.theme);
+    final headers = <int, (int, MergeConflictSection)>{
+      for (var index = 0; index < merge.conflicts.length; index++)
+        for (final section in merge.conflicts[index].sections)
+          section.start: (index, section),
+    };
+    return ColoredBox(
+      color: widget.theme.backgroundColor,
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    merge.file.path,
+                    style: TextStyle(color: widget.theme.foregroundColor),
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                subtitle: Wrap(
-                  children: [
-                    for (final (label, resolution) in [
-                      ('Keep current', ChangeResolution.old),
-                      ('Keep incoming', ChangeResolution.newer),
-                      ('Keep both', ChangeResolution.both),
-                    ])
-                      TextButton(
-                        onPressed: () =>
-                            widget.controller.resolve(index, resolution),
-                        child: Text(label),
-                      ),
-                  ],
+                Text(
+                  merge.conflicts.isEmpty
+                      ? 'All conflicts resolved'
+                      : '${merge.conflicts.length} conflict${merge.conflicts.length == 1 ? '' : 's'} remaining',
+                  style: TextStyle(
+                    color: widget.theme.foregroundColor,
+                    fontSize: 12,
+                  ),
                 ),
-              );
-            },
+                IconButton(
+                  tooltip: 'Copy selection',
+                  color: widget.theme.foregroundColor,
+                  onPressed: () => Clipboard.setData(
+                    ClipboardData(
+                      text: _editor.selections
+                          .map(
+                            (s) =>
+                                _editor.document.text.substring(s.start, s.end),
+                          )
+                          .join('\n'),
+                    ),
+                  ),
+                  icon: const Icon(Icons.copy, size: 18),
+                ),
+              ],
+            ),
           ),
-        ),
-    ],
-  );
+          Expanded(
+            child: SyntaxFileView(
+              controller: _editor,
+              highlighter: widget.highlighter,
+              theme: widget.theme,
+              wrap: widget.wrap,
+              textStyle: widget.textStyle,
+              showLineNumbers: widget.showLineNumbers,
+              showHeader: false,
+              lineBackgroundBuilder: (line) {
+                final section = merge.sectionAt(
+                  _editor.document.lineStart(line),
+                );
+                return section == null
+                    ? null
+                    : Color(colors.forSection(section.kind).background);
+              },
+              lineHeaderBuilder: (context, line) {
+                final header = headers[_editor.document.lineStart(line)];
+                return header == null
+                    ? null
+                    : _sectionHeader(
+                        header.$1,
+                        header.$2,
+                        colors.forSection(header.$2.kind),
+                      );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   void dispose() {
     widget.controller.removeListener(_changed);

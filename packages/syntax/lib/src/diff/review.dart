@@ -507,6 +507,30 @@ FileDiff resolveDiffChange(
   }
 }
 
+/// Source role within a merge conflict.
+enum MergeSectionKind {
+  /// Changes from the current branch.
+  current,
+
+  /// Optional common ancestor in a three-way conflict.
+  base,
+
+  /// Changes from the incoming branch.
+  incoming,
+}
+
+/// A half-open source range including its leading conflict marker.
+final class MergeConflictSection {
+  /// Describes one colored section without altering its source text.
+  const MergeConflictSection(this.kind, this.start, this.end);
+
+  /// The side represented by this section.
+  final MergeSectionKind kind;
+
+  /// UTF-16 source offsets. The incoming section includes the closing marker.
+  final int start, end;
+}
+
 /// One complete conflict; offsets refer to the original unresolved document.
 final class MergeConflict {
   /// Describes one conflict marker range and its exact source sections.
@@ -518,6 +542,7 @@ final class MergeConflict {
     this.base,
     this.currentLabel = '',
     this.incomingLabel = '',
+    this.sections = const [],
   });
 
   /// Half-open UTF-16 offsets including the conflict marker lines.
@@ -531,6 +556,9 @@ final class MergeConflict {
 
   /// Labels following the opening and closing conflict markers.
   final String currentLabel, incomingLabel;
+
+  /// Source ranges for current, optional base, and incoming presentation.
+  final List<MergeConflictSection> sections;
 }
 
 /// Parses ordinary and diff3 markers into source ranges without changing text.
@@ -577,6 +605,24 @@ List<MergeConflict> parseMergeConflicts(String text) {
               : text.substring(doc.lineStart(base + 1), doc.lineStart(divider)),
           currentLabel: open[2] ?? '',
           incomingLabel: doc.lineText(end).substring(size).trim(),
+          sections: List.unmodifiable([
+            MergeConflictSection(
+              MergeSectionKind.current,
+              doc.lineStart(line),
+              doc.lineStart(base ?? divider),
+            ),
+            if (base != null)
+              MergeConflictSection(
+                MergeSectionKind.base,
+                doc.lineStart(base),
+                doc.lineStart(divider),
+              ),
+            MergeConflictSection(
+              MergeSectionKind.incoming,
+              doc.lineStart(divider),
+              after,
+            ),
+          ]),
         ),
       );
       line = end;
@@ -599,7 +645,28 @@ final class MergeController extends SyntaxObservable {
 
   /// Remaining conflicts in source order, reparsed after each resolution.
   List<MergeConflict> conflicts = const [];
-  void _parse() => conflicts = parseMergeConflicts(file.text);
+  List<MergeConflictSection> _sections = const [];
+  void _parse() {
+    conflicts = parseMergeConflicts(file.text);
+    _sections = [for (final conflict in conflicts) ...conflict.sections];
+  }
+
+  /// Finds the section at a source offset without scanning offscreen lines.
+  MergeConflictSection? sectionAt(int offset) {
+    var low = 0, high = _sections.length;
+    while (low < high) {
+      final mid = (low + high) ~/ 2;
+      final section = _sections[mid];
+      if (offset < section.start) {
+        high = mid;
+      } else if (offset >= section.end) {
+        low = mid + 1;
+      } else {
+        return section;
+      }
+    }
+    return null;
+  }
 
   /// Applies a side choice and recomputes the remaining changes.
   void resolve(int index, ChangeResolution resolution) {

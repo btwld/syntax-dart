@@ -196,3 +196,10 @@ Both patch renderers accept `indicators`, `showLineNumbers`, and
 `hunkSeparatorStyle`; previous defaults remain available. Flutter additionally
 accepts `tokenTooltip`, with keyboard activation through `onTokenTap`. Logical
 line dragging starts in the gutter, leaving code text selection to Flutter.
+
+`MergeConflictView` now distinguishes current, incoming, and common-ancestor
+sections using `MergeColors.of(theme)`, including standard `merge.*` theme
+overrides. Flutter resolution actions appear beside each section, and its
+`wrap`, `textStyle`, and `showLineNumbers` options match file presentation.
+`MergeController.sectionAt(offset)` exposes the current section at a UTF-16
+source offset; resolving a conflict refreshes these ranges automatically.

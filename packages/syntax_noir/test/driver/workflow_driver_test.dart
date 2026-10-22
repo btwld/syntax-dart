@@ -2,6 +2,8 @@
 library;
 
 import 'package:noir_driver/noir_driver.dart';
+import 'package:syntax/syntax.dart' as syntax;
+import 'package:syntax/themes/github_dark.dart';
 import 'package:test/test.dart';
 
 Future<NoirDriver> launch([String mode = 'editor']) async {
@@ -128,9 +130,50 @@ void main() {
   });
   test('conflict side action updates the full source', () async {
     final driver = await launch('conflict');
+    final frame = await driver.captureCells();
+    final colors = syntax.MergeColors.of(githubDarkTheme);
+    String hex(int color) =>
+        '#${(color & 0xffffff).toRadixString(16).padLeft(6, '0')}';
+    final opening = frame.lines.indexWhere((line) => line.contains('<<<<<<<'));
+    final divider = frame.lines.indexWhere((line) => line.contains('======='));
+    expect(opening, greaterThanOrEqualTo(0));
+    expect(divider, greaterThan(opening));
+    expect(
+      frame.rows[opening][20].background.toAnsiHex(),
+      hex(colors.current.header),
+    );
+    expect(
+      frame.rows[opening + 1][20].background.toAnsiHex(),
+      hex(colors.current.background),
+    );
+    expect(
+      frame.rows[opening + 1][frame.lines[opening + 1].indexOf('a')].background
+          .toAnsiHex(),
+      hex(colors.current.background),
+    );
+    expect(
+      frame.rows[divider + 1][20].background.toAnsiHex(),
+      hex(colors.incoming.background),
+    );
     await driver.clickLocator(DriverLocator.byText('Both'));
     expect(await driver.capture(), containsText('All conflicts resolved'));
     expect(await driver.capture(), isNot(containsText('<<<<<<<')));
+    final resolved = await driver.captureCells();
+    final sourceRow = resolved.lines.indexWhere(
+      (line) => RegExp(r'^\s*\d+\s+a\s*$').hasMatch(line),
+    );
+    expect(
+      sourceRow,
+      greaterThanOrEqualTo(0),
+      reason: resolved.lines.join('\n'),
+    );
+    expect(
+      resolved
+          .rows[sourceRow][resolved.lines[sourceRow].indexOf('a')]
+          .background
+          .toAnsiHex(),
+      hex(githubDarkTheme.background),
+    );
   });
   test(
     'proposals preview and accept through keyboard-accessible controls',
