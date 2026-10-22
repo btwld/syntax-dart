@@ -413,6 +413,57 @@ The **Discussion shortcuts** guide in both review examples displays the active
 mapping. **Line selection → Custom shortcuts** demonstrates J/K navigation,
 R to reply and X to resolve/reopen, with normal typing preserved in inputs.
 
+### Existing-discussion gutter indicators
+
+Passing `commentNavigation` to file, collection, or patch views also shows a
+gutter indicator at each visible discussion's attachment line. A click expands,
+reveals, and focuses the thread without starting a reply, reopening a resolved
+discussion, or changing the source selection. Several threads on one line share
+a count; repeated clicks cycle through them in navigation order. Unified context
+combines old/new attachments, while split views keep each side independent.
+Filters hide matching indicators along with their threads. Markers remain
+available with line numbers hidden and stay separate from the new-comment action.
+
+```dart
+SyntaxCommentGutterTheme(
+  style: const CommentGutterStyle(
+    icon: Icons.forum,
+    resolvedIcon: Icons.task_alt,
+    color: Color(0xffdf9438),
+    resolvedColor: Color(0xff46b8d9),
+    activeColor: Color(0xffdf9438),
+    width: 30,
+  ),
+  labelBuilder: (details) => 'Open review notes (${details.count})',
+  onActivate: (details) async {
+    await details.open();
+  },
+  child: reviewArea,
+)
+```
+
+`CommentGutterStyle` also controls icon size, active/default backgrounds, and
+count visibility. `builder(context, details, child)` can wrap the default button
+or replace it entirely; return null to hide a marker. Replacement controls own
+their semantics and actions. `onActivate` replaces the default click action, so
+apps can present their own chooser and invoke `details.open(thread)` for a
+specific discussion. Details expose source identity/revision, source addresses,
+visible thread snapshots, unresolved count, active state, and the next thread.
+Commands reject stale, removed, filtered, or disposed destinations. Set
+`enabled: false` to remove the indicator column.
+
+`SyntaxCommentThread` automatically expands its retained session when opened
+from an indicator, including custom whole-thread builders. Fully custom
+annotation widgets can expand their own UI inside `onActivate` before calling
+`details.open`; the annotation wrapper handles focus and visibility. Source
+markers use an indexed anchor lookup and only build for mounted rows. Scrolling
+an opened thread out of view and back preserves subsequent manual collapse and
+focus changes. Ordinary previous/next navigation still preserves collapsed state.
+
+The **Line selection → Load sample threads → Custom gutter** controls demonstrate
+custom icons, colors, tooltips, and actions in file and diff views. The main
+**Diff review** uses the defaults.
+
 ### Active discussion highlights
 
 File, collection and patch views highlight the current `commentNavigation`

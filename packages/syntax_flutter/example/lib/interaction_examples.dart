@@ -144,6 +144,7 @@ class _InteractionExamplesState extends State<_InteractionExample> {
   DiffSelectionDetails? diffComment;
   bool customComposer = false, customThreads = false, customShortcuts = false;
   bool customHighlight = false, customSourceHighlight = false;
+  bool customGutter = false;
   final threads = ExampleCommentThreads();
   late final diffComments = CommentNavigationController.patch(review);
   late final fileComments = CommentNavigationController.file(
@@ -592,6 +593,10 @@ class _InteractionExamplesState extends State<_InteractionExample> {
                 setState(() => customSourceHighlight = !customSourceHighlight),
           ),
           button('Load sample threads', loadSampleThreads),
+          button(
+            customGutter ? 'Default gutter' : 'Custom gutter',
+            () => setState(() => customGutter = !customGutter),
+          ),
           const ExampleCommentShortcutHelp(),
           Text(selectionLabel, style: const TextStyle(fontSize: 12)),
         ],
@@ -925,7 +930,32 @@ class _InteractionExamplesState extends State<_InteractionExample> {
                 markerWidth: 5,
               )
             : const CommentSourceHighlightStyle(),
-        child: content,
+        child: SyntaxCommentGutterTheme(
+          style: customGutter
+              ? const CommentGutterStyle(
+                  icon: Icons.forum,
+                  resolvedIcon: Icons.task_alt,
+                  color: Color(0xffdf9438),
+                  resolvedColor: Color(0xff46b8d9),
+                  activeColor: Color(0xffdf9438),
+                  width: 30,
+                )
+              : const CommentGutterStyle(),
+          labelBuilder: customGutter
+              ? (details) => 'Open review notes (${details.count})'
+              : null,
+          onActivate: customGutter
+              ? (details) async {
+                  final opened = await details.open();
+                  if (mounted && opened) {
+                    setState(
+                      () => status = 'Discussion opened from the gutter.',
+                    );
+                  }
+                }
+              : null,
+          child: content,
+        ),
       ),
     );
   }

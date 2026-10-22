@@ -146,8 +146,11 @@ void main() {
       await navigation.next();
       await tester.pumpAndSettle();
       expect(find.text('file/note: true'), findsOneWidget);
-      final selected = find.byWidgetPredicate(
-        (w) => w is Semantics && w.properties.selected == true,
+      final selected = find.ancestor(
+        of: find.text('Discussion content'),
+        matching: find.byWidgetPredicate(
+          (w) => w is Semantics && w.properties.selected == true,
+        ),
       );
       expect(selected, findsOneWidget);
       expect(

@@ -106,3 +106,10 @@ highlight** changes its color, tint, shape, thickness and scroll spacing; both
 file and diff modes demonstrate it. The main **Diff review** uses the default
 highlight. Selection stays visible through resizing and thread expansion;
 manual scrolling takes precedence until the next navigation command.
+
+Discussion icons now appear in the source gutter. Click an icon to expand,
+reveal, and focus its thread; resolved threads remain resolved. A count indicates
+multiple discussions at the same line, and repeated clicks cycle through them.
+Filters also hide the corresponding markers. **Custom gutter** demonstrates
+different icons, colors, labels, and an application-owned open action. Markers
+work in file, unified, and split mode without changing the current selection.

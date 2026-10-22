@@ -29,6 +29,46 @@ Future<void> launch(
 void main() {
   for (final fileMode in [false, true]) {
     testWidgets(
+      '${fileMode ? 'file' : 'diff'} gutter markers open resolved samples and demonstrate custom actions',
+      (tester) async {
+        await launch(tester, 0, size: const Size(1200, 1100));
+        Future<void> tap(Finder finder) async {
+          await tester.ensureVisible(finder);
+          await tester.tap(finder);
+          await tester.pumpAndSettle();
+        }
+
+        if (fileMode) await tap(find.text('Show file'));
+        await tap(find.text('Load sample threads'));
+        await tap(find.byTooltip('Next discussion (Alt/Option+↓)'));
+        await tap(find.byTooltip('Next discussion (Alt/Option+↓)'));
+        final session = tester
+            .widgetList<SyntaxCommentThread>(find.byType(SyntaxCommentThread))
+            .firstWhere((w) => w.controller.thread.resolved)
+            .controller;
+        expect(session.isCollapsed, isTrue);
+        await tap(find.text('Custom gutter'));
+        await tap(find.byTooltip('Open review notes (1)').last);
+        expect(session.isCollapsed, isFalse);
+        expect(session.thread.resolved, isTrue);
+        expect(find.text('Discussion opened from the gutter.'), findsOneWidget);
+        expect(
+          FocusManager.instance.primaryFocus!.debugLabel,
+          'Review discussion',
+        );
+        expect(
+          find
+              .text('Rate limits are covered. This discussion is resolved.')
+              .hitTestable(),
+          findsOneWidget,
+        );
+        await tap(find.text('Default gutter'));
+        expect(find.byTooltip('Open review notes (1)'), findsNothing);
+        expect(find.byTooltip('Open discussion'), findsWidgets);
+        expect(tester.takeException(), isNull);
+      },
+    );
+    testWidgets(
       '${fileMode ? 'file' : 'diff'} sample threads demonstrate active custom highlights',
       (tester) async {
         await launch(tester, 0, size: const Size(1200, 1100));

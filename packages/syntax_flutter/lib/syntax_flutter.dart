@@ -37,3 +37,5 @@ export 'src/comment_highlight.dart'
         CommentSourceHighlightStyle,
         CommentSourceHighlightDetails,
         SyntaxCommentHighlightTheme;
+export 'src/comment_gutter.dart'
+    show CommentGutterStyle, CommentGutterDetails, SyntaxCommentGutterTheme;

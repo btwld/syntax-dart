@@ -83,10 +83,11 @@ void main() {
             .overlaps(tester.getRect(find.byKey(const ValueKey('a')))),
         isFalse,
       );
-      await tester.tapAt(tester.getTopLeft(source) + const Offset(10, 8));
+      await tester.tapAt(tester.getTopLeft(source) + const Offset(40, 8));
       await tester.pumpAndSettle();
       expect(overlayTaps, 0);
       expect(editor.selections, isNotEmpty);
+      expect(editor.selections.single.isCollapsed, isFalse);
       final selection = editor.selections.single;
       painted.clear();
       await nav.next();

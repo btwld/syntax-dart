@@ -5,6 +5,7 @@ import 'package:syntax/syntax.dart';
 import 'inline_comment_region.dart';
 import 'comment_shortcuts.dart';
 import 'comment_highlight.dart';
+import 'comment_thread_controller.dart';
 
 /// Localizable text for discussion counts, filters and navigation.
 class CommentNavigationLabels {
@@ -370,6 +371,8 @@ class _DiscussionViewportScope extends InheritedNotifier<ChangeNotifier> {
 
 // Weakly held per viewport, so shared navigation also reveals independent views.
 final _revealed = Expando<Expando<_DiscussionReveal>>();
+// Focus is a one-shot command even when row remounts replace scroll positions.
+final _focusedRequests = Expando<int>();
 
 class _DiscussionReveal {
   _DiscussionReveal(this.request);
@@ -397,6 +400,7 @@ class CommentNavigationAnchor extends StatefulWidget {
 
 class _CommentNavigationAnchorState extends State<CommentNavigationAnchor> {
   final _target = GlobalKey();
+  final _focus = FocusNode(debugLabel: 'Review discussion');
   final _positions = <ScrollPosition>[];
   _DiscussionReveal? _reveal;
   bool _queued = false, _moving = false;
@@ -465,6 +469,11 @@ class _CommentNavigationAnchorState extends State<CommentNavigationAnchor> {
         ? _DiscussionReveal(navigation.revealRequest)
         : previous!;
     seen[scrollable.position] = _reveal = reveal;
+    if (navigation.openTarget?.key == _key &&
+        _focusedRequests[navigation] != navigation.revealRequest) {
+      _focusedRequests[navigation] = navigation.revealRequest;
+      _focus.requestFocus();
+    }
     final config = SyntaxCommentHighlightTheme.maybeOf(context);
     final adjustments = <(ScrollPosition, double)>[];
     _detach();
@@ -588,25 +597,36 @@ class _CommentNavigationAnchorState extends State<CommentNavigationAnchor> {
                   ),
               ],
             );
-        return Focus(
-          canRequestFocus: false,
-          onFocusChange: (focused) {
-            if (focused && !navigation.isDisposed) {
-              navigation.select(widget.fileId, widget.annotationId);
-            }
-          },
-          child: Listener(
-            onPointerDown: (_) {
-              if (!navigation.isDisposed) {
+        return _CommentActivationScope(
+          navigation: navigation,
+          fileId: widget.fileId,
+          annotationId: widget.annotationId,
+          request: navigation.revealRequest,
+          active:
+              navigation.openTarget?.key == _key &&
+              !navigation.isNavigating &&
+              navigation.error == null,
+          child: Focus(
+            focusNode: _focus,
+            skipTraversal: true,
+            onFocusChange: (focused) {
+              if (focused && !navigation.isDisposed) {
                 navigation.select(widget.fileId, widget.annotationId);
               }
             },
-            child: Semantics(
-              selected: selected,
-              child: _DiscussionLayoutObserver(
-                key: _target,
-                onLayout: _queueReveal,
-                child: content,
+            child: Listener(
+              onPointerDown: (_) {
+                if (!navigation.isDisposed) {
+                  navigation.select(widget.fileId, widget.annotationId);
+                }
+              },
+              child: Semantics(
+                selected: selected,
+                child: _DiscussionLayoutObserver(
+                  key: _target,
+                  onLayout: _queueReveal,
+                  child: content,
+                ),
               ),
             ),
           ),
@@ -618,7 +638,78 @@ class _CommentNavigationAnchorState extends State<CommentNavigationAnchor> {
   @override
   void dispose() {
     _detach();
+    _focus.dispose();
     super.dispose();
+  }
+}
+
+class _CommentActivationScope extends InheritedWidget {
+  const _CommentActivationScope({
+    required this.navigation,
+    required this.fileId,
+    required this.annotationId,
+    required this.request,
+    required this.active,
+    required super.child,
+  });
+  final CommentNavigationController navigation;
+  final String fileId, annotationId;
+  final int request;
+  final bool active;
+  @override
+  bool updateShouldNotify(_CommentActivationScope old) =>
+      navigation != old.navigation ||
+      request != old.request ||
+      active != old.active ||
+      fileId != old.fileId ||
+      annotationId != old.annotationId;
+}
+
+/// Wires default and application-built thread contents to explicit open requests.
+class CommentThreadActivation extends StatefulWidget {
+  const CommentThreadActivation({
+    super.key,
+    required this.controller,
+    required this.child,
+  });
+  final CommentThreadController controller;
+  final Widget child;
+  @override
+  State<CommentThreadActivation> createState() =>
+      _CommentThreadActivationState();
+}
+
+final _expandedThreads = Expando<Expando<int>>();
+
+class _CommentThreadActivationState extends State<CommentThreadActivation> {
+  @override
+  Widget build(BuildContext context) {
+    final scope = context
+        .dependOnInheritedWidgetOfExactType<_CommentActivationScope>();
+    if (scope != null &&
+        scope.active &&
+        _expandedThreads[scope.navigation]?[widget.controller] !=
+            scope.request) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final nav = scope.navigation, session = widget.controller;
+        if (nav.isDisposed ||
+            session.isDisposed ||
+            nav.isNavigating ||
+            nav.error != null ||
+            nav.revealRequest != scope.request ||
+            nav.openTarget?.key != (scope.fileId, scope.annotationId) ||
+            session.thread.id != nav.openTarget?.thread.id ||
+            session.thread.revision != nav.openTarget?.thread.revision) {
+          return;
+        }
+        final handled = _expandedThreads[nav] ??= Expando<int>();
+        if (handled[session] == scope.request) return;
+        handled[session] = scope.request;
+        session.expand();
+      });
+    }
+    return widget.child;
   }
 }
 

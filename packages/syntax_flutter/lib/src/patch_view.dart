@@ -12,6 +12,7 @@ import 'selection_action_overlay.dart';
 import 'inline_comment_region.dart';
 import 'comment_navigation.dart';
 import 'comment_highlight.dart';
+import 'comment_gutter.dart';
 import 'package:syntax/syntax.dart';
 
 import 'highlighter_scope.dart';
@@ -457,6 +458,7 @@ class _PatchViewState extends State<PatchView> {
   _Palette _paletteFor(BuildContext context) {
     final textStyle = widget.textStyle ?? defaultCodeTextStyle;
     final scaler = MediaQuery.textScalerOf(context);
+    final commentsWidth = commentGutterWidth(context, widget.commentNavigation);
     if (_palette case final p?
         when p.theme == widget.theme &&
             p.textStyle == textStyle &&
@@ -468,7 +470,8 @@ class _PatchViewState extends State<PatchView> {
                     ? widget.indicators
                     : DiffIndicators.none) &&
             p.lineNumbers == widget.showLineNumbers &&
-            p.selectionGutterWidth == _actionWidth) {
+            p.selectionGutterWidth == _actionWidth &&
+            p.commentGutterWidth == commentsWidth) {
       return p;
     }
     return _palette = _Palette(
@@ -482,6 +485,7 @@ class _PatchViewState extends State<PatchView> {
           : DiffIndicators.none,
       lineNumbers: widget.showLineNumbers,
       selectionGutterWidth: _actionWidth,
+      commentGutterWidth: commentsWidth,
       onTokenTap: widget.onTokenTap,
     );
   }
@@ -654,6 +658,7 @@ class _PatchViewState extends State<PatchView> {
               widget.controller?.annotations,
               widget.commentNavigation?.filter,
               _actionWidth,
+              palette.commentGutterWidth,
               commentRow,
               comment,
             ),
@@ -947,7 +952,10 @@ class _PatchViewState extends State<PatchView> {
             ? (x >= width / 2 ? DiffSide.newer : DiffSide.old)
             : lines.length == 2 &&
                   widget.showLineNumbers &&
-                  x < palette.selectionGutterWidth + palette.gutterWidth(file)
+                  x <
+                      palette.selectionGutterWidth +
+                          palette.commentGutterWidth +
+                          palette.gutterWidth(file)
             ? DiffSide.old
             : lines.last.$2;
         final candidates = lines.where((entry) => entry.$2 == side);
@@ -974,6 +982,7 @@ class _PatchViewState extends State<PatchView> {
 
       final gutter =
           palette.selectionGutterWidth +
+          palette.commentGutterWidth +
           (widget.showLineNumbers
               ? palette.gutterWidth(file) * (row is DiffPairRow ? 1 : 2)
               : 0) +
@@ -1106,6 +1115,21 @@ class _PatchViewState extends State<PatchView> {
         fileId: file.id,
         sourceRevision: file.revision,
         split: row is DiffPairRow,
+        lines: [
+          for (final (line, side) in lines)
+            (
+              (side == DiffSide.old ? line.oldNumber! : line.newNumber!) - 1,
+              side,
+            ),
+        ],
+        child: child,
+      );
+      child = CommentGutterOverlay(
+        navigation: widget.commentNavigation,
+        fileId: file.id,
+        sourceRevision: file.revision,
+        split: row is DiffPairRow,
+        leadingWidth: palette.selectionGutterWidth,
         lines: [
           for (final (line, side) in lines)
             (
@@ -1261,6 +1285,7 @@ final class _Palette {
     this.indicators = DiffIndicators.classic,
     this.lineNumbers = true,
     this.selectionGutterWidth = 0,
+    this.commentGutterWidth = 0,
     this.onTokenTap,
   }) : styles = TokenTextStyles(theme, base: textStyle) {
     final diff = DiffColors.of(theme);
@@ -1278,7 +1303,7 @@ final class _Palette {
   }
 
   final bool wrap, backgrounds, lineNumbers;
-  final double selectionGutterWidth;
+  final double selectionGutterWidth, commentGutterWidth;
   final DiffIndicators indicators;
   final void Function(FileDiff, DiffLine, DiffSegment)? onTokenTap;
   final SyntaxTheme theme;
@@ -1712,6 +1737,8 @@ class _Gutter extends StatelessWidget {
             children: [
               if (palette.selectionGutterWidth > 0)
                 SizedBox(width: palette.selectionGutterWidth),
+              if (palette.commentGutterWidth > 0)
+                SizedBox(width: palette.commentGutterWidth),
               if (palette.lineNumbers)
                 for (final n in numbers)
                   SizedBox(

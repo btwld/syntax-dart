@@ -12,6 +12,7 @@ import 'selection_action_overlay.dart';
 import 'inline_comment_region.dart';
 import 'comment_navigation.dart';
 import 'comment_highlight.dart';
+import 'comment_gutter.dart';
 
 /// A virtualized highlighted file with source-only line selection and copy.
 class SyntaxFileView extends StatefulWidget {
@@ -279,6 +280,7 @@ class _SyntaxFileViewState extends State<SyntaxFileView> {
         : 0.0;
     final gutterWidth =
         actionWidth +
+        commentGutterWidth(context, widget.commentNavigation) +
         (widget.showLineNumbers
             ? doc.lineCount.toString().length *
                       (widget.textStyle?.fontSize ?? 14) +
@@ -445,77 +447,85 @@ class _SyntaxFileViewState extends State<SyntaxFileView> {
                                         widget.selectionActionStyle,
                                         () => widget.onComment!(selection!),
                                       ),
-                                child: CommentSourceHighlight(
-                                  controller: widget.commentNavigation,
+                                child: CommentGutterOverlay(
+                                  navigation: widget.commentNavigation,
                                   fileId: editor.file.id,
                                   sourceRevision: doc.revision,
                                   lines: [(line, null)],
-                                  child: LineSelectionTarget(
-                                    isGutter: (x, _) => x < gutterWidth,
-                                    onSelect: (_, _, extend) =>
-                                        _selectLine(line, extend: extend),
-                                    child: Semantics(
-                                      label: 'Line ${line + 1}',
-                                      selected: selected,
-                                      child: ColoredBox(
-                                        color: selected
-                                            ? Color.alphaBlend(
-                                                widget.theme.selectionColor,
-                                                background,
-                                              )
-                                            : background,
-                                        child: Row(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            if (gutterWidth > 0)
-                                              SelectionContainer.disabled(
-                                                child: Semantics(
-                                                  button: true,
-                                                  label:
-                                                      'Select line ${line + 1}',
-                                                  onTap: () =>
-                                                      _selectLine(line),
-                                                  excludeSemantics: true,
-                                                  child: MouseRegion(
-                                                    cursor: SystemMouseCursors
-                                                        .click,
-                                                    child: SizedBox(
-                                                      width: gutterWidth,
-                                                      child: Padding(
-                                                        padding:
-                                                            const EdgeInsets.only(
-                                                              right: 12,
-                                                            ),
-                                                        child: Text(
-                                                          widget.showLineNumbers
-                                                              ? '${line + 1}'
-                                                              : '',
-                                                          textAlign:
-                                                              TextAlign.right,
-                                                          style: styles.base
-                                                              .copyWith(
-                                                                color: widget
-                                                                    .theme
-                                                                    .lineNumberColor,
+                                  leadingWidth: actionWidth,
+                                  child: CommentSourceHighlight(
+                                    controller: widget.commentNavigation,
+                                    fileId: editor.file.id,
+                                    sourceRevision: doc.revision,
+                                    lines: [(line, null)],
+                                    child: LineSelectionTarget(
+                                      isGutter: (x, _) => x < gutterWidth,
+                                      onSelect: (_, _, extend) =>
+                                          _selectLine(line, extend: extend),
+                                      child: Semantics(
+                                        label: 'Line ${line + 1}',
+                                        selected: selected,
+                                        child: ColoredBox(
+                                          color: selected
+                                              ? Color.alphaBlend(
+                                                  widget.theme.selectionColor,
+                                                  background,
+                                                )
+                                              : background,
+                                          child: Row(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              if (gutterWidth > 0)
+                                                SelectionContainer.disabled(
+                                                  child: Semantics(
+                                                    button: true,
+                                                    label:
+                                                        'Select line ${line + 1}',
+                                                    onTap: () =>
+                                                        _selectLine(line),
+                                                    excludeSemantics: true,
+                                                    child: MouseRegion(
+                                                      cursor: SystemMouseCursors
+                                                          .click,
+                                                      child: SizedBox(
+                                                        width: gutterWidth,
+                                                        child: Padding(
+                                                          padding:
+                                                              const EdgeInsets.only(
+                                                                right: 12,
                                                               ),
+                                                          child: Text(
+                                                            widget.showLineNumbers
+                                                                ? '${line + 1}'
+                                                                : '',
+                                                            textAlign:
+                                                                TextAlign.right,
+                                                            style: styles.base
+                                                                .copyWith(
+                                                                  color: widget
+                                                                      .theme
+                                                                      .lineNumberColor,
+                                                                ),
+                                                          ),
                                                         ),
                                                       ),
                                                     ),
                                                   ),
                                                 ),
-                                              ),
-                                            if (widget.gutterActionBuilder !=
-                                                null)
-                                              SelectionContainer.disabled(
-                                                child:
-                                                    widget.gutterActionBuilder!(
-                                                      context,
-                                                      line,
-                                                    ),
-                                              ),
-                                            Expanded(child: code),
-                                          ],
+                                              if (widget.gutterActionBuilder !=
+                                                  null)
+                                                SelectionContainer.disabled(
+                                                  child:
+                                                      widget
+                                                          .gutterActionBuilder!(
+                                                        context,
+                                                        line,
+                                                      ),
+                                                ),
+                                              Expanded(child: code),
+                                            ],
+                                          ),
                                         ),
                                       ),
                                     ),

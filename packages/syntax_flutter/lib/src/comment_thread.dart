@@ -4,6 +4,7 @@ import 'comment_composer.dart';
 import 'comment_thread_controller.dart';
 import 'inline_comment_region.dart';
 import 'comment_shortcuts.dart';
+import 'comment_navigation.dart';
 
 /// Localizable labels used by the default inline discussion UI.
 @immutable
@@ -576,8 +577,11 @@ class SyntaxCommentThread extends StatelessWidget {
                 ],
               ),
             );
-      return InlineCommentRegion(
-        child: builder?.call(context, details, content) ?? content,
+      return CommentThreadActivation(
+        controller: controller,
+        child: InlineCommentRegion(
+          child: builder?.call(context, details, content) ?? content,
+        ),
       );
     },
   );

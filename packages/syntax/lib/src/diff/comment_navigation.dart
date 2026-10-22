@@ -295,10 +295,12 @@ final class CommentNavigationController extends SyntaxObservable {
 
   List<CommentThreadLocation> _threads = const [];
   Map<(String, String), CommentThreadLocation> _byKey = const {};
+  final Map<(String, int, DiffSide?), List<CommentThreadLocation>> _byLine = {};
   final Map<String?, (int, int)> _counts = {};
   CommentThreadFilter _filter;
   (String, String)? _current;
   (String, String)? _revealTarget;
+  (String, String)? _openTarget;
   void Function()? _unbind;
   int _generation = 0;
   int _revealRequest = 0;
@@ -325,6 +327,29 @@ final class CommentNavigationController extends SyntaxObservable {
 
   /// Explicit navigation target, distinct from pointer/focus selection.
   CommentThreadLocation? get revealTarget => _byKey[_revealTarget];
+
+  /// Explicit destination to expand and focus once the source reveal completes.
+  /// Ordinary previous/next navigation preserves collapsed state and input focus.
+  CommentThreadLocation? get openTarget => _byKey[_openTarget];
+
+  /// Visible discussions attached to a zero-based source line, in navigation
+  /// order. Uses an anchor index rather than scanning threads for every row.
+  List<CommentThreadLocation> threadsAtLine(
+    String fileId,
+    int line, {
+    DiffSide? side,
+    int? sourceRevision,
+  }) => isDisposed
+      ? const []
+      : List.unmodifiable([
+          for (final entry
+              in _byLine[(fileId, line, side)] ??
+                  const <CommentThreadLocation>[])
+            if (isVisible(entry.thread) &&
+                (sourceRevision == null ||
+                    entry.sourceRevision == sourceRevision))
+              entry,
+        ]);
 
   /// Selects a visible discussion by stable identity without scrolling.
   /// Pointer and focus interactions can use this before invoking thread actions.
@@ -399,6 +424,10 @@ final class CommentNavigationController extends SyntaxObservable {
     final before = current;
     _threads = List.unmodifiable(next);
     _byKey = {for (final entry in next) entry.key: entry};
+    _byLine.clear();
+    for (final entry in next) {
+      (_byLine[(entry.fileId, entry.line, entry.side)] ??= []).add(entry);
+    }
     _counts.clear();
     for (final entry in next) {
       for (final key in [null, entry.fileId]) {
@@ -423,7 +452,12 @@ final class CommentNavigationController extends SyntaxObservable {
   }
 
   /// Reveals a visible anchor using its latest location, rejecting stale results.
-  Future<bool> reveal(CommentThreadLocation requested) async {
+  /// Set [expandAndFocus] for explicit open actions such as gutter indicators.
+  /// Renderers expand the discussion without changing its resolved status.
+  Future<bool> reveal(
+    CommentThreadLocation requested, {
+    bool expandAndFocus = false,
+  }) async {
     checkAlive();
     final matches = visible().where((entry) => entry.key == requested.key);
     if (matches.isEmpty) return false;
@@ -433,6 +467,7 @@ final class CommentNavigationController extends SyntaxObservable {
     _revealRequest++;
     _current = entry.key;
     _revealTarget = entry.key;
+    _openTarget = expandAndFocus ? entry.key : null;
     _navigating = true;
     _error = null;
     notifyListeners();
@@ -478,6 +513,7 @@ final class CommentNavigationController extends SyntaxObservable {
   void _cancel() {
     _generation++;
     _revealTarget = null;
+    _openTarget = null;
     if (_navigating) onCancelReveal?.call();
     _navigating = false;
   }
