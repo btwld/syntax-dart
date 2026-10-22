@@ -327,12 +327,18 @@ class _SyntaxFileViewState extends State<SyntaxFileView> {
                                               doc.lineCount.toString().length *
                                                   (styles.base.fontSize ?? 14) +
                                               20,
-                                          child: Text(
-                                            '${line + 1}  ',
-                                            textAlign: TextAlign.right,
-                                            style: styles.base.copyWith(
-                                              color:
-                                                  widget.theme.lineNumberColor,
+                                          child: Padding(
+                                            padding: const EdgeInsets.only(
+                                              right: 12,
+                                            ),
+                                            child: Text(
+                                              '${line + 1}',
+                                              textAlign: TextAlign.right,
+                                              style: styles.base.copyWith(
+                                                color: widget
+                                                    .theme
+                                                    .lineNumberColor,
+                                              ),
                                             ),
                                           ),
                                         ),

@@ -8,6 +8,39 @@ void main() {
   final highlighter = Highlighter(languages: [dartLanguage]);
   Widget app(Widget child) => MaterialApp(home: Scaffold(body: child));
   testWidgets(
+    'diagnostics have a visible material surface and select their source',
+    (tester) async {
+      final controller =
+          EditorController(
+            file: const SourceFile(
+              id: 'diagnostic',
+              path: 'a.dart',
+              text: 'final value = 1;',
+            ),
+          )..setDiagnostics([
+            const Diagnostic(start: 6, end: 11, message: 'Rename this value'),
+          ]);
+      await tester.pumpWidget(
+        app(
+          SyntaxEditor(
+            controller: controller,
+            highlighter: highlighter,
+            theme: githubDarkTheme,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      await tester.tap(find.text('Rename this value'));
+      await tester.pumpAndSettle();
+      expect(controller.selections.single.start, 6);
+      expect(controller.selections.single.end, 11);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+      controller.dispose();
+    },
+  );
+  testWidgets(
     'native editor input, undo, search and completion use one session',
     (tester) async {
       final controller = EditorController(

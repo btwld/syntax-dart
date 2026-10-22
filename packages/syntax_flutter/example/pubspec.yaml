@@ -1,5 +1,5 @@
 name: syntax_example
-description: Live editor and preview for syntax_flutter.
+description: Interactive file, diff, and editing showcase for syntax_flutter.
 publish_to: none
 version: 1.0.0+1
 environment:
@@ -12,6 +12,8 @@ dependencies:
   syntax: ^0.1.0-dev
   syntax_flutter: ^0.1.0-dev
 dev_dependencies:
+  flutter_test:
+    sdk: flutter
   flutter_lints: ^6.0.0
 flutter:
   uses-material-design: true

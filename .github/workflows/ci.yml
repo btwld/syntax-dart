@@ -37,6 +37,7 @@ jobs:
           packages/syntax_flutter/lib
           packages/syntax_flutter/test
           packages/syntax_flutter/example/lib
+          packages/syntax_flutter/example/test
 
       - name: Analyze syntax
         working-directory: packages/syntax
@@ -77,6 +78,10 @@ jobs:
 
       - name: Test syntax_flutter
         working-directory: packages/syntax_flutter
+        run: flutter test
+
+      - name: Test example interactions
+        working-directory: packages/syntax_flutter/example
         run: flutter test
 
       - name: Build example worker asset
@@ -123,6 +128,10 @@ jobs:
         run: flutter pub run test
       - name: Test syntax_flutter
         working-directory: packages/syntax_flutter
+        run: flutter test
+
+      - name: Test example interactions
+        working-directory: packages/syntax_flutter/example
         run: flutter test
 
   minimum-noir-sdk:

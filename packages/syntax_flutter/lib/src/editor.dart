@@ -612,7 +612,7 @@ class _SyntaxEditorState extends State<SyntaxEditor> {
     };
     return CallbackShortcuts(
       bindings: bindings,
-      child: ColoredBox(
+      child: Material(
         color: widget.theme.backgroundColor,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
