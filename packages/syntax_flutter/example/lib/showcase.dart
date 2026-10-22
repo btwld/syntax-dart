@@ -633,23 +633,34 @@ class _ShowcaseHomeState extends State<ShowcaseHome> {
                                       ),
                                   enabled: _tab == 0,
                                   autofocus: _tab == 0,
-                                  child: Column(
-                                    children: [
-                                      if (_tab < 6)
-                                        ConstrainedBox(
-                                          constraints: const BoxConstraints(
-                                            maxHeight: 180,
-                                          ),
-                                          child: SingleChildScrollView(
-                                            child: _toolbar(),
-                                          ),
+                                  child: SyntaxCommentGutterTheme(
+                                    previewThreadController: (location) =>
+                                        _threads.session(
+                                          location.thread,
+                                          onChanged: (thread) =>
+                                              _updateReviewThread(
+                                                location.annotationId,
+                                                thread,
+                                              ),
                                         ),
-                                      if (_tab == 0 &&
-                                          _review.mode == DiffMode.split)
-                                        _splitLabels(),
-                                      Expanded(child: _surface()),
-                                      _footer(),
-                                    ],
+                                    child: Column(
+                                      children: [
+                                        if (_tab < 6)
+                                          ConstrainedBox(
+                                            constraints: const BoxConstraints(
+                                              maxHeight: 180,
+                                            ),
+                                            child: SingleChildScrollView(
+                                              child: _toolbar(),
+                                            ),
+                                          ),
+                                        if (_tab == 0 &&
+                                            _review.mode == DiffMode.split)
+                                          _splitLabels(),
+                                        Expanded(child: _surface()),
+                                        _footer(),
+                                      ],
+                                    ),
                                   ),
                                 ),
                               ),

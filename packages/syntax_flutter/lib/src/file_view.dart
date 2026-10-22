@@ -606,7 +606,7 @@ class _SyntaxFileViewState extends State<SyntaxFileView> {
         ),
       ),
     );
-    return CommentNavigationViewport(child: view);
+    return CommentGutterScope(child: CommentNavigationViewport(child: view));
   }
 
   @override

@@ -513,6 +513,60 @@ application header, custom shape, and **Continue review** / **Dismiss** actions 
 file and diff modes. Hover the discussion markers to try it. **Diff review**
 shows the default preview.
 
+To reply or resolve/reopen directly in the preview, supply the retained thread
+sessions used by your inline annotations:
+
+```dart
+SyntaxCommentGutterTheme(
+  previewThreadController: (location) => sessions[location.thread.id],
+  previewThreadLabels: const CommentThreadLabels(
+    reply: 'Quick reply',
+    postReply: 'Send reply',
+    resolve: 'Mark done',
+  ),
+  previewActionsBuilder: (context, preview, location, defaultActions) {
+    final thread = preview.thread(location);
+    return Wrap(children: [
+      TextButton(onPressed: thread?.reply, child: const Text('Reply here')),
+      TextButton(
+        onPressed: thread?.toggleResolved,
+        child: Text(location.thread.resolved ? 'Reopen' : 'Resolve'),
+      ),
+    ]);
+  },
+  previewComposerBuilder: (context, thread, defaultComposer) => defaultComposer,
+  child: reviewArea,
+)
+```
+
+The resolver must return an application-owned `CommentThreadController` matching
+the thread identity and revision in the location. Omit it or return null for a
+read-only preview. Sessions with no `onUpdate` are also read-only. Default controls
+respect live reply/resolve permissions, disable during saves, and show safe error
+feedback after failures. Publish saved snapshots back to the source annotations
+so counts, markers, inline threads and previews stay synchronized.
+
+`preview.thread(location)` exposes `CommentGutterPreviewThreadDetails`: the shared
+draft controller, preview-local focus, editing/submission state, errors, and
+guarded reply, cancel, submit and resolve/reopen commands. `previewActionsBuilder`
+customizes the controls; `previewComposerBuilder` replaces the input and its
+actions. Commands are null when unavailable and recheck identity, source/thread
+revisions and permissions when invoked. Custom inputs should use
+`thread.controller.replyInput` and `thread.focusNode` and provide their own
+shortcuts. No session is owned or disposed by the preview.
+
+Reply opens a form inside the preview without expanding the inline thread or
+changing its resolved status. The draft is shared with the inline editor, while
+focus is separate. Ctrl/Cmd+Enter submits the default form; Escape or dismissing
+the preview retains the draft. Cancel explicitly discards it. Hovering a retained
+draft does not steal focus. A save may finish after the preview closes, but stale
+source or external thread revisions cannot update the session. Applications must
+also enforce revisions and permissions in their persistence callback.
+
+The gallery's **Custom preview** demonstrates **Quick reply**, **Mark done** /
+**Reopen note**, a custom reply input and **Send reply** / **Discard draft**.
+The main **Diff review** demonstrates the default controls.
+
 ### Active discussion highlights
 
 File, collection and patch views highlight the current `commentNavigation`

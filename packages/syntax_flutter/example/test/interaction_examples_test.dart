@@ -62,9 +62,49 @@ void main() {
           findsOneWidget,
         );
         expect(session.isCollapsed, isTrue);
+        final surface = find
+            .ancestor(
+              of: find.text('Discussion preview'),
+              matching: find.byType(Material),
+            )
+            .first;
+        Future<void> previewTap(String label) async {
+          final control = find.descendant(
+            of: surface,
+            matching: find.text(label),
+          );
+          final scroll = Scrollable.maybeOf(tester.element(control));
+          await scroll?.position.ensureVisible(
+            tester.renderObject(control),
+            alignment: 1,
+          );
+          await tester.pump();
+          await tester.tap(control);
+          await tester.pumpAndSettle();
+        }
+
+        await previewTap('Quick reply');
+        final input = find.descendant(
+          of: surface,
+          matching: find.byType(TextField),
+        );
+        expect(input, findsOneWidget);
+        expect(session.isCollapsed, isTrue);
+        await tester.enterText(input, 'Reply saved from the notebook preview');
+        await tester.pump();
+        await previewTap('Send reply');
+        expect(
+          session.thread.comments.last.body,
+          'Reply saved from the notebook preview',
+        );
+        expect(session.isReplying, isFalse);
+        await previewTap('Reopen note');
+        expect(session.thread.resolved, isFalse);
+        await previewTap('Mark done');
+        expect(session.thread.resolved, isTrue);
         await mouse.moveTo(tester.getCenter(find.text('Continue review')));
         await tester.pump(const Duration(milliseconds: 400));
-        await tap(find.text('Continue review'));
+        await previewTap('Continue review');
         expect(find.text('REVIEW NOTEBOOK'), findsNothing);
         expect(
           find.text('Discussion opened from the preview.'),

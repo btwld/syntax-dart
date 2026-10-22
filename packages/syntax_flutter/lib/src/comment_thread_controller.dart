@@ -239,17 +239,26 @@ class CommentThreadController extends ChangeNotifier {
   }
 
   /// Saves a nonempty reply through the application callback.
-  Future<bool> submitReply() async {
+  Future<bool> submitReply() {
+    _checkAlive();
+    return _replying ? submitReplyDraft() : Future.value(false);
+  }
+
+  /// Saves the shared reply draft from an application-owned editor, without
+  /// opening or focusing the inline reply form. Preview editors use their own
+  /// focus node while retaining this session's draft and persistence callback.
+  /// [isCurrent] can reject a result whose source anchor changed while saving.
+  Future<bool> submitReplyDraft({bool Function()? isCurrent}) async {
     _checkAlive();
     final draft = replyInput.text;
     final text = draft.trim();
-    if (_busy || !_replying || !mayReply || text.isEmpty) return false;
+    if (_busy || !mayReply || text.isEmpty) return false;
     return _submit(ReviewThreadChange.reply(thread, text), () {
       if (replyInput.text == draft) {
         _replying = false;
         replyInput.clear();
       }
-    });
+    }, isCurrent: isCurrent);
   }
 
   /// Saves an edit only if its original message is still current and permitted.
@@ -296,10 +305,15 @@ class CommentThreadController extends ChangeNotifier {
 
   /// Resolves or reopens through the application. Resolution follows
   /// [collapseResolved]; reopening expands. Messages and drafts are retained.
-  Future<bool> toggleResolved() async {
+  /// Optional [isCurrent] rejects results belonging to an obsolete source.
+  Future<bool> toggleResolved({bool Function()? isCurrent}) async {
     _checkAlive();
     if (_busy || !mayResolve) return false;
-    return _submit(ReviewThreadChange.resolve(thread, !thread.resolved), () {});
+    return _submit(
+      ReviewThreadChange.resolve(thread, !thread.resolved),
+      () {},
+      isCurrent: isCurrent,
+    );
   }
 
   /// Applies a newer external snapshot and invalidates in-flight responses.
@@ -318,7 +332,12 @@ class CommentThreadController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<bool> _submit(ReviewThreadChange change, VoidCallback complete) async {
+  Future<bool> _submit(
+    ReviewThreadChange change,
+    VoidCallback complete, {
+    bool Function()? isCurrent,
+  }) async {
+    if (isCurrent?.call() == false) return false;
     final generation = ++_generation;
     _busy = true;
     _error = null;
@@ -327,6 +346,11 @@ class CommentThreadController extends ChangeNotifier {
     try {
       final result = await onUpdate!(change);
       if (_disposed || generation != _generation) return false;
+      if (isCurrent?.call() == false) {
+        _busy = false;
+        notifyListeners();
+        return false;
+      }
       if (result.id != thread.id || result.revision <= thread.revision) {
         throw StateError('Expected the same thread with a higher revision');
       }
@@ -337,7 +361,7 @@ class CommentThreadController extends ChangeNotifier {
       return true;
     } catch (error) {
       if (!_disposed && generation == _generation) {
-        _error = error;
+        _error = isCurrent?.call() == false ? null : error;
         _busy = false;
         notifyListeners();
       }

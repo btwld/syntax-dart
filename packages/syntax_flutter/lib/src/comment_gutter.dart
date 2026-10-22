@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:syntax/syntax.dart';
 import 'comment_gutter_preview.dart';
+import 'comment_thread_controller.dart';
+import 'comment_thread.dart';
 
 /// Icons, colors and sizing for existing-discussion gutter indicators.
 @immutable
@@ -128,6 +130,9 @@ class SyntaxCommentGutterTheme extends InheritedWidget {
     this.previewHideDelay = const Duration(milliseconds: 200),
     this.previewBuilder,
     this.previewActionsBuilder,
+    this.previewThreadController,
+    this.previewComposerBuilder,
+    this.previewThreadLabels = const CommentThreadLabels(),
   });
 
   /// Hides the marker column without changing discussions or navigation.
@@ -175,6 +180,26 @@ class SyntaxCommentGutterTheme extends InheritedWidget {
   )?
   previewActionsBuilder;
 
+  /// Resolves application-owned sessions for direct preview replies and
+  /// resolve/reopen actions. Return the same retained session used inline,
+  /// matching the location's thread identity and revision, or null for read-only
+  /// previews. Sessions are never disposed by the gutter.
+  final CommentThreadController? Function(CommentThreadLocation)?
+  previewThreadController;
+
+  /// Wraps or replaces the reply input and submit/cancel controls. Details carry
+  /// the shared draft, preview-local focus and guarded commands. Custom inputs
+  /// own their shortcuts. Returning null hides the composer for that thread.
+  final Widget? Function(
+    BuildContext,
+    CommentGutterPreviewThreadDetails,
+    Widget,
+  )?
+  previewComposerBuilder;
+
+  /// Localized reply, submit, cancel, resolve/reopen and error labels.
+  final CommentThreadLabels previewThreadLabels;
+
   /// Configuration for descendant source views, or null for defaults.
   static SyntaxCommentGutterTheme? maybeOf(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<SyntaxCommentGutterTheme>();
@@ -190,7 +215,10 @@ class SyntaxCommentGutterTheme extends InheritedWidget {
       previewDelay != old.previewDelay ||
       previewHideDelay != old.previewHideDelay ||
       previewBuilder != old.previewBuilder ||
-      previewActionsBuilder != old.previewActionsBuilder;
+      previewActionsBuilder != old.previewActionsBuilder ||
+      previewThreadController != old.previewThreadController ||
+      previewComposerBuilder != old.previewComposerBuilder ||
+      previewThreadLabels != old.previewThreadLabels;
 }
 
 // Internal paint-positioned adapter keeps pointer input outside line dragging.
@@ -322,6 +350,7 @@ class CommentGutterOverlay extends StatelessWidget {
       return marker == null
           ? null
           : CommentGutterPreviewAnchor(
+              key: _CommentGutterKeys.maybeOf(context)?.keyFor(details),
               details: details,
               config: config,
               child: marker,
@@ -368,4 +397,53 @@ class CommentGutterOverlay extends StatelessWidget {
       ],
     );
   }
+}
+
+// Preserve an open overlay when the indexed viewport replaces its local sliver
+// window during annotation measurements. Keys are scoped to a view and pruned
+// after unmount, so scrolling still releases offscreen rows and their previews.
+class CommentGutterScope extends StatefulWidget {
+  const CommentGutterScope({super.key, required this.child});
+  final Widget child;
+  @override
+  State<CommentGutterScope> createState() => _CommentGutterScopeState();
+}
+
+class _CommentGutterScopeState extends State<CommentGutterScope> {
+  final _keys = <(String, int, String), GlobalKey>{};
+  bool _scheduled = false;
+  void _prune() {
+    if (_scheduled) return;
+    _scheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scheduled = false;
+      _keys.removeWhere((_, key) => key.currentContext == null);
+    });
+  }
+
+  GlobalKey keyFor(CommentGutterDetails details) {
+    _prune();
+    return _keys.putIfAbsent((
+      details.fileId,
+      details.sourceRevision,
+      details.sourceLines
+          .map((entry) => '${entry.$1}:${entry.$2?.index}')
+          .join(','),
+    ), GlobalKey.new);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    _prune();
+    return _CommentGutterKeys(owner: this, child: widget.child);
+  }
+}
+
+class _CommentGutterKeys extends InheritedWidget {
+  const _CommentGutterKeys({required this.owner, required super.child});
+  final _CommentGutterScopeState owner;
+  static _CommentGutterScopeState? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_CommentGutterKeys>()?.owner;
+  @override
+  bool updateShouldNotify(_CommentGutterKeys old) => old.owner != owner;
 }

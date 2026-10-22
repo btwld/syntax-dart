@@ -729,7 +729,7 @@ class _PatchViewState extends State<PatchView> {
             // Code reads left to right whatever the app's direction.
             child: Directionality(
               textDirection: TextDirection.ltr,
-              child: list,
+              child: CommentGutterScope(child: list),
             ),
           ),
         ),

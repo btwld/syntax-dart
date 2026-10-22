@@ -936,6 +936,61 @@ class _InteractionExamplesState extends State<_InteractionExample> {
               )
             : const CommentSourceHighlightStyle(),
         child: SyntaxCommentGutterTheme(
+          previewThreadController: threadSession,
+          previewComposerBuilder: customPreview
+              ? (context, editor, child) => CallbackShortcuts(
+                  bindings: {
+                    const SingleActivator(
+                      LogicalKeyboardKey.enter,
+                      control: true,
+                    ): () =>
+                        editor.submitReply?.call(),
+                    const SingleActivator(
+                      LogicalKeyboardKey.enter,
+                      meta: true,
+                    ): () =>
+                        editor.submitReply?.call(),
+                  },
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextField(
+                        controller: editor.controller.replyInput,
+                        focusNode: editor.focusNode,
+                        autofocus: false,
+                        enabled: !editor.isSubmitting,
+                        minLines: 2,
+                        maxLines: 4,
+                        decoration: const InputDecoration(
+                          labelText: 'Reply from preview',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      if (editor.error != null)
+                        const Text(
+                          'Reply could not be saved. Your draft is retained.',
+                        ),
+                      Wrap(
+                        alignment: WrapAlignment.end,
+                        children: [
+                          TextButton(
+                            onPressed: editor.cancelReply,
+                            child: const Text('Discard draft'),
+                          ),
+                          FilledButton.icon(
+                            onPressed: editor.submitReply,
+                            icon: const Icon(Icons.send, size: 16),
+                            label: Text(
+                              editor.isSubmitting ? 'Sending…' : 'Send reply',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                )
+              : null,
           previewStyle: customPreview
               ? const CommentGutterPreviewStyle(
                   width: 390,
@@ -970,6 +1025,29 @@ class _InteractionExamplesState extends State<_InteractionExample> {
                   alignment: WrapAlignment.end,
                   spacing: 8,
                   children: [
+                    if (details.thread(location) case final editor?) ...[
+                      if (editor.controller.mayReply && !editor.isReplying)
+                        TextButton.icon(
+                          onPressed: editor.reply,
+                          icon: const Icon(Icons.reply_all, size: 16),
+                          label: const Text('Quick reply'),
+                        ),
+                      if (editor.controller.mayResolve)
+                        TextButton.icon(
+                          onPressed: editor.toggleResolved,
+                          icon: Icon(
+                            location.thread.resolved
+                                ? Icons.undo
+                                : Icons.task_alt,
+                            size: 16,
+                          ),
+                          label: Text(
+                            location.thread.resolved
+                                ? 'Reopen note'
+                                : 'Mark done',
+                          ),
+                        ),
+                    ],
                     TextButton.icon(
                       icon: const Icon(Icons.near_me_outlined, size: 16),
                       label: const Text('Continue review'),

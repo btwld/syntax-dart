@@ -120,3 +120,10 @@ the chosen discussion. F2 opens a preview from a focused marker, and Escape
 closes it. **Custom preview** adds a review notebook header, changes the surface,
 and replaces the actions with **Continue review** and **Dismiss**. Both file and
 diff modes demonstrate it; the main Diff review uses the default preview.
+
+Previews also support **Reply**, **Resolve**, and **Reopen** without navigating
+away. Replies share the inline thread's retained draft and persistence. Escape
+keeps the draft; Cancel discards it; Ctrl/Cmd+Enter submits. **Custom preview**
+replaces these controls with **Quick reply**, **Mark done** / **Reopen note**, and
+an application-owned input with **Send reply** / **Discard draft**. The normal
+Diff review page demonstrates the default actions.

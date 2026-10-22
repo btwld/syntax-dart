@@ -40,4 +40,7 @@ export 'src/comment_highlight.dart'
 export 'src/comment_gutter.dart'
     show CommentGutterStyle, CommentGutterDetails, SyntaxCommentGutterTheme;
 export 'src/comment_gutter_preview.dart'
-    show CommentGutterPreviewStyle, CommentGutterPreviewDetails;
+    show
+        CommentGutterPreviewStyle,
+        CommentGutterPreviewDetails,
+        CommentGutterPreviewThreadDetails;
