@@ -69,11 +69,16 @@ snapshot and range; the gallery owns its inputs, actions and temporary notes.
 
 Posted comments are full discussions. **Reply** opens another inline input;
 **Edit** updates your own message, and **Delete** asks for confirmation inline.
-**Resolve** and **Reopen** preserve the conversation and drafts. Deleting one
+**Resolve** collapses the conversation into a compact resolved indicator.
+**Expand discussion** shows its messages without changing that status, while
+**Reopen** expands it and returns it to an open discussion. Drafts stay available
+after expanding again, and failed saves leave inline feedback. Deleting one
 message keeps the other replies; deleting the final message removes the thread.
 The initial review note belongs to another author, so it offers replies and
 resolution while your own messages also offer edit/delete.
 
 Switch **Custom threads** on the Line selection page to try app-supplied layout,
 message actions, reply/edit inputs, resolution buttons, and **Copy discussion**.
+Its custom resolved summary shows the message count and **Show discussion** /
+**Reopen thread** actions; expanded resolved threads offer **Hide discussion**.
 Drafts survive switching the presentation, folding files, and scrolling away.

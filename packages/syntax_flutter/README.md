@@ -255,10 +255,28 @@ by an edit based on its old contents. Local invalidation does not cancel a serve
 request: also validate `change.thread.revision` at your persistence boundary.
 Dispose sessions after their views unmount or when the containing session ends.
 
+Resolved discussions collapse into a compact **Resolved** indicator with
+**Expand discussion** and **Reopen** controls. Expanding reveals messages and
+retained reply/edit drafts without changing the resolution or saving a revision.
+Reopening saves through `onUpdate` and expands only after success. Failed requests
+stay inline, including in the collapsed summary. Explicit expansion survives
+scrolling, folding, and newer snapshots that keep the same resolution status.
+Read-only threads can still expand and collapse.
+
+`CommentThreadController(collapseResolved: false, ...)` opts out of automatic
+collapse. Applications can also call `expand()` and `collapse()` and observe
+`isCollapsed`; these affect local presentation only. A newly resolved remote
+snapshot follows the same automatic-collapse policy. Collapsing unfocuses hidden
+inputs while retaining their draft text.
+
 Customize any level of the presentation:
 
 - `builder(context, details, child)` replaces or wraps the whole thread.
 - `headerBuilder` and `actionsBuilder` replace the header and thread commands.
+- `collapsedBuilder(context, details, child)` replaces or wraps the compact
+  resolved summary; `collapsedActionsBuilder` replaces its expand/reopen actions.
+  Details expose `isCollapsed`, `expand`, `collapse`, and `toggleResolved`.
+  The same card styling and error builder apply to collapsed discussions.
 - `commentBuilder(context, details, child)` replaces a complete message;
   `commentActionsBuilder` replaces its edit/delete controls.
 - `composerBuilder` replaces reply/edit input and actions. Its details contain
@@ -275,6 +293,8 @@ can supply their own keyboard behavior. `SyntaxCommentComposer.canSubmit` disabl
 submission for additional validation or permissions without discarding a draft.
 
 The **Line selection** example's **Custom threads** toggle demonstrates custom
-layout, inputs, message actions, thread actions, and a copy-discussion command.
+layout, inputs, message actions, thread actions, collapsed summaries, and a
+copy-discussion command. Default expand/collapse labels are customizable through
+`CommentThreadLabels`; default controls support Tab traversal and Enter/Space.
 The [gallery session store](example/lib/comment_threads.dart) demonstrates local
 persistence, permission checks, annotation updates, and controller disposal.

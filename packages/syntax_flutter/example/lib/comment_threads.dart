@@ -126,11 +126,53 @@ class ExampleCommentThreads {
               ],
             )
           : null,
+      collapsedBuilder: custom
+          ? (context, details, child) => Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Team review · ${details.thread.comments.length} '
+                  '${details.thread.comments.length == 1 ? 'message' : 'messages'}',
+                  style: Theme.of(context).textTheme.labelMedium,
+                ),
+                child,
+              ],
+            )
+          : null,
+      collapsedActionsBuilder: custom
+          ? (context, details) => Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                Semantics(
+                  expanded: false,
+                  child: TextButton.icon(
+                    onPressed: details.expand,
+                    icon: const Icon(Icons.unfold_more, size: 16),
+                    label: const Text('Show discussion'),
+                  ),
+                ),
+                TextButton(
+                  onPressed: details.toggleResolved,
+                  child: const Text('Reopen thread'),
+                ),
+              ],
+            )
+          : null,
       actionsBuilder: custom
           ? (context, details) => Wrap(
               spacing: 8,
               runSpacing: 4,
               children: [
+                if (details.thread.resolved)
+                  Semantics(
+                    expanded: true,
+                    child: TextButton(
+                      onPressed: details.collapse,
+                      child: const Text('Hide discussion'),
+                    ),
+                  ),
                 if (!controller.isReplying)
                   TextButton(
                     onPressed: details.reply,

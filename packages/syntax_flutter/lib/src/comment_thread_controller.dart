@@ -38,13 +38,16 @@ class CommentThreadController extends ChangeNotifier {
   CommentThreadController({
     required ReviewThread thread,
     this.onUpdate,
+    this.collapseResolved = true,
     CommentThreadPermissions permissions = const CommentThreadPermissions(),
   }) : _thread = thread,
-       _permissions = permissions;
+       _permissions = permissions,
+       _collapsed = thread.resolved && collapseResolved;
 
   ReviewThread _thread;
   CommentThreadPermissions _permissions;
   bool _disposed = false, _busy = false, _replying = false;
+  bool _collapsed;
   int _generation = 0;
   Object? _error;
   ReviewComment? _editing, _deleting;
@@ -54,6 +57,47 @@ class CommentThreadController extends ChangeNotifier {
 
   /// Persists changes and returns the same thread ID with a higher revision.
   final ReviewThreadUpdater? onUpdate;
+
+  /// Automatically collapses initially resolved threads and each transition to
+  /// resolved. Set false to keep them expanded until the user collapses them.
+  /// This is local presentation state and never changes the thread revision.
+  final bool collapseResolved;
+
+  /// Whether a resolved discussion displays only its summary and commands.
+  /// Retained outside rows so explicit expansion survives virtualization.
+  bool get isCollapsed => _collapsed;
+
+  /// Shows the messages and any retained drafts without reopening the thread.
+  void expand() {
+    _checkAlive();
+    if (!_collapsed) return;
+    _collapsed = false;
+    notifyListeners();
+  }
+
+  /// Hides a resolved discussion without discarding messages or draft text.
+  /// Open discussions remain expanded. This command does not persist anything.
+  void collapse() {
+    _checkAlive();
+    if (!thread.resolved || _collapsed) return;
+    _collapsed = true;
+    _unfocusDrafts();
+    notifyListeners();
+  }
+
+  void _unfocusDrafts() {
+    replyFocus.unfocus();
+    editFocus.unfocus();
+  }
+
+  void _applyThread(ReviewThread value) {
+    final changedResolution = value.resolved != thread.resolved;
+    _thread = value;
+    if (changedResolution) {
+      _collapsed = value.resolved && collapseResolved;
+      if (_collapsed) _unfocusDrafts();
+    }
+  }
 
   /// Application-owned permissions, which can change during a session.
   CommentThreadPermissions get permissions => _permissions;
@@ -124,6 +168,7 @@ class CommentThreadController extends ChangeNotifier {
   void startReply() {
     _checkAlive();
     if (_busy || !mayReply) return;
+    _collapsed = false;
     _replying = true;
     _error = null;
     replyFocus.requestFocus();
@@ -154,6 +199,7 @@ class CommentThreadController extends ChangeNotifier {
       _editing = comment;
       editInput.text = comment.body;
     }
+    _collapsed = false;
     _error = null;
     editFocus.requestFocus();
     notifyListeners();
@@ -174,6 +220,7 @@ class CommentThreadController extends ChangeNotifier {
     _checkAlive();
     final comment = thread.comment(id);
     if (_busy || comment == null || !mayDelete(comment)) return;
+    _collapsed = false;
     _deleting = comment;
     _error = null;
     notifyListeners();
@@ -244,7 +291,8 @@ class CommentThreadController extends ChangeNotifier {
     });
   }
 
-  /// Resolves or reopens without hiding or discarding the messages or drafts.
+  /// Resolves or reopens through the application. Resolution follows
+  /// [collapseResolved]; reopening expands. Messages and drafts are retained.
   Future<bool> toggleResolved() async {
     _checkAlive();
     if (_busy || !mayResolve) return false;
@@ -260,7 +308,7 @@ class CommentThreadController extends ChangeNotifier {
       throw ArgumentError('Expected the same thread with a higher revision');
     }
     _generation++;
-    _thread = value;
+    _applyThread(value);
     _busy = false;
     _error = null;
     if (_deleting != null && !_sameMessage(_deleting)) _deleting = null;
@@ -279,7 +327,7 @@ class CommentThreadController extends ChangeNotifier {
       if (result.id != thread.id || result.revision <= thread.revision) {
         throw StateError('Expected the same thread with a higher revision');
       }
-      _thread = result;
+      _applyThread(result);
       complete();
       _busy = false;
       notifyListeners();

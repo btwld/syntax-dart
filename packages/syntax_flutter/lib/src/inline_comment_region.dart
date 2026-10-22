@@ -13,8 +13,13 @@ class InlineCommentRegion extends StatelessWidget {
       // Let the input handle native shortcuts, but do not let unhandled keys
       // invoke the surrounding source viewer's review/copy commands.
       onKeyEvent: (_, _) => KeyEventResult.skipRemainingHandlers,
-      child: DefaultTextEditingShortcuts(
-        child: FocusTraversalGroup(child: child),
+      // Keep ordinary button activation and Tab traversal inside the boundary;
+      // their app-level shortcut handlers are above the isolated focus node.
+      child: Shortcuts(
+        shortcuts: WidgetsApp.defaultShortcuts,
+        child: DefaultTextEditingShortcuts(
+          child: FocusTraversalGroup(child: child),
+        ),
       ),
     ),
   );

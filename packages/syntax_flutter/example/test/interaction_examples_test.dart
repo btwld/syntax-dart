@@ -69,9 +69,16 @@ void main() {
         expect(session.thread.comments.length, 2);
         await tap(find.text('Mark resolved'));
         expect(session.thread.resolved, isTrue);
+        expect(find.text('Root comment'), findsNothing);
+        expect(find.text('Team review · 2 messages'), findsOneWidget);
+        await tap(find.text('Show discussion'));
         expect(find.text('Root comment'), findsOneWidget);
+        expect(session.thread.resolved, isTrue);
+        await tap(find.text('Hide discussion'));
+        expect(find.text('Root comment'), findsNothing);
         await tap(find.text('Reopen thread'));
         expect(session.thread.resolved, isFalse);
+        expect(find.text('Root comment'), findsOneWidget);
         await tap(
           find.descendant(
             of: find.byKey(ValueKey(rootId)),

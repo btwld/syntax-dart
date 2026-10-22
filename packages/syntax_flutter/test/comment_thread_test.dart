@@ -54,6 +54,75 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test(
+    'resolution transitions retain local expansion and draft state',
+    () async {
+      var saves = 0;
+      final controller = CommentThreadController(
+        thread: initialThread(),
+        onUpdate: (change) {
+          saves++;
+          return save(change);
+        },
+      );
+      controller.startReply();
+      controller.replyInput.text = 'Unsent reply';
+      controller.startEdit('root');
+      controller.editInput.text = 'Unsent edit';
+      controller.collapse();
+      expect(controller.isCollapsed, isFalse);
+      await controller.toggleResolved();
+      expect(controller.isCollapsed, isTrue);
+      expect(controller.isReplying, isTrue);
+      expect(controller.editInput.text, 'Unsent edit');
+      controller.expand();
+      expect(controller.isCollapsed, isFalse);
+      expect(controller.thread.resolved, isTrue);
+      controller.setThread(controller.thread.copyWith());
+      expect(controller.isCollapsed, isFalse);
+      controller.collapse();
+      controller.setThread(controller.thread.copyWith());
+      expect(controller.isCollapsed, isTrue);
+      expect(saves, 1);
+      await controller.toggleResolved();
+      expect(controller.isCollapsed, isFalse);
+      expect(controller.replyInput.text, 'Unsent reply');
+      controller.setThread(controller.thread.copyWith(resolved: true));
+      expect(controller.isCollapsed, isTrue);
+      controller.startEdit('root');
+      expect(controller.isCollapsed, isFalse);
+      expect(controller.editInput.text, 'Unsent edit');
+      controller.collapse();
+      controller.startReply();
+      expect(controller.isCollapsed, isFalse);
+      controller.dispose();
+
+      final readOnly = CommentThreadController(
+        thread: initialThread().copyWith(resolved: true),
+      );
+      expect(readOnly.isCollapsed, isTrue);
+      readOnly.expand();
+      expect(readOnly.isCollapsed, isFalse);
+      expect(readOnly.thread.revision, 1);
+      readOnly.collapse();
+      expect(readOnly.isCollapsed, isTrue);
+      readOnly.dispose();
+
+      final optOut = CommentThreadController(
+        thread: initialThread().copyWith(resolved: true),
+        collapseResolved: false,
+        onUpdate: save,
+      );
+      expect(optOut.isCollapsed, isFalse);
+      optOut.collapse();
+      expect(optOut.isCollapsed, isTrue);
+      await optOut.toggleResolved();
+      await optOut.toggleResolved();
+      expect(optOut.isCollapsed, isFalse);
+      optOut.dispose();
+    },
+  );
+
+  test(
     'commands preserve identity, confirmation and replies when deleting root',
     () async {
       final changes = <ReviewThreadChange>[];
@@ -323,10 +392,19 @@ void main() {
       await tester.tap(find.text('Resolve'));
       await tester.pumpAndSettle();
       expect(find.text('Resolved'), findsOneWidget);
+      expect(find.text('An edited reply'), findsNothing);
+      expect(controller.isCollapsed, isTrue);
+      await tester.tap(find.text('Expand discussion'));
+      await tester.pumpAndSettle();
       expect(find.text('An edited reply'), findsOneWidget);
+      expect(controller.thread.resolved, isTrue);
+      await tester.tap(find.text('Collapse discussion'));
+      await tester.pumpAndSettle();
+      expect(find.text('An edited reply'), findsNothing);
       await tester.tap(find.text('Reopen'));
       await tester.pumpAndSettle();
       expect(controller.thread.resolved, isFalse);
+      expect(find.text('An edited reply'), findsOneWidget);
       await tester.ensureVisible(find.byKey(const ValueKey('root')));
       await tester.tap(
         find.descendant(
@@ -363,6 +441,21 @@ void main() {
               ),
               headerBuilder: (_, details) =>
                   Text('Status: ${details.thread.resolved}'),
+              collapsedBuilder: (_, details, child) => Column(
+                children: [Text('Archived ${details.thread.id}'), child],
+              ),
+              collapsedActionsBuilder: (_, details) => Wrap(
+                children: [
+                  TextButton(
+                    onPressed: details.expand,
+                    child: const Text('Inspect'),
+                  ),
+                  TextButton(
+                    onPressed: details.toggleResolved,
+                    child: const Text('Resume review'),
+                  ),
+                ],
+              ),
               commentBuilder: (_, details, child) => Column(
                 children: [Text('Custom message ${details.comment.id}'), child],
               ),
@@ -422,9 +515,107 @@ void main() {
       expect(controller.thread.comments.last.body, 'Custom reply');
       await tester.tap(find.text('Toggle status'));
       await tester.pumpAndSettle();
+      expect(find.text('Archived thread'), findsOneWidget);
+      expect(find.text('Custom message root'), findsNothing);
+      expect(find.text('Expand discussion'), findsNothing);
+      await tester.tap(find.text('Inspect'));
+      await tester.pumpAndSettle();
       expect(find.text('Status: true'), findsOneWidget);
+      controller.collapse();
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Resume review'));
+      await tester.pumpAndSettle();
+      expect(find.text('Status: false'), findsOneWidget);
       await tester.pumpWidget(const SizedBox());
       controller.dispose();
+    },
+  );
+
+  testWidgets('resolution failures stay inline and never collapse early', (
+    tester,
+  ) async {
+    var pending = Completer<ReviewThread>();
+    final controller = CommentThreadController(
+      thread: initialThread(),
+      onUpdate: (_) => pending.future,
+    );
+    await tester.pumpWidget(app(SyntaxCommentThread(controller: controller)));
+    await tester.tap(find.text('Resolve'));
+    await tester.pump();
+    expect(find.text('Original note'), findsOneWidget);
+    pending.completeError(StateError('offline'));
+    await tester.pumpAndSettle();
+    expect(controller.isCollapsed, isFalse);
+    expect(find.textContaining('Could not update'), findsOneWidget);
+    pending = Completer<ReviewThread>();
+    await tester.tap(find.text('Resolve'));
+    await tester.pump();
+    pending.complete(controller.thread.copyWith(resolved: true));
+    await tester.pumpAndSettle();
+    expect(controller.isCollapsed, isTrue);
+    expect(find.text('Original note'), findsNothing);
+    pending = Completer<ReviewThread>();
+    await tester.tap(find.text('Reopen'));
+    await tester.pump();
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    expect(
+      tester
+          .widget<TextButton>(find.widgetWithText(TextButton, 'Reopen'))
+          .onPressed,
+      isNull,
+    );
+    pending.completeError(StateError('offline'));
+    await tester.pumpAndSettle();
+    expect(controller.isCollapsed, isTrue);
+    expect(find.textContaining('Could not update'), findsOneWidget);
+    expect(find.text('Reopen'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    controller.dispose();
+  });
+
+  testWidgets(
+    'read-only resolved summaries expand by keyboard and expose semantics',
+    (tester) async {
+      final semantics = tester.ensureSemantics();
+      final controller = CommentThreadController(
+        thread: initialThread().copyWith(resolved: true),
+      );
+      await tester.pumpWidget(app(SyntaxCommentThread(controller: controller)));
+      expect(find.text('Original note'), findsNothing);
+      expect(find.text('Reopen'), findsNothing);
+      final disclosure = find.ancestor(
+        of: find.text('Expand discussion'),
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is Semantics && widget.properties.expanded == false,
+        ),
+      );
+      expect(disclosure, findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(find.text('Original note'), findsOneWidget);
+      expect(controller.thread.resolved, isTrue);
+      expect(find.text('Collapse discussion'), findsOneWidget);
+      expect(
+        find.ancestor(
+          of: find.text('Collapse discussion'),
+          matching: find.byWidgetPredicate(
+            (widget) =>
+                widget is Semantics && widget.properties.expanded == true,
+          ),
+        ),
+        findsOneWidget,
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.space);
+      await tester.pumpAndSettle();
+      expect(find.text('Original note'), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+      controller.dispose();
+      semantics.dispose();
     },
   );
 
@@ -537,6 +728,26 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.widgetWithText(TextField, 'Retained reply'), findsOneWidget);
       expect(editor.document.text, startsWith('row 0\nrow 1'));
+      await controller.toggleResolved();
+      await tester.pumpAndSettle();
+      expect(find.byType(TextField), findsNothing);
+      expect(controller.replyInput.text, 'Retained reply');
+      expect(controller.replyFocus.hasFocus, isFalse);
+      scroll.jumpTo(20000);
+      await tester.pumpAndSettle();
+      scroll.jumpTo(0);
+      await tester.pumpAndSettle();
+      expect(find.text('Expand discussion'), findsOneWidget);
+      await tester.tap(find.text('Expand discussion'));
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(TextField, 'Retained reply'), findsOneWidget);
+      controller.replyFocus.unfocus();
+      scroll.jumpTo(20000);
+      await tester.pumpAndSettle();
+      scroll.jumpTo(0);
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(TextField, 'Retained reply'), findsOneWidget);
+      expect(controller.thread.resolved, isTrue);
       await tester.pumpWidget(const SizedBox());
       tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
         SystemChannels.platform,
@@ -634,6 +845,18 @@ void main() {
           'Long reply\nsecond line\nthird line',
         );
         await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        await controller.toggleResolved();
+        await tester.pumpAndSettle();
+        expect(find.text('Resolved'), findsOneWidget);
+        expect(find.byType(TextField), findsNothing);
+        expect(tester.takeException(), isNull);
+        await tester.tap(find.text('Expand discussion'));
+        await tester.pumpAndSettle();
+        expect(
+          find.widgetWithText(TextField, 'Long reply\nsecond line\nthird line'),
+          findsOneWidget,
+        );
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox());
         controller.dispose();

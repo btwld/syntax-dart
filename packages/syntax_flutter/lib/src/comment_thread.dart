@@ -22,6 +22,8 @@ class CommentThreadLabels {
     this.reopen = 'Reopen',
     this.resolved = 'Resolved',
     this.open = 'Open',
+    this.expand = 'Expand discussion',
+    this.collapse = 'Collapse discussion',
     this.edited = 'Edited',
     this.inputLabel = 'Comment',
     this.failure = 'Could not update this discussion. Try again.',
@@ -40,6 +42,9 @@ class CommentThreadLabels {
 
   /// Resolution commands and status labels.
   final String resolve, reopen, resolved, open;
+
+  /// Commands to inspect or hide a resolved thread without changing its status.
+  final String expand, collapse;
 
   /// Edited marker and default input label.
   final String edited, inputLabel;
@@ -61,6 +66,16 @@ class CommentThreadDetails {
 
   /// Whether an application request is pending.
   bool get isSubmitting => controller.isSubmitting;
+
+  /// Whether only the resolved summary is visible.
+  bool get isCollapsed => controller.isCollapsed;
+
+  /// Shows a collapsed discussion, including in read-only sessions.
+  VoidCallback? get expand => isCollapsed ? controller.expand : null;
+
+  /// Hides an expanded resolved discussion without changing its status.
+  VoidCallback? get collapse =>
+      thread.resolved && !isCollapsed ? controller.collapse : null;
 
   /// Opens a reply editor, or null when busy or not permitted.
   VoidCallback? get reply =>
@@ -150,6 +165,8 @@ class SyntaxCommentThread extends StatelessWidget {
     this.builder,
     this.headerBuilder,
     this.actionsBuilder,
+    this.collapsedBuilder,
+    this.collapsedActionsBuilder,
     this.commentBuilder,
     this.commentActionsBuilder,
     this.composerBuilder,
@@ -175,6 +192,16 @@ class SyntaxCommentThread extends StatelessWidget {
   /// Replaces thread-wide reply and resolve/reopen actions.
   final Widget Function(BuildContext, CommentThreadDetails)? actionsBuilder;
 
+  /// Replaces or wraps the compact resolved summary and its inline actions.
+  /// The surrounding card, error feedback and whole-thread [builder] still
+  /// apply. Details expose expansion state and guarded expand/reopen commands.
+  final Widget Function(BuildContext, CommentThreadDetails, Widget)?
+  collapsedBuilder;
+
+  /// Replaces the compact summary's expand and reopen actions.
+  final Widget Function(BuildContext, CommentThreadDetails)?
+  collapsedActionsBuilder;
+
   /// Replaces or wraps a full posted message, including its inline controls.
   final Widget Function(BuildContext, CommentMessageDetails, Widget)?
   commentBuilder;
@@ -199,6 +226,59 @@ class SyntaxCommentThread extends StatelessWidget {
 
   /// Optional body typography. Rich rendering belongs in [commentBuilder].
   final TextStyle? textStyle;
+
+  Widget _disclosure(CommentThreadDetails details) => Semantics(
+    expanded: !details.isCollapsed,
+    child: TextButton.icon(
+      onPressed: details.isCollapsed ? details.expand : details.collapse,
+      icon: Icon(
+        details.isCollapsed ? Icons.expand_more : Icons.expand_less,
+        size: 16,
+      ),
+      label: Text(details.isCollapsed ? labels.expand : labels.collapse),
+    ),
+  );
+
+  Widget _collapsed(BuildContext context, CommentThreadDetails details) {
+    final colors = Theme.of(context).colorScheme;
+    final summary = Wrap(
+      spacing: 8,
+      runSpacing: 4,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        Icon(Icons.check_circle_outline, size: 18, color: colors.primary),
+        Semantics(
+          liveRegion: true,
+          child: Text(
+            labels.resolved,
+            style: TextStyle(
+              color: colors.primary,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        if (details.isSubmitting)
+          const SizedBox.square(
+            dimension: 14,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        collapsedActionsBuilder?.call(context, details) ??
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                _disclosure(details),
+                if (controller.mayResolve)
+                  TextButton(
+                    onPressed: details.toggleResolved,
+                    child: Text(labels.reopen),
+                  ),
+              ],
+            ),
+      ],
+    );
+    return collapsedBuilder?.call(context, details, summary) ?? summary;
+  }
 
   Widget _composer(
     BuildContext context,
@@ -375,74 +455,81 @@ class SyntaxCommentThread extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  headerBuilder?.call(context, details) ??
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 4,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          Icon(
-                            thread.resolved
-                                ? Icons.check_circle_outline
-                                : Icons.forum_outlined,
-                            size: 16,
-                            color: colors.primary,
-                          ),
-                          Text(
-                            labels.title,
-                            style: Theme.of(context).textTheme.titleSmall,
-                          ),
-                          Semantics(
-                            liveRegion: true,
-                            child: Text(
-                              thread.resolved ? labels.resolved : labels.open,
-                              style: TextStyle(
-                                color: colors.primary,
-                                fontSize: 12,
-                              ),
+                  if (details.isCollapsed)
+                    _collapsed(context, details)
+                  else ...[
+                    headerBuilder?.call(context, details) ??
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 4,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            Icon(
+                              thread.resolved
+                                  ? Icons.check_circle_outline
+                                  : Icons.forum_outlined,
+                              size: 16,
+                              color: colors.primary,
                             ),
-                          ),
-                          if (details.isSubmitting)
-                            const SizedBox.square(
-                              dimension: 14,
-                              child: CircularProgressIndicator(strokeWidth: 2),
+                            Text(
+                              labels.title,
+                              style: Theme.of(context).textTheme.titleSmall,
                             ),
-                        ],
-                      ),
-                  const SizedBox(height: 8),
-                  for (var i = 0; i < thread.comments.length; i++) ...[
-                    if (i > 0) const Divider(height: 24),
-                    _message(context, details, thread.comments[i]),
-                  ],
-                  const SizedBox(height: 8),
-                  actionsBuilder?.call(context, details) ??
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 4,
-                        children: [
-                          if (controller.mayReply && !controller.isReplying)
-                            TextButton.icon(
-                              onPressed: details.reply,
-                              icon: const Icon(Icons.reply, size: 16),
-                              label: Text(labels.reply),
-                            ),
-                          if (controller.mayResolve)
-                            TextButton(
-                              onPressed: details.toggleResolved,
+                            Semantics(
+                              liveRegion: true,
                               child: Text(
-                                thread.resolved
-                                    ? labels.reopen
-                                    : labels.resolve,
+                                thread.resolved ? labels.resolved : labels.open,
+                                style: TextStyle(
+                                  color: colors.primary,
+                                  fontSize: 12,
+                                ),
                               ),
                             ),
-                        ],
-                      ),
-                  if (controller.editingId != null &&
-                      thread.comment(controller.editingId!) == null)
-                    _composer(context, details, edit: true),
-                  if (controller.isReplying) ...[
-                    const Divider(height: 24),
-                    _composer(context, details),
+                            if (details.isSubmitting)
+                              const SizedBox.square(
+                                dimension: 14,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              ),
+                          ],
+                        ),
+                    const SizedBox(height: 8),
+                    for (var i = 0; i < thread.comments.length; i++) ...[
+                      if (i > 0) const Divider(height: 24),
+                      _message(context, details, thread.comments[i]),
+                    ],
+                    const SizedBox(height: 8),
+                    actionsBuilder?.call(context, details) ??
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 4,
+                          children: [
+                            if (thread.resolved) _disclosure(details),
+                            if (controller.mayReply && !controller.isReplying)
+                              TextButton.icon(
+                                onPressed: details.reply,
+                                icon: const Icon(Icons.reply, size: 16),
+                                label: Text(labels.reply),
+                              ),
+                            if (controller.mayResolve)
+                              TextButton(
+                                onPressed: details.toggleResolved,
+                                child: Text(
+                                  thread.resolved
+                                      ? labels.reopen
+                                      : labels.resolve,
+                                ),
+                              ),
+                          ],
+                        ),
+                    if (controller.editingId != null &&
+                        thread.comment(controller.editingId!) == null)
+                      _composer(context, details, edit: true),
+                    if (controller.isReplying) ...[
+                      const Divider(height: 24),
+                      _composer(context, details),
+                    ],
                   ],
                   if (controller.error case final error?)
                     Padding(
