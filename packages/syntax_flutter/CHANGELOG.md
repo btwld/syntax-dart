@@ -17,4 +17,9 @@
 - `PatchView` highlights large files between frames, so a big diff
   doesn't block them. Lines show plain until their colors are ready.
 - `HighlightedCode` re-tokenizes only the lines that change.
+- `HighlightedCode` lays out a large file in blocks of lines, and only the
+  blocks on screen when its height is bounded, so a 7,500-line file shows
+  without freezing. It tokenizes between frames, and code taller than its
+  box now scrolls. Line numbers keep the height of their lines, and
+  copying keeps line breaks and the lines scrolled out of view.
 - `HighlighterScope` for sharing one `Highlighter`.

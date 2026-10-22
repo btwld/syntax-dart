@@ -189,14 +189,12 @@ class _SyntaxDemoState extends State<SyntaxDemo> {
   }
 
   Widget _rightPane(SyntaxTheme theme, TextStyle code) => switch (_view) {
-    _View.preview => SingleChildScrollView(
-      child: HighlightedCode(
-        _previewText,
-        language: _language,
-        theme: theme,
-        textStyle: code,
-        lineNumbers: true,
-      ),
+    _View.preview => HighlightedCode(
+      _previewText,
+      language: _language,
+      theme: theme,
+      textStyle: code,
+      lineNumbers: true,
     ),
     // Your edits against the original sample.
     _View.diff => PatchView.fromTexts(

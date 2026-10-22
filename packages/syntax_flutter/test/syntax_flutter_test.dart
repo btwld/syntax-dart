@@ -6,6 +6,8 @@ import 'package:syntax/themes/github_dark.dart';
 import 'package:syntax/themes/github_light.dart';
 import 'package:syntax_flutter/syntax_flutter.dart';
 
+import 'code_helpers.dart';
+
 final highlighter = Highlighter(languages: [dartLanguage, jsonLanguage]);
 
 /// Flattens a span tree into (text, color) runs, resolving inherited color.
@@ -39,8 +41,7 @@ void main() {
           ),
         ),
       );
-      final text = tester.widget<Text>(find.byType(Text).last);
-      final span = text.textSpan!;
+      final span = shownLines(tester).values.single;
       expect(runs(span).map((r) => r.$1).join(), 'final answer = 42;');
       // Keywords and numbers get different colors in GitHub Dark.
       expect(colorOf(span, 'final'), isNot(colorOf(span, '42')));
@@ -75,23 +76,21 @@ void main() {
           highlighter: highlighter,
         ),
       );
-      InlineSpan shown() =>
-          tester.widget<Text>(find.byType(Text).last).textSpan!;
       await tester.pumpWidget(build('var x = 1;\n// note\nvar y = 2;'));
       // Opening a string on the first line changes how the rest reads.
       const code = 'var x = "1;\n// note\nvar y = 2;';
       await tester.pumpWidget(build(code));
-      expect(runs(shown()).map((r) => r.$1).join(), code);
+      final shown = shownLines(tester).values;
+      expect(shown.map((s) => s.toPlainText()).join('\n'), code);
       final fresh = highlighter.highlight(
         code,
         language: 'dart',
         theme: githubDarkTheme,
       );
       expect(
-        runs(shown()).where((r) => r.$1 != '\n').map((r) => r.$1).toList(),
+        [for (final line in shown) runs(line).map((r) => r.$1).toList()],
         [
-          for (final line in fresh)
-            for (final token in line) token.text,
+          for (final line in fresh) [for (final token in line) token.text],
         ],
       );
     });
@@ -106,15 +105,9 @@ void main() {
         ),
       );
       await tester.pumpWidget(build(githubDarkTheme));
-      final dark = colorOf(
-        tester.widget<Text>(find.byType(Text).last).textSpan!,
-        'var',
-      );
+      final dark = colorOf(shownLines(tester).values.single, 'var');
       await tester.pumpWidget(build(githubLightTheme));
-      final light = colorOf(
-        tester.widget<Text>(find.byType(Text).last).textSpan!,
-        'var',
-      );
+      final light = colorOf(shownLines(tester).values.single, 'var');
       expect(dark, isNot(light));
     });
 
