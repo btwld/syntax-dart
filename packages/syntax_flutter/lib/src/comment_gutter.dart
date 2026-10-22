@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:syntax/syntax.dart';
+import 'comment_gutter_preview.dart';
 
 /// Icons, colors and sizing for existing-discussion gutter indicators.
 @immutable
@@ -121,6 +122,12 @@ class SyntaxCommentGutterTheme extends InheritedWidget {
     this.labelBuilder,
     this.builder,
     this.onActivate,
+    this.previewEnabled = true,
+    this.previewStyle = const CommentGutterPreviewStyle(),
+    this.previewDelay = const Duration(milliseconds: 350),
+    this.previewHideDelay = const Duration(milliseconds: 200),
+    this.previewBuilder,
+    this.previewActionsBuilder,
   });
 
   /// Hides the marker column without changing discussions or navigation.
@@ -141,6 +148,33 @@ class SyntaxCommentGutterTheme extends InheritedWidget {
   /// Call details.open when ready. The default cycles through colocated threads.
   final FutureOr<void> Function(CommentGutterDetails)? onActivate;
 
+  /// Shows an interactive preview on hover, or F2 while the marker has focus.
+  /// Disabling previews preserves the marker's normal tooltip and click action.
+  final bool previewEnabled;
+
+  /// Bounds and surface colors for the preview, including custom content.
+  final CommentGutterPreviewStyle previewStyle;
+
+  /// Delays showing on hover and hiding after leaving the marker and preview.
+  /// The hide delay lets the pointer cross the gap between the two surfaces.
+  final Duration previewDelay, previewHideDelay;
+
+  /// Wraps or replaces the preview body. Return null to suppress this preview.
+  /// The default child shows message excerpts, reply counts and thread actions.
+  /// The surrounding bounded surface, hover handling and dismissal are retained.
+  final Widget? Function(BuildContext, CommentGutterPreviewDetails, Widget)?
+  previewBuilder;
+
+  /// Replaces each thread's actions in the default preview. Return null to hide
+  /// them. Use details.open(thread) or details.close() in application actions.
+  final Widget? Function(
+    BuildContext,
+    CommentGutterPreviewDetails,
+    CommentThreadLocation,
+    Widget,
+  )?
+  previewActionsBuilder;
+
   /// Configuration for descendant source views, or null for defaults.
   static SyntaxCommentGutterTheme? maybeOf(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<SyntaxCommentGutterTheme>();
@@ -150,7 +184,13 @@ class SyntaxCommentGutterTheme extends InheritedWidget {
       style != old.style ||
       builder != old.builder ||
       labelBuilder != old.labelBuilder ||
-      onActivate != old.onActivate;
+      onActivate != old.onActivate ||
+      previewEnabled != old.previewEnabled ||
+      previewStyle != old.previewStyle ||
+      previewDelay != old.previewDelay ||
+      previewHideDelay != old.previewHideDelay ||
+      previewBuilder != old.previewBuilder ||
+      previewActionsBuilder != old.previewActionsBuilder;
 }
 
 // Internal paint-positioned adapter keeps pointer input outside line dragging.
@@ -221,8 +261,7 @@ class CommentGutterOverlay extends StatelessWidget {
           (details.count == 1
               ? 'Open discussion'
               : 'Open next discussion (${details.count} threads)');
-      final button = IconButton(
-        tooltip: label,
+      final iconButton = IconButton(
         isSelected: details.isActive,
         onPressed: () {
           final action = config?.onActivate;
@@ -268,9 +307,25 @@ class CommentGutterOverlay extends StatelessWidget {
           ),
         ),
       );
-      return config?.builder != null
+      // Keep one named button even when its ordinary tooltip is suppressed by
+      // the interactive preview. TooltipVisibility differs across Flutter SDKs.
+      final button = Tooltip(
+        message: label,
+        excludeFromSemantics: true,
+        child: MergeSemantics(
+          child: Semantics(label: label, child: iconButton),
+        ),
+      );
+      final marker = config?.builder != null
           ? config!.builder!(context, details, button)
           : button;
+      return marker == null
+          ? null
+          : CommentGutterPreviewAnchor(
+              details: details,
+              config: config,
+              child: marker,
+            );
     }
 
     Widget positioned(Widget marker, bool right) => Positioned.fill(

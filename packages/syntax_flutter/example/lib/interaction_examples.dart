@@ -145,6 +145,7 @@ class _InteractionExamplesState extends State<_InteractionExample> {
   bool customComposer = false, customThreads = false, customShortcuts = false;
   bool customHighlight = false, customSourceHighlight = false;
   bool customGutter = false;
+  bool customPreview = false;
   final threads = ExampleCommentThreads();
   late final diffComments = CommentNavigationController.patch(review);
   late final fileComments = CommentNavigationController.file(
@@ -169,7 +170,7 @@ class _InteractionExamplesState extends State<_InteractionExample> {
   String? status;
   String get help => switch (widget.kind) {
     0 =>
-      'Drag line numbers, then click the comment icon or press Ctrl/Cmd+Shift+M. Shift-click extends a range.',
+      'Drag line numbers to comment. Hover a discussion marker for a preview, or focus it and press F2. Escape closes the preview.',
     1 => 'Click a section name to fold it. Reset restores accepted changes.',
     2 => 'Appearance settings affect this sample only.',
     3 => 'Select a line or activate a token to inspect its details.',
@@ -597,6 +598,10 @@ class _InteractionExamplesState extends State<_InteractionExample> {
             customGutter ? 'Default gutter' : 'Custom gutter',
             () => setState(() => customGutter = !customGutter),
           ),
+          button(
+            customPreview ? 'Default preview' : 'Custom preview',
+            () => setState(() => customPreview = !customPreview),
+          ),
           const ExampleCommentShortcutHelp(),
           Text(selectionLabel, style: const TextStyle(fontSize: 12)),
         ],
@@ -931,6 +936,60 @@ class _InteractionExamplesState extends State<_InteractionExample> {
               )
             : const CommentSourceHighlightStyle(),
         child: SyntaxCommentGutterTheme(
+          previewStyle: customPreview
+              ? const CommentGutterPreviewStyle(
+                  width: 390,
+                  maxHeight: 400,
+                  borderColor: Color(0xffdf9438),
+                  borderRadius: BorderRadius.all(Radius.circular(18)),
+                )
+              : const CommentGutterPreviewStyle(),
+          previewBuilder: customPreview
+              ? (context, details, child) => Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Padding(
+                      padding: EdgeInsets.fromLTRB(14, 12, 14, 0),
+                      child: Text(
+                        'REVIEW NOTEBOOK',
+                        style: TextStyle(
+                          color: Color(0xffdf9438),
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.5,
+                        ),
+                      ),
+                    ),
+                    Flexible(child: child),
+                  ],
+                )
+              : null,
+          previewActionsBuilder: customPreview
+              ? (context, details, location, defaultActions) => Wrap(
+                  alignment: WrapAlignment.end,
+                  spacing: 8,
+                  children: [
+                    TextButton.icon(
+                      icon: const Icon(Icons.near_me_outlined, size: 16),
+                      label: const Text('Continue review'),
+                      onPressed: () async {
+                        final opened = await details.open(location);
+                        if (mounted && opened) {
+                          setState(
+                            () =>
+                                status = 'Discussion opened from the preview.',
+                          );
+                        }
+                      },
+                    ),
+                    TextButton(
+                      onPressed: details.close,
+                      child: const Text('Dismiss'),
+                    ),
+                  ],
+                )
+              : null,
           style: customGutter
               ? const CommentGutterStyle(
                   icon: Icons.forum,

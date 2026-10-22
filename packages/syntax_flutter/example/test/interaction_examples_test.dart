@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:syntax/themes/github_dark.dart';
@@ -28,6 +29,53 @@ Future<void> launch(
 
 void main() {
   for (final fileMode in [false, true]) {
+    testWidgets(
+      '${fileMode ? 'file' : 'diff'} previews demonstrate custom content and actions',
+      (tester) async {
+        await launch(tester, 0, size: const Size(1200, 1100));
+        Future<void> tap(Finder finder) async {
+          await tester.ensureVisible(finder);
+          await tester.tap(finder);
+          await tester.pumpAndSettle();
+        }
+
+        if (fileMode) await tap(find.text('Show file'));
+        await tap(find.text('Load sample threads'));
+        await tap(find.byTooltip('Next discussion (Alt/Option+↓)'));
+        await tap(find.byTooltip('Next discussion (Alt/Option+↓)'));
+        final session = tester
+            .widgetList<SyntaxCommentThread>(find.byType(SyntaxCommentThread))
+            .firstWhere((w) => w.controller.thread.resolved)
+            .controller;
+        await tap(find.text('Custom preview'));
+        final marker = find.byTooltip('Open discussion').last;
+        await tester.ensureVisible(marker);
+        await tester.pumpAndSettle();
+        final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+        await mouse.addPointer(location: Offset.zero);
+        await mouse.moveTo(tester.getCenter(marker));
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.pumpAndSettle();
+        expect(find.text('REVIEW NOTEBOOK'), findsOneWidget);
+        expect(
+          find.text('Rate limits are covered. This discussion is resolved.'),
+          findsOneWidget,
+        );
+        expect(session.isCollapsed, isTrue);
+        await mouse.moveTo(tester.getCenter(find.text('Continue review')));
+        await tester.pump(const Duration(milliseconds: 400));
+        await tap(find.text('Continue review'));
+        expect(find.text('REVIEW NOTEBOOK'), findsNothing);
+        expect(
+          find.text('Discussion opened from the preview.'),
+          findsOneWidget,
+        );
+        expect(session.isCollapsed, isFalse);
+        expect(session.thread.resolved, isTrue);
+        await mouse.removePointer();
+        expect(tester.takeException(), isNull);
+      },
+    );
     testWidgets(
       '${fileMode ? 'file' : 'diff'} gutter markers open resolved samples and demonstrate custom actions',
       (tester) async {

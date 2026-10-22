@@ -464,6 +464,55 @@ The **Line selection → Load sample threads → Custom gutter** controls demons
 custom icons, colors, tooltips, and actions in file and diff views. The main
 **Diff review** uses the defaults.
 
+### Gutter discussion previews
+
+Hover an existing-discussion marker to see author names, the opening message,
+the latest reply, reply counts, and resolution status. Move into the preview to
+scroll or choose **Open thread** for a specific discussion. Previewing does not
+select, expand, or modify a thread. Opening one expands and focuses it through
+the same guarded navigation command as gutter clicks. F2 opens and focuses the
+preview from a focused marker; Escape closes it and restores keyboard focus.
+
+`SyntaxCommentGutterTheme` also configures previews:
+
+```dart
+SyntaxCommentGutterTheme(
+  previewStyle: const CommentGutterPreviewStyle(
+    width: 390,
+    maxHeight: 400,
+    borderColor: Color(0xffdf9438),
+  ),
+  previewBuilder: (context, details, defaultPreview) => defaultPreview,
+  previewActionsBuilder: (context, details, thread, defaultActions) =>
+      TextButton(
+        onPressed: () => details.open(thread),
+        child: const Text('Continue review'),
+      ),
+  child: reviewArea,
+)
+```
+
+`previewBuilder` can wrap or replace all content; returning null suppresses that
+preview. `previewActionsBuilder` replaces each thread's actions in the default
+content; returning null hides those actions. Both receive
+`CommentGutterPreviewDetails` with the current gutter snapshot and `open`/`close`
+commands. Custom actions may use application-owned thread sessions and persistence.
+Preview actions are independent of the marker's `onActivate` callback. Custom
+content retains the bounded surface, hover handling, outside-click dismissal,
+and Escape shortcut, and owns its labels and accessibility.
+
+The style also supports foreground/background colors, shape, and elevation.
+`previewDelay` and `previewHideDelay` control hover timing; `previewEnabled: false`
+restores ordinary tooltips. Previews adapt to available viewport space, update
+when comments change, and dismiss on ancestor scrolling, source changes,
+filtering away their threads, resizing, or row disposal. Only one preview opens
+per overlay, and no preview content is built until requested.
+
+**Line selection → Load sample threads → Custom preview** demonstrates a custom
+application header, custom shape, and **Continue review** / **Dismiss** actions in
+file and diff modes. Hover the discussion markers to try it. **Diff review**
+shows the default preview.
+
 ### Active discussion highlights
 
 File, collection and patch views highlight the current `commentNavigation`

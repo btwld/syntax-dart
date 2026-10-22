@@ -113,3 +113,10 @@ multiple discussions at the same line, and repeated clicks cycle through them.
 Filters also hide the corresponding markers. **Custom gutter** demonstrates
 different icons, colors, labels, and an application-owned open action. Markers
 work in file, unified, and split mode without changing the current selection.
+
+Hover a discussion marker to preview its messages, replies, and resolved status.
+The preview stays open while moving into it; **Open thread** expands and focuses
+the chosen discussion. F2 opens a preview from a focused marker, and Escape
+closes it. **Custom preview** adds a review notebook header, changes the surface,
+and replaces the actions with **Continue review** and **Dismiss**. Both file and
+diff modes demonstrate it; the main Diff review uses the default preview.
