@@ -35,6 +35,11 @@ Future<void> pump(WidgetTester tester, Widget view) => tester.pumpWidget(
   ),
 );
 
+/// Whether [span] has a run of exactly [text].
+bool hasRun(InlineSpan span, String text) =>
+    span is TextSpan &&
+    (span.text == text || (span.children ?? []).any((c) => hasRun(c, text)));
+
 /// The plain text of every Text.rich in the view, in order.
 List<String> texts(WidgetTester tester) => [
   for (final t in tester.widgetList<Text>(find.byType(Text)))
@@ -504,6 +509,33 @@ new mode 100755
     );
     expect(find.text('x.dart'), findsOneWidget);
     expect(find.text('b'), findsOneWidget);
+  });
+
+  testWidgets('a long file colors its rows between frames', (tester) async {
+    final before = [for (var i = 0; i < 4000; i++) 'final v$i = $i;'];
+    final after = [...before]..[3000] = 'final v3000 = 300000;';
+    await pump(
+      tester,
+      PatchView.fromTexts(
+        oldText: before.join('\n'),
+        newText: after.join('\n'),
+        path: 'a.dart',
+        theme: githubDarkTheme,
+      ),
+    );
+    InlineSpan added() => tester
+        .widgetList<Text>(find.byType(Text))
+        .map((t) => t.textSpan)
+        .whereType<TextSpan>()
+        .firstWhere((s) => s.toPlainText().contains('= 300000'));
+    // Line 3001 isn't tokenized yet, but its changed word is marked.
+    expect(hasRun(added(), 'final'), isFalse);
+    expect(hasRun(added(), '300000'), isTrue);
+
+    for (var i = 0; i < 1000 && !hasRun(added(), 'final'); i++) {
+      await tester.pump();
+    }
+    expect(hasRun(added(), 'final'), isTrue);
   });
 }
 

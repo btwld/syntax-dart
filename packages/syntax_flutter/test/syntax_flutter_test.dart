@@ -66,6 +66,36 @@ void main() {
       expect(find.text('1\n2\n3'), findsOneWidget);
     });
 
+    testWidgets('re-highlights when the code changes', (tester) async {
+      Widget build(String code) => MaterialApp(
+        home: HighlightedCode(
+          code,
+          language: 'dart',
+          theme: githubDarkTheme,
+          highlighter: highlighter,
+        ),
+      );
+      InlineSpan shown() =>
+          tester.widget<Text>(find.byType(Text).last).textSpan!;
+      await tester.pumpWidget(build('var x = 1;\n// note\nvar y = 2;'));
+      // Opening a string on the first line changes how the rest reads.
+      const code = 'var x = "1;\n// note\nvar y = 2;';
+      await tester.pumpWidget(build(code));
+      expect(runs(shown()).map((r) => r.$1).join(), code);
+      final fresh = highlighter.highlight(
+        code,
+        language: 'dart',
+        theme: githubDarkTheme,
+      );
+      expect(
+        runs(shown()).where((r) => r.$1 != '\n').map((r) => r.$1).toList(),
+        [
+          for (final line in fresh)
+            for (final token in line) token.text,
+        ],
+      );
+    });
+
     testWidgets('re-highlights when the theme changes', (tester) async {
       Widget build(SyntaxTheme theme) => MaterialApp(
         home: HighlightedCode(

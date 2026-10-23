@@ -47,6 +47,54 @@ void main() {
       }
     });
 
+    test('a budget tokenizes from the top, at least a line at a time', () {
+      final document = TokenizedDocument(highlighter.grammar('dart'));
+      final text = List.filled(50, 'final x = 1;').join('\n');
+      expect(document.update(text, budget: Duration.zero), isFalse);
+      expect(document.lines, hasLength(1));
+      expect(document.isComplete, isFalse);
+      expect(document.tokenize(budget: Duration.zero), isFalse);
+      expect(document.lines, hasLength(2));
+      // The same text continues where it stopped.
+      expect(document.update(text, budget: Duration.zero), isFalse);
+      expect(document.lines, hasLength(3));
+      expect(document.tokenize(), isTrue);
+      expect(document.lines, hasLength(50));
+      expect(document.isComplete, isTrue);
+    });
+
+    test('budgeted updates are right at every step, even when interrupted '
+        'by the next edit', () {
+      final document = TokenizedDocument(highlighter.grammar('dart'));
+      var text = 'class A {\n  // hi\n  final s = "x";\n}\n' * 10;
+      final random = Random(11);
+      const inserts = ['/*', '*/', '"', "'''", '\n', 'var y = 1;', '}', '{'];
+      for (var step = 0; step < 200; step++) {
+        final at = random.nextInt(text.length + 1);
+        text = random.nextBool() && text.isNotEmpty
+            ? text.replaceRange(at, min(text.length, at + 3), '')
+            : text.replaceRange(at, at, inserts[random.nextInt(8)]);
+        final expected = highlighter.tokenize(text, language: 'dart');
+        var done = document.update(text, budget: Duration.zero);
+        // Lines tokenized so far are already right.
+        expect(
+          describe(tokensOf(document)),
+          describe(expected.take(document.lines.length).toList()),
+          reason: 'after step $step:\n$text',
+        );
+        // Otherwise the next edit arrives first.
+        if (random.nextInt(3) == 0) continue;
+        while (!done) {
+          done = document.tokenize(budget: Duration.zero);
+        }
+        expect(
+          describe(tokensOf(document)),
+          describe(expected),
+          reason: 'after step $step:\n$text',
+        );
+      }
+    });
+
     test('unchanged lines keep their objects', () {
       final document = TokenizedDocument(highlighter.grammar('dart'))
         ..update('var a = 1;\nvar b = 2;\nvar c = 3;');

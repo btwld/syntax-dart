@@ -59,6 +59,19 @@ void main() {
         );
       });
 
+      test('tokenizing a line at a time gives the same colors', () {
+        final theme = bundledThemes['github-dark']!;
+        final document = TokenizedDocument(highlighter.grammar(lang));
+        var done = document.update(code, budget: Duration.zero);
+        while (!done) {
+          done = document.tokenize(budget: Duration.zero);
+        }
+        expect(
+          document.ranges(theme),
+          highlighter.highlightRanges(code, language: lang, theme: theme),
+        );
+      });
+
       final themes = golden['themes'] as Map<String, Object?>;
       for (final MapEntry(key: themeName, value: expectedRuns)
           in themes.entries) {

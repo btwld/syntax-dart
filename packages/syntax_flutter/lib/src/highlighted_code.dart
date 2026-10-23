@@ -7,7 +7,8 @@ import 'styles.dart';
 /// Read-only, syntax-highlighted code.
 ///
 /// Highlights [code] again only when it, the [language]'s grammar, [theme]
-/// or [textStyle] change, and paints the theme's background. Long lines
+/// or [textStyle] change, and paints the theme's background. When [code]
+/// changes, only the lines that changed are tokenized again. Long lines
 /// scroll horizontally unless [softWrap] is set. A [language] the
 /// highlighter doesn't know shows the code unhighlighted. Code reads left
 /// to right even in a right-to-left app.
@@ -75,6 +76,7 @@ class _HighlightedCodeState extends State<HighlightedCode> {
   TextSpan? _span;
   String _lineNumbers = '';
   Object? _key;
+  TokenizedDocument? _document;
 
   TextSpan _spanFor(Highlighter highlighter) {
     // The grammar, not the highlighter, decides the tokens: registering a
@@ -87,13 +89,15 @@ class _HighlightedCodeState extends State<HighlightedCode> {
     final styles = TokenTextStyles(widget.theme, base: widget.textStyle);
     final lineCount = '\n'.allMatches(widget.code).length + 1;
     _lineNumbers = [for (var i = 1; i <= lineCount; i++) '$i'].join('\n');
-    if (!known) return _span = TextSpan(text: widget.code, style: styles.base);
-    final lines = highlighter.highlight(
-      widget.code,
-      language: widget.language,
-      theme: widget.theme,
-    );
-    return _span = highlightedTextSpan(lines, styles);
+    if (grammar == null) {
+      return _span = TextSpan(text: widget.code, style: styles.base);
+    }
+    final document = (_document ??= TokenizedDocument(grammar))
+      ..grammar = grammar
+      ..update(widget.code);
+    return _span = highlightedTextSpan([
+      for (final line in document.lines) line.themed(widget.theme),
+    ], styles);
   }
 
   @override

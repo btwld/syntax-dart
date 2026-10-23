@@ -46,6 +46,11 @@ final class StyledRange {
 /// read, such as opening a block comment, re-tokenizes up to the end of the
 /// affected region.
 ///
+/// With a time budget, [update] stops when the budget is spent and
+/// [tokenize] continues later, so a large text can be tokenized a slice at
+/// a time without blocking a UI thread. [lines] grows from the top as it
+/// goes.
+///
 /// Unchanged lines keep their [DocumentLine] objects across updates, so a
 /// renderer can cache its own output per line.
 ///
@@ -62,6 +67,9 @@ final class TokenizedDocument {
   String? _text;
   List<DocumentLine> _lines = const [];
 
+  /// Work left by an [update] that ran out of budget.
+  _Pending? _pending;
+
   /// The grammar lines are tokenized with. Setting a different grammar
   /// drops every cached line, since states from another grammar can't be
   /// reused.
@@ -71,16 +79,64 @@ final class TokenizedDocument {
     _grammar = value;
     _text = null;
     _lines = const [];
+    _pending = null;
   }
 
-  /// The lines of the text last passed to [update], split on `\n`.
+  /// The tokenized lines of the text last passed to [update], split on
+  /// `\n`: all of them once [isComplete], otherwise the first ones.
   List<DocumentLine> get lines => UnmodifiableListView(_lines);
 
-  /// Brings [lines] up to date with [text].
-  void update(String text) {
-    if (identical(text, _text)) return;
+  /// Whether every line of the text last passed to [update] is tokenized.
+  bool get isComplete => _pending == null;
 
+  /// Brings [lines] up to date with [text], and returns [isComplete].
+  ///
+  /// With a [budget], it stops once that much time is spent, after at
+  /// least one line, and [tokenize] continues from there.
+  bool update(String text, {Duration? budget}) {
+    if (!identical(text, _text)) _start(text);
+    return tokenize(budget: budget);
+  }
+
+  /// Continues an [update] that ran out of budget, for at most [budget],
+  /// and returns [isComplete].
+  bool tokenize({Duration? budget}) {
+    final pending = _pending;
+    if (pending == null) return true;
+    final clock = budget == null ? null : (Stopwatch()..start());
+    final lines = pending.newLines;
+    final old = pending.old;
+    final shift = old.length - lines.length;
+    var tokenized = 0;
+    while (pending.next < lines.length) {
+      if (clock != null && tokenized > 0 && clock.elapsed >= budget!) {
+        return false;
+      }
+      final i = pending.next;
+      final oldIndex = i + shift;
+      if (i >= pending.suffixStart &&
+          old[oldIndex].startState == pending.state) {
+        _lines.addAll(old.skip(oldIndex));
+        break;
+      }
+      final line = DocumentLine._tokenize(_grammar, lines[i], pending.state);
+      _lines.add(line);
+      // Kept current, so a line that throws is retried, not skipped.
+      pending
+        ..state = line.endState
+        ..next = i + 1;
+      tokenized++;
+    }
+    _pending = null;
+    return true;
+  }
+
+  /// Keeps the unchanged lines before the edit, and leaves the rest to
+  /// [tokenize].
+  void _start(String text) {
     final newLines = text.split('\n');
+    // The lines tokenized so far, which are all of the previous text's
+    // unless an update was left unfinished.
     final old = _lines;
 
     // Lines before the edit are unchanged, along with their state.
@@ -100,21 +156,14 @@ final class TokenizedDocument {
       suffix++;
     }
 
-    final result = <DocumentLine>[...old.take(prefix)];
-    var state = prefix == 0 ? null : old[prefix - 1].endState;
-    final shift = old.length - newLines.length;
-    for (var i = prefix; i < newLines.length; i++) {
-      final oldIndex = i + shift;
-      if (i >= newLines.length - suffix && old[oldIndex].startState == state) {
-        result.addAll(old.skip(oldIndex));
-        break;
-      }
-      final line = DocumentLine._tokenize(_grammar, newLines[i], state);
-      result.add(line);
-      state = line.endState;
-    }
-    _lines = result;
-    // Set last, so a failed update is retried by the next call.
+    _lines = [...old.take(prefix)];
+    _pending = _Pending(
+      newLines,
+      old,
+      suffixStart: newLines.length - suffix,
+      state: prefix == 0 ? null : old[prefix - 1].endState,
+      next: prefix,
+    );
     _text = text;
   }
 
@@ -182,4 +231,28 @@ final class DocumentLine {
     _themedWith = theme;
     return _themed = themeTokens(text, tokens, theme);
   }
+}
+
+final class _Pending {
+  _Pending(
+    this.newLines,
+    this.old, {
+    required this.suffixStart,
+    required this.state,
+    required this.next,
+  });
+
+  final List<String> newLines;
+
+  /// The lines tokenized before this update, reused where they match.
+  final List<DocumentLine> old;
+
+  /// The first new line in the unchanged suffix.
+  final int suffixStart;
+
+  /// The state before line [next].
+  StateStack? state;
+
+  /// The next line to tokenize.
+  int next;
 }
