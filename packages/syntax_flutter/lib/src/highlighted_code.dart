@@ -2,11 +2,11 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ViewportOffset;
+import 'package:flutter/scheduler.dart';
 import 'package:syntax/syntax.dart';
 
 import 'code_rows.dart';
 import 'highlighter_scope.dart';
-import 'slices.dart';
 import 'styles.dart';
 
 /// Read-only, syntax-highlighted code.
@@ -95,6 +95,10 @@ class HighlightedCode extends StatefulWidget {
 /// [LayoutBuilder], so it keeps intrinsic sizes.
 const _buildAllUpTo = 200;
 
+/// How long a frame spends tokenizing: while it builds, and again after
+/// it, until the code is done.
+const _sliceBudget = Duration(milliseconds: 6);
+
 class _HighlightedCodeState extends State<HighlightedCode> {
   /// [HighlightedCode.code] split into lines, without `\r`.
   String? _code;
@@ -125,6 +129,33 @@ class _HighlightedCodeState extends State<HighlightedCode> {
   final _horizontal = ScrollController();
   final _selection = CodeSelectionDelegate();
 
+  /// Blocks left as they were when their colors arrived, because part of
+  /// the selection was in them: a paragraph whose spans change shape loses
+  /// its selection. They take their colors once the selection leaves.
+  final _held = <int>{};
+
+  @override
+  void initState() {
+    super.initState();
+    _selection.onSelectedBlocksChanged = _releaseHeld;
+  }
+
+  void _releaseHeld() {
+    final released = [
+      for (final block in _held)
+        if (!_selection.isSelected(block)) block,
+    ];
+    if (released.isEmpty) return;
+    _held.removeAll(released);
+    // Selection changes arrive during event handling and layout, so the
+    // rebuild waits for the frame to end.
+    SchedulerBinding.instance
+      ..addPostFrameCallback((_) {
+        if (mounted) setState(() {});
+      })
+      ..ensureVisualUpdate();
+  }
+
   @override
   void dispose() {
     _horizontal.dispose();
@@ -135,11 +166,13 @@ class _HighlightedCodeState extends State<HighlightedCode> {
   void _syncCode() {
     if (widget.code == _code) return;
     _code = widget.code;
+    final lines = widget.code.split('\n');
     _lines = [
-      for (final line in widget.code.split('\n'))
+      for (final line in lines)
         line.endsWith('\r') ? line.substring(0, line.length - 1) : line,
     ];
-    _selection.lines = _lines;
+    // Copies take the code's own line breaks.
+    _selection.lines = lines;
   }
 
   void _syncDocument(Highlighter highlighter) {
@@ -156,21 +189,33 @@ class _HighlightedCodeState extends State<HighlightedCode> {
     }
     final document = (_document ??= TokenizedDocument(grammar))
       ..grammar = grammar;
-    if (!document.update(widget.code, budget: firstSliceBudget)) {
+    if (!document.update(widget.code, budget: _sliceBudget)) {
       _finishLater();
     }
   }
 
-  /// Tokenizes the rest between frames, rebuilding the rows on screen as
-  /// their lines get colors.
+  /// Tokenizes the rest a slice at a time, right after each frame,
+  /// rebuilding the blocks on screen as their lines get colors.
+  ///
+  /// Post-frame callbacks rather than timers, so nothing is left pending
+  /// when the code goes away, including in widget tests.
   void _finishLater() {
     if (_slicing) return;
     _slicing = true;
-    tokenizeBetweenFrames(
-      slice: (budget) => _document?.tokenize(budget: budget) ?? true,
-      stop: () => !mounted,
-      onSlice: (_) => setState(() {}),
-    ).whenComplete(() => _slicing = false);
+    SchedulerBinding.instance
+      ..addPostFrameCallback(_slice)
+      ..ensureVisualUpdate();
+  }
+
+  void _slice(Duration _) {
+    if (!mounted) return;
+    final done = _document?.tokenize(budget: _sliceBudget) ?? true;
+    setState(() {});
+    if (done) {
+      _slicing = false;
+    } else {
+      SchedulerBinding.instance.addPostFrameCallback(_slice);
+    }
   }
 
   void _syncStyles(BuildContext context) {
@@ -308,6 +353,7 @@ class _HighlightedCodeState extends State<HighlightedCode> {
     if (key != _blocksKey) {
       _blocksKey = key;
       _blocks = List.filled(count, null);
+      _held.clear();
     }
     if (virtualize) {
       return ListView.builder(
@@ -355,6 +401,10 @@ class _HighlightedCodeState extends State<HighlightedCode> {
         same = identical(cached[i], lines[i]);
       }
       if (same) return block;
+      if (_selection.isSelected(index)) {
+        _held.add(index);
+        return block;
+      }
     }
     final numbered = widget.lineNumbers && !widget.softWrap;
     final block = CodeBlock(

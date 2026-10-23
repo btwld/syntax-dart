@@ -320,9 +320,11 @@ const linesPerBlock = 32;
 /// selection stay alive when they scroll away, so the first and last
 /// selected blocks are always here; this delegate copies from the first
 /// to the last, with line breaks, taking every block between them from
-/// [lines]. Select all copies every line, built or not.
+/// [lines]. Select all copies every line, built or not. Copies keep the
+/// code's line breaks, `\r\n` included.
 final class CodeSelectionDelegate extends RowSelectionDelegate {
-  /// The text of every line, without line breaks.
+  /// The code's lines as they are, split on `\n`, so a line before a CRLF
+  /// break ends with its `\r`. Blocks show them without it.
   List<String> lines = const [];
 
   /// The selection delegates of the blocks that are built, by block.
@@ -336,13 +338,23 @@ final class CodeSelectionDelegate extends RowSelectionDelegate {
   /// Everything is selected, including lines that were never built.
   bool _all = false;
 
+  /// Called when a block starts or stops holding part of the selection.
+  VoidCallback? onSelectedBlocksChanged;
+
+  /// Whether [block] is built and holds part of the selection.
+  bool isSelected(int block) => _selected.contains(block);
+
   /// Starts tracking the delegate of [block].
   void addBlock(int block, RowSelectionDelegate delegate) {
     removeBlock(block);
     _blocks[block] = delegate;
-    void listener() => delegate.value.hasSelection
-        ? _selected.add(block)
-        : _selected.remove(block);
+    void listener() {
+      final changed = delegate.value.hasSelection
+          ? _selected.add(block)
+          : _selected.remove(block);
+      if (changed) onSelectedBlocksChanged?.call();
+    }
+
     _listeners[block] = listener;
     delegate.addListener(listener);
     listener();
@@ -360,12 +372,22 @@ final class CodeSelectionDelegate extends RowSelectionDelegate {
     _selected.remove(block);
   }
 
-  String _text(int block) => lines
-      .sublist(
-        block * linesPerBlock,
-        math.min((block + 1) * linesPerBlock, lines.length),
-      )
-      .join('\n');
+  /// The length of [line] as a block shows it, without a trailing `\r`.
+  int _shownLength(int line) {
+    final text = lines[line];
+    return text.endsWith('\r') ? text.length - 1 : text.length;
+  }
+
+  /// The line and column of [offset] into [block]'s text.
+  (int, int) _position(int block, int offset) {
+    var line = block * linesPerBlock;
+    final last = math.min(line + linesPerBlock, lines.length) - 1;
+    while (line < last && offset > _shownLength(line)) {
+      offset -= _shownLength(line) + 1;
+      line++;
+    }
+    return (line, math.min(offset, _shownLength(line)));
+  }
 
   @override
   SelectionResult dispatchSelectionEvent(SelectionEvent event) {
@@ -384,18 +406,28 @@ final class CodeSelectionDelegate extends RowSelectionDelegate {
     if (firstRange == null || lastRange == null) {
       return super.getSelectedContent();
     }
-    final start = math.min(firstRange.startOffset, firstRange.endOffset);
-    final end = math.max(lastRange.startOffset, lastRange.endOffset);
-    final String text;
-    if (first == last) {
-      text = _text(first).substring(start, end);
-    } else {
-      text = [
-        _text(first).substring(start),
-        for (var block = first + 1; block < last; block++) _text(block),
-        _text(last).substring(0, end),
-      ].join('\n');
+    final (top, from) = _position(
+      first,
+      math.min(firstRange.startOffset, firstRange.endOffset),
+    );
+    final (bottom, to) = _position(
+      last,
+      math.max(lastRange.startOffset, lastRange.endOffset),
+    );
+    final buffer = StringBuffer();
+    for (var line = top; line <= bottom; line++) {
+      final text = lines[line];
+      if (line > top) buffer.write('\n');
+      // Lines before the last keep their `\r`, so a CRLF break stays one;
+      // so does a `\r` that ends the code.
+      final end =
+          line < bottom ||
+              (to == _shownLength(line) && line == lines.length - 1)
+          ? text.length
+          : to;
+      buffer.write(text.substring(line == top ? from : 0, end));
     }
+    final text = buffer.toString();
     if (text.isEmpty) return null;
     return SelectedContent(plainText: text);
   }

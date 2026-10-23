@@ -17,14 +17,6 @@ List<String> numberedLines(int count) => [
   for (var i = 0; i < count; i++) 'var v$i = $i;',
 ];
 
-/// A widget test that lets the code's tokenizing run out at the end.
-void testCode(String description, WidgetTesterCallback body) =>
-    testWidgets(description, (tester) async {
-      await body(tester);
-      await tester.pumpWidget(const SizedBox());
-      await tester.pumpAndSettle();
-    });
-
 Widget app(Widget child) => MaterialApp(
   home: HighlighterScope(highlighter: highlighter, child: child),
 );
@@ -122,7 +114,7 @@ Offset at(WidgetTester tester, int line, int column) =>
 
 void main() {
   group('rows', () {
-    testCode('long code builds only the lines on screen', (tester) async {
+    testWidgets('long code builds only the lines on screen', (tester) async {
       await tester.pumpWidget(app(code(numberedLines(2000))));
       final built = builtLines(tester);
       expect(built.first, 0);
@@ -131,7 +123,7 @@ void main() {
       expect(find.byType(ListView), findsOneWidget);
     });
 
-    testCode('inside a scroll view, every line is built', (tester) async {
+    testWidgets('inside a scroll view, every line is built', (tester) async {
       await tester.pumpWidget(
         app(SingleChildScrollView(child: code(numberedLines(300)))),
       );
@@ -139,7 +131,7 @@ void main() {
       expect(find.byType(ListView), findsNothing);
     });
 
-    testCode('short code hugs its lines and keeps intrinsic sizes', (
+    testWidgets('short code hugs its lines and keeps intrinsic sizes', (
       tester,
     ) async {
       await tester.pumpWidget(
@@ -156,7 +148,7 @@ void main() {
       expect(tester.getSize(find.byType(HighlightedCode)).height, 3 * 21 + 32);
     });
 
-    testCode('short code taller than its box scrolls', (tester) async {
+    testWidgets('short code taller than its box scrolls', (tester) async {
       await tester.pumpWidget(
         app(
           Align(
@@ -170,7 +162,7 @@ void main() {
       expect(vertical.maxScrollExtent, 50 * 21 - (100 - 32));
     });
 
-    testCode('a large file is colored between frames, top first', (
+    testWidgets('a large file is colored between frames, top first', (
       tester,
     ) async {
       final lines = numberedLines(8000);
@@ -181,7 +173,7 @@ void main() {
       await tester.pump();
       bool lastColored() => colored(shownLines(tester)[7999]!);
       for (var i = 0; i < 1000 && !lastColored(); i++) {
-        await tester.pump(Duration.zero);
+        await tester.pump();
       }
       expect(lastColored(), isTrue);
     });
@@ -224,12 +216,14 @@ void main() {
       }
     }
 
-    testCode('stay aligned with their lines', (tester) async {
+    testWidgets('stay aligned with their lines', (tester) async {
       await tester.pumpWidget(app(code(numberedLines(20), lineNumbers: true)));
       await expectAligned(tester);
     });
 
-    testCode('stay aligned with their lines after scrolling', (tester) async {
+    testWidgets('stay aligned with their lines after scrolling', (
+      tester,
+    ) async {
       await tester.pumpWidget(
         app(code(numberedLines(2000), lineNumbers: true)),
       );
@@ -244,7 +238,7 @@ void main() {
   group('long lines', () {
     final lines = ['x' * 200, ...numberedLines(3)];
 
-    testCode('scroll sideways under fixed line numbers', (tester) async {
+    testWidgets('scroll sideways under fixed line numbers', (tester) async {
       await tester.pumpWidget(app(code(lines, lineNumbers: true)));
       final numberLeft = tester.getTopLeft(numbersOf(0)).dx;
       final codeLeft = tester.getTopLeft(codeOf(0)).dx;
@@ -259,6 +253,55 @@ void main() {
       expect(horizontal.pixels, greaterThan(0));
       expect(tester.getTopLeft(numbersOf(0)).dx, numberLeft);
       expect(tester.getTopLeft(codeOf(0)).dx, codeLeft - horizontal.pixels);
+    });
+
+    testWidgets('move the semantics of the code with them', (tester) async {
+      final semantics = tester.ensureSemantics();
+      final widths = LineWidths(1500);
+      final horizontal = ScrollController();
+      addTearDown(horizontal.dispose);
+      const key = Key('code');
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: Scrollable(
+            axisDirection: AxisDirection.right,
+            controller: horizontal,
+            viewportBuilder: (context, offset) => HorizontalExtent(
+              offset: offset,
+              widths: widths,
+              gutterWidth: 0,
+              child: Align(
+                alignment: Alignment.topLeft,
+                child: ShiftedCode(
+                  offset: offset,
+                  widths: widths,
+                  child: Semantics(
+                    key: key,
+                    container: true,
+                    label: 'code',
+                    child: const SizedBox(width: 50, height: 20),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      Rect bounds() {
+        final node = tester.getSemantics(find.byKey(key));
+        return MatrixUtils.transformRect(
+          node.transform ?? Matrix4.identity(),
+          node.rect,
+        );
+      }
+
+      expect(bounds().right, 50);
+      horizontal.jumpTo(30);
+      await tester.pump();
+      // Shifted left, and clipped to what is still in view.
+      expect(bounds().right, 20);
+      semantics.dispose();
     });
 
     testWidgets('grow the scroll when a row is wider than guessed', (
@@ -303,7 +346,7 @@ void main() {
       expect(horizontal.position.maxScrollExtent, 1500 - 800);
     });
 
-    testCode('softWrap wraps them instead', (tester) async {
+    testWidgets('softWrap wraps them instead', (tester) async {
       await tester.pumpWidget(app(code(lines, softWrap: true)));
       expect(
         find.byWidgetPredicate(
@@ -316,7 +359,9 @@ void main() {
       expect(tester.getSize(codeOf(0)).height, (4 + 3) * 21);
     });
 
-    testCode('softWrap wraps long code in a virtualized list', (tester) async {
+    testWidgets('softWrap wraps long code in a virtualized list', (
+      tester,
+    ) async {
       await tester.pumpWidget(
         app(code([...lines, ...numberedLines(2000)], softWrap: true)),
       );
@@ -325,7 +370,7 @@ void main() {
     });
   });
 
-  testCode('paints the theme background with padding and corners', (
+  testWidgets('paints the theme background with padding and corners', (
     tester,
   ) async {
     final radius = BorderRadius.circular(8);
@@ -356,7 +401,9 @@ void main() {
     expect(tester.getSize(find.byType(HighlightedCode)).height, 3 * 21 + 16);
   });
 
-  testCode('code reads left to right in a right-to-left app', (tester) async {
+  testWidgets('code reads left to right in a right-to-left app', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       app(
         Directionality(
@@ -373,7 +420,7 @@ void main() {
     expect(tester.getTopLeft(codeOf(0)).dx, 16 + 4 * 14 + 16);
   });
 
-  testCode('a change re-tokenizes only the changed line', (tester) async {
+  testWidgets('a change re-tokenizes only the changed line', (tester) async {
     final lines = numberedLines(50);
     await tester.pumpWidget(app(code(lines)));
     final before = shownLines(tester);
@@ -390,7 +437,7 @@ void main() {
     }
   });
 
-  testCode('ignores the screen padding a list would add', (tester) async {
+  testWidgets('ignores the screen padding a list would add', (tester) async {
     await tester.pumpWidget(
       app(
         MediaQuery(
@@ -406,7 +453,7 @@ void main() {
     expect(tester.getTopLeft(codeOf(0)).dy, 16);
   });
 
-  testCode('characters a paragraph breaks on stay in their line', (
+  testWidgets('characters a paragraph breaks on stay in their line', (
     tester,
   ) async {
     final lines = numberedLines(2000)
@@ -423,7 +470,9 @@ void main() {
     expect(tester.getSize(codeOf(0)).height, linesPerBlock * 21);
   });
 
-  testCode('stays selectable when line numbers are turned on', (tester) async {
+  testWidgets('stays selectable when line numbers are turned on', (
+    tester,
+  ) async {
     final copied = recordClipboard(tester);
     final lines = numberedLines(20);
     await tester.pumpWidget(app(code(lines)));
@@ -443,7 +492,9 @@ void main() {
     expect(copied(), '${lines[1].substring(2)}\n${lines[2].substring(0, 3)}');
   });
 
-  testCode('copying text with a separator copies it as it is', (tester) async {
+  testWidgets('copying text with a separator copies it as it is', (
+    tester,
+  ) async {
     final copied = recordClipboard(tester);
     await tester.pumpWidget(app(code(['a b', 'c'])));
     await tester.pumpAndSettle();
@@ -454,7 +505,81 @@ void main() {
   });
 
   group('copying', () {
-    testCode('a drag across lines copies them with line breaks', (
+    HighlightedCode raw(String source) =>
+        HighlightedCode(source, language: 'dart', theme: githubDarkTheme);
+
+    testWidgets('keeps CRLF line breaks', (tester) async {
+      final copied = recordClipboard(tester);
+      await tester.pumpWidget(app(raw('var a;\r\nvar bb;\r\nvar c;\r\n')));
+      await tester.pumpAndSettle();
+      final gesture = await tester.startGesture(
+        at(tester, 0, 4),
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pump();
+      await gesture.moveTo(at(tester, 2, 3));
+      await tester.pump();
+      await gesture.up();
+      await tester.pump();
+      await copy(tester);
+      expect(copied(), 'a;\r\nvar bb;\r\nvar');
+    });
+
+    testWidgets('select all copies the code exactly', (tester) async {
+      final copied = recordClipboard(tester);
+      const source = 'var a;\r\nvar\rb;\r\n\r\nvar c;\r';
+      await tester.pumpWidget(app(raw(source)));
+      await tester.pumpAndSettle();
+      region(tester).selectAll(SelectionChangedCause.keyboard);
+      await tester.pump();
+      await copy(tester);
+      expect(copied(), source);
+    });
+
+    testWidgets('a selection survives its lines getting colors', (
+      tester,
+    ) async {
+      final copied = recordClipboard(tester);
+      final lines = numberedLines(8000);
+      await tester.pumpWidget(app(code(lines)));
+      jumpToEnd(tester);
+      // The new blocks' selection containers register over a few frames.
+      for (var i = 0; i < 3; i++) {
+        await tester.pump();
+      }
+      const line = 7990;
+      expect(colored(shownLines(tester)[line]!), isFalse);
+
+      final gesture = await tester.startGesture(
+        at(tester, line, 4),
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pump();
+      await gesture.moveTo(at(tester, line + 1, 3));
+      await tester.pump();
+      await gesture.up();
+      await tester.pump();
+      final expected =
+          '${lines[line].substring(4)}\n${lines[line + 1].substring(0, 3)}';
+      await copy(tester);
+      expect(copied(), expected);
+
+      // Tokenizing finishes; the selected lines' block waits.
+      for (var i = 0; i < 1000 && tester.binding.hasScheduledFrame; i++) {
+        await tester.pump();
+      }
+      expect(tester.binding.hasScheduledFrame, isFalse);
+      expect(colored(shownLines(tester)[line]!), isFalse);
+      await copy(tester);
+      expect(copied(), expected);
+
+      region(tester).clearSelection();
+      await tester.pump();
+      await tester.pump();
+      expect(colored(shownLines(tester)[line]!), isTrue);
+    });
+
+    testWidgets('a drag across lines copies them with line breaks', (
       tester,
     ) async {
       final copied = recordClipboard(tester);
@@ -479,7 +604,7 @@ void main() {
       );
     });
 
-    testCode('select all copies every line of long code', (tester) async {
+    testWidgets('select all copies every line of long code', (tester) async {
       final copied = recordClipboard(tester);
       final lines = numberedLines(2000);
       await tester.pumpWidget(app(code(lines)));
@@ -490,7 +615,7 @@ void main() {
       expect(copied(), lines.join('\n'));
     });
 
-    testCode('a drag that scrolls copies the lines scrolled past', (
+    testWidgets('a drag that scrolls copies the lines scrolled past', (
       tester,
     ) async {
       final copied = recordClipboard(tester);
