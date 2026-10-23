@@ -205,6 +205,88 @@ void main() {
         ),
       );
     });
+
+    test('an alias does not shadow a canonical language name', () {
+      final first = Language.fromJson(grammar('source.a', 'one'), name: 'v');
+      final second = Language.fromJson(
+        grammar('source.b', 'two'),
+        name: 'verilog',
+        aliases: ['v'],
+      );
+      final h = Highlighter(languages: [first, second]);
+      expect(h.language('v'), same(first));
+      expect(h.language('verilog'), same(second));
+
+      final reversed = Highlighter(languages: [second, first]);
+      expect(reversed.language('v'), same(first));
+      expect(reversed.language('verilog'), same(second));
+    });
+
+    test(
+      'equal const grammar rules keep distinct identities across grammars',
+      () {
+        const sharedPatterns = [
+          {'include': '#item'},
+        ];
+        const grammarA = Language(
+          name: 'a',
+          scopeName: 'source.a',
+          grammar: {
+            'scopeName': 'source.a',
+            'patterns': sharedPatterns,
+            'repository': {
+              'item': {'match': 'foo', 'name': 'keyword.a'},
+            },
+          },
+        );
+        const grammarB = Language(
+          name: 'b',
+          scopeName: 'source.b',
+          grammar: {
+            'scopeName': 'source.b',
+            'patterns': sharedPatterns,
+            'repository': {
+              'item': {'match': 'foo', 'name': 'keyword.b'},
+            },
+          },
+        );
+        final h = Highlighter(languages: [grammarA, grammarB]);
+        expect(h.tokenize('foo', language: 'a').single.single.scopes.scopes, [
+          'source.a',
+          'keyword.a',
+        ]);
+        expect(h.tokenize('foo', language: 'b').single.single.scopes.scopes, [
+          'source.b',
+          'keyword.b',
+        ]);
+      },
+    );
+  });
+
+  test('compound suffixes and path overrides resolve', () {
+    final dts = Language(
+      name: 'dts',
+      scopeName: 'source.dts',
+      aliases: ['d.ts'],
+      grammar: const {'scopeName': 'source.dts', 'patterns': []},
+    );
+    final ts = Language(
+      name: 'ts',
+      scopeName: 'source.ts',
+      grammar: const {'scopeName': 'source.ts', 'patterns': []},
+    );
+    final h = Highlighter(languages: [ts, dts, dartLanguage]);
+    final before = h.revision;
+    expect(h.languageForPath('src/types.d.ts'), same(dts));
+    expect(h.languageForPath('src/index.ts'), same(ts));
+
+    h.setLanguageForPath('.config.custom', 'dart');
+    expect(h.revision, greaterThan(before));
+    expect(h.languageForPath('src/app.config.custom'), same(dartLanguage));
+    h.setLanguageForPath('BUILD', 'dart');
+    expect(h.languageForPath('src/BUILD'), same(dartLanguage));
+    h.clearPathLanguages();
+    expect(h.languageForPath('src/BUILD'), isNull);
   });
 
   test('Markdown fences highlight embedded languages', () {

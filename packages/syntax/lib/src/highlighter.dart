@@ -145,6 +145,9 @@ final class Highlighter {
   /// length and a bundle on one line can take seconds. 0 means no limit.
   final int maxLineLength;
 
+  /// Changes when registered grammar definitions or dependencies change.
+  int get revision => _revision;
+  int _revision = 0;
   final Map<String, Language> _byName = {};
   final Map<String, Language> _byScope = {};
   final Map<String, _CompiledGrammar> _grammars = {};
@@ -158,13 +161,15 @@ final class Highlighter {
   /// one it replaces, one that includes or embeds it, or one it injects
   /// into. A [StateStack] from such a grammar is no longer accepted.
   void addLanguage(Language language) {
+    _revision++;
     final replaced = _byScope[language.scopeName];
     if (replaced != null) {
       _byName.removeWhere((_, l) => identical(l, replaced));
     }
     _byName[language.name] = language;
     for (final alias in language.aliases) {
-      _byName[alias] = language;
+      // File extensions and secondary aliases must not shadow canonical IDs.
+      if (_byName[alias]?.name != alias) _byName[alias] = language;
     }
     _byScope[language.scopeName] = language;
     _grammars.removeWhere((_, g) => g.isAffectedBy(language));
@@ -174,15 +179,49 @@ final class Highlighter {
   Language? language(String nameOrScope) =>
       _byName[nameOrScope] ?? _byScope[nameOrScope];
 
+  /// Overrides exact basenames or extensions without changing grammar aliases.
+  final Map<String, String> _pathLanguages = {};
+
+  /// Registers an exact basename or an extension (with a leading dot).
+  void setLanguageForPath(String nameOrExtension, String language) {
+    _pathLanguages[nameOrExtension.toLowerCase()] = language;
+    _revision++;
+  }
+
+  /// Removes every custom filename and extension mapping.
+  void clearPathLanguages() {
+    _pathLanguages.clear();
+    _revision++;
+  }
+
   /// Guesses the language of a file from its extension or name, using
-  /// language names and aliases. `lib/main.dart`, `pubspec.yaml`,
-  /// `deploy.sh`, `README.md` and `Dockerfile` all resolve with the bundled
-  /// languages. Both `/` and `\` separate directories.
+  /// filename overrides, language names and aliases. `lib/main.dart`,
+  /// `pubspec.yaml`, `deploy.sh`, `README.md` and `Dockerfile` all resolve
+  /// with the bundled languages. Both `/` and `\` separate directories.
   Language? languageForPath(String path) {
     final name = path.split(_pathSeparator).last.toLowerCase();
-    final dot = name.lastIndexOf('.');
-    final byExtension = dot > 0 ? _byName[name.substring(dot + 1)] : null;
-    return byExtension ?? _byName[name];
+    if (name.isEmpty) return null;
+    final exact = _pathLanguages[name];
+    if (exact != null) return language(exact);
+    for (
+      var dot = name.indexOf('.');
+      dot >= 0;
+      dot = name.indexOf('.', dot + 1)
+    ) {
+      final override = _pathLanguages[name.substring(dot)];
+      if (override != null) return language(override);
+    }
+    final exactLanguage = _byName[name];
+    if (exactLanguage != null) return exactLanguage;
+    for (
+      var dot = name.indexOf('.', 1);
+      dot >= 0;
+      dot = name.indexOf('.', dot + 1)
+    ) {
+      final match = _byName[name.substring(dot + 1)];
+      if (match != null) return match;
+    }
+    return null;
   }
 
   static final RegExp _pathSeparator = RegExp(r'[/\\]');
@@ -241,12 +280,17 @@ final class Highlighter {
     String code, {
     required String language,
     required SyntaxTheme theme,
-  }) => [
-    for (final line in (TokenizedDocument(
-      grammar(language),
-    )..update(code)).lines)
-      line.themed(theme),
-  ];
+  }) {
+    final grammar = this.grammar(language);
+    final result = <List<ThemedToken>>[];
+    StateStack? state;
+    for (final line in splitLines(code)) {
+      final tokens = grammar.tokenizeLine(line, state);
+      result.add(themeTokens(line, tokens.tokens, theme));
+      state = tokens.endState;
+    }
+    return result;
+  }
 
   /// Styled ranges over the whole of [code], as UTF-16 offsets into it:
   /// the shape renderers that style one string at a time want. To
