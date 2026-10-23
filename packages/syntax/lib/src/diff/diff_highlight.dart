@@ -24,8 +24,12 @@ final class HighlightedDiff {
     this._new, {
     TokenizedDocument? oldDocument,
     TokenizedDocument? newDocument,
+    _LineText? oldPlain,
+    _LineText? newPlain,
   }) : _oldDocument = oldDocument,
-       _newDocument = newDocument;
+       _newDocument = newDocument,
+       _oldPlain = oldPlain,
+       _newPlain = newPlain;
 
   /// Highlights [diff]. The language comes from [language] if given,
   /// otherwise from the file extension. Unknown languages stay plain.
@@ -40,9 +44,19 @@ final class HighlightedDiff {
     Duration? budget,
   }) {
     final grammar = _grammarFor(diff, highlighter, language);
+    if (grammar == null) {
+      // Plain: each line is one token, made when it's asked for.
+      return HighlightedDiff._(
+        theme,
+        const {},
+        const {},
+        oldPlain: _textOf(diff, old: true),
+        newPlain: _textOf(diff, old: false),
+      );
+    }
     final oldLines = diff.oldLines;
     final newLines = diff.newLines;
-    if (grammar != null && oldLines != null && newLines != null) {
+    if (oldLines != null && newLines != null) {
       final highlighted = HighlightedDiff._(
         theme,
         const {},
@@ -67,45 +81,42 @@ final class HighlightedDiff {
     ) {
       StateStack? state;
       for (final (number, text) in numbered) {
-        if (grammar == null) {
-          out[number] = [
-            ThemedToken(
-              text,
-              0,
-              TokenStyle(foreground: theme.foreground),
-              _plainScopes,
-            ),
-          ];
-          continue;
-        }
         final tokens = grammar.tokenizeLine(text, state);
         state = tokens.endState;
         out[number] = themeTokens(text, tokens.tokens, theme);
       }
     }
 
-    if (oldLines != null && newLines != null) {
+    for (final hunk in diff.hunks) {
       tokenize([
-        for (var i = 0; i < oldLines.length; i++) (i + 1, oldLines[i]),
+        for (final l in hunk.lines)
+          if (_onSide(l, old: true)) (l.oldNumber!, l.text),
       ], old);
       tokenize([
-        for (var i = 0; i < newLines.length; i++) (i + 1, newLines[i]),
+        for (final l in hunk.lines)
+          if (_onSide(l, old: false)) (l.newNumber!, l.text),
       ], newer);
-    } else {
-      for (final hunk in diff.hunks) {
-        tokenize([
-          for (final l in hunk.lines)
-            if (l.oldNumber != null && l.kind != DiffLineKind.added)
-              (l.oldNumber!, l.text),
-        ], old);
-        tokenize([
-          for (final l in hunk.lines)
-            if (l.newNumber != null && l.kind != DiffLineKind.removed)
-              (l.newNumber!, l.text),
-        ], newer);
-      }
     }
     return HighlightedDiff._(theme, old, newer);
+  }
+
+  /// Whether [line] is in the old file, or the new one.
+  static bool _onSide(DiffLine line, {required bool old}) => old
+      ? line.oldNumber != null && line.kind != DiffLineKind.added
+      : line.newNumber != null && line.kind != DiffLineKind.removed;
+
+  /// Looks up the text of a line of [diff]'s old or new file by number.
+  static _LineText _textOf(FileDiff diff, {required bool old}) {
+    final lines = old ? diff.oldLines : diff.newLines;
+    if (lines != null) {
+      return (n) => n >= 1 && n <= lines.length ? lines[n - 1] : null;
+    }
+    final byNumber = {
+      for (final hunk in diff.hunks)
+        for (final l in hunk.lines)
+          if (_onSide(l, old: old)) (old ? l.oldNumber! : l.newNumber!): l.text,
+    };
+    return (n) => byNumber[n];
   }
 
   /// What's left of [budget] after [clock], or `null` for no budget.
@@ -154,29 +165,42 @@ final class HighlightedDiff {
   final TokenizedDocument? _oldDocument;
   final TokenizedDocument? _newDocument;
 
+  /// Line texts, for diffs without a grammar.
+  final _LineText? _oldPlain;
+  final _LineText? _newPlain;
+
   late final TokenStyle _plain = TokenStyle(foreground: _theme.foreground);
 
   /// Tokens for a line of the diff: removed lines from the old file, added
   /// and context lines from the new one.
   List<ThemedToken> tokensFor(DiffLine line) =>
       line.kind == DiffLineKind.removed
-      ? _line(_oldDocument, _old, line.oldNumber)
-      : _line(_newDocument, _new, line.newNumber);
+      ? _line(_oldDocument, _oldPlain, _old, line.oldNumber)
+      : _line(_newDocument, _newPlain, _new, line.newNumber);
 
   /// Tokens for line [number] of the old file. Lines outside the hunks are
   /// only available when the diff has the full texts.
-  List<ThemedToken> oldLine(int number) => _line(_oldDocument, _old, number);
+  List<ThemedToken> oldLine(int number) =>
+      _line(_oldDocument, _oldPlain, _old, number);
 
   /// Tokens for line [number] of the new file. Lines outside the hunks are
   /// only available when the diff has the full texts.
-  List<ThemedToken> newLine(int number) => _line(_newDocument, _new, number);
+  List<ThemedToken> newLine(int number) =>
+      _line(_newDocument, _newPlain, _new, number);
 
   List<ThemedToken> _line(
     TokenizedDocument? document,
+    _LineText? plain,
     Map<int, List<ThemedToken>> byNumber,
     int? number,
   ) {
     if (number == null) return const [];
+    if (plain != null) {
+      final text = plain(number);
+      return text == null
+          ? const []
+          : [ThemedToken(text, 0, _plain, _plainScopes)];
+    }
     if (document == null) return byNumber[number] ?? const [];
     final lines = document.lines;
     return number <= lines.length ? lines[number - 1].themed(_theme) : const [];
@@ -451,3 +475,6 @@ final class DiffColors {
   static int _withAlpha(int argb, int alpha) =>
       (alpha & 0xFF) << 24 | (argb & 0xFFFFFF);
 }
+
+/// The text of a line by its number, or `null` if the diff doesn't have it.
+typedef _LineText = String? Function(int number);

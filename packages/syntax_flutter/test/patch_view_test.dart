@@ -533,7 +533,7 @@ new mode 100755
     expect(hasRun(added(), '300000'), isTrue);
 
     for (var i = 0; i < 1000 && !hasRun(added(), 'final'); i++) {
-      await tester.pump(Duration.zero);
+      await tester.pump();
     }
     expect(hasRun(added(), 'final'), isTrue);
   });

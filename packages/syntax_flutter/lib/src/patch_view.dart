@@ -1,10 +1,10 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:syntax/syntax.dart';
 
 import 'highlighter_scope.dart';
-import 'slices.dart';
 import 'styles.dart';
 
 /// A syntax-highlighted view of code changes.
@@ -136,6 +136,10 @@ class PatchView extends StatefulWidget {
   State<PatchView> createState() => _PatchViewState();
 }
 
+/// How long a frame spends highlighting files: while it builds a file's
+/// first rows, and again after it, until every file shown is done.
+const _sliceBudget = Duration(milliseconds: 6);
+
 class _PatchViewState extends State<PatchView> {
   Object? _sourceKey;
   List<FileDiff> _files = const [];
@@ -178,16 +182,28 @@ class _PatchViewState extends State<PatchView> {
     return _highlights!;
   }
 
-  /// Highlights the files shown so far between frames, repainting the
-  /// rows as their lines get colors.
+  /// Highlights the files shown so far a slice at a time, right after each
+  /// frame, repainting the rows as their lines get colors.
+  ///
+  /// Post-frame callbacks rather than timers, so nothing is left pending
+  /// when the view goes away, including in widget tests.
   void _finishLater() {
     if (_slicing) return;
     _slicing = true;
-    tokenizeBetweenFrames(
-      slice: (budget) => _highlights?.tokenize(budget: budget) ?? true,
-      stop: () => !mounted,
-      onSlice: (_) => setState(() {}),
-    ).whenComplete(() => _slicing = false);
+    SchedulerBinding.instance
+      ..addPostFrameCallback(_slice)
+      ..ensureVisualUpdate();
+  }
+
+  void _slice(Duration _) {
+    if (!mounted) return;
+    final done = _highlights?.tokenize(budget: _sliceBudget) ?? true;
+    setState(() {});
+    if (done) {
+      _slicing = false;
+    } else {
+      SchedulerBinding.instance.addPostFrameCallback(_slice);
+    }
   }
 
   _Palette _paletteFor(BuildContext context) {
@@ -352,7 +368,7 @@ class _PatchViewState extends State<PatchView> {
     };
     final highlights = _highlightsFor(highlighter);
     final diff = _files[file];
-    final highlighted = highlights.highlighted(diff, budget: firstSliceBudget);
+    final highlighted = highlights.highlighted(diff, budget: _sliceBudget);
     if (!highlighted.isComplete) _finishLater();
     return [
       for (final segment in highlighted.segmentsFor(
