@@ -175,6 +175,24 @@ void main() {
       expect(tester.getSize(find.byType(HighlightedCode)).height, 3 * 21 + 32);
     });
 
+    testWidgets('short code inside a bounded width hugs its lines', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        app(
+          Align(
+            alignment: Alignment.topLeft,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 400),
+              child: code(['x = 1;']),
+            ),
+          ),
+        ),
+      );
+      // 6 characters of 14 px and 16 px of padding on each side, not 400.
+      expect(tester.getSize(find.byType(HighlightedCode)).width, 6 * 14 + 32);
+    });
+
     testWidgets('short code taller than its box scrolls', (tester) async {
       await tester.pumpWidget(
         app(
@@ -421,6 +439,37 @@ void main() {
       await tester.pump();
       await tester.pump();
       expect(horizontal.position.maxScrollExtent, 1500 - 800);
+    });
+
+    testWidgets('shrink the scroll when a block remeasures narrower', (
+      tester,
+    ) async {
+      final widths = LineWidths(0, guessBlock: 0);
+      final horizontal = ScrollController();
+      addTearDown(horizontal.dispose);
+      Widget build(double blockWidth) => Directionality(
+        textDirection: TextDirection.ltr,
+        child: Scrollable(
+          axisDirection: AxisDirection.right,
+          controller: horizontal,
+          viewportBuilder: (context, offset) => HorizontalExtent(
+            offset: offset,
+            widths: widths,
+            gutterWidth: 0,
+            child: ShiftedCode(
+              block: 0,
+              offset: offset,
+              widths: widths,
+              child: SizedBox(width: blockWidth, height: 20),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpWidget(build(1500));
+      expect(horizontal.position.maxScrollExtent, 1500 - 800);
+      await tester.pumpWidget(build(1000));
+      await tester.pump();
+      expect(horizontal.position.maxScrollExtent, 1000 - 800);
     });
 
     testWidgets('softWrap wraps them instead', (tester) async {

@@ -20,19 +20,23 @@ final class LineWidths {
   /// The block holding the line [max] was first guessed from.
   final int guessBlock;
 
-  double _measured = 0;
-  bool _guessMeasured = false;
+  final _measured = <int, double>{};
 
   /// The content width the horizontal scroll covers.
-  double get max => _guessMeasured ? _measured : math.max(_guess, _measured);
+  double get max {
+    var widest = _measured.containsKey(guessBlock) ? 0.0 : _guess;
+    for (final width in _measured.values) {
+      if (width > widest) widest = width;
+    }
+    return widest;
+  }
 
   RenderHorizontalExtent? _extent;
   bool _scheduled = false;
 
   void _report(int block, double width) {
     final before = max;
-    if (width > _measured) _measured = width;
-    if (block == guessBlock) _guessMeasured = true;
+    _measured[block] = width;
     if (max == before) return;
     final extent = _extent;
     // Blocks laid out inside the extent's own layout are picked up by it.
@@ -247,12 +251,7 @@ class RenderShiftedCode extends RenderProxyBox {
       );
 
   Size _sizeFor(BoxConstraints constraints, Size child) =>
-      constraints.constrain(
-        Size(
-          constraints.hasBoundedWidth ? constraints.maxWidth : child.width,
-          child.height,
-        ),
-      );
+      constraints.constrain(Size(child.width, child.height));
 
   @override
   Size computeDryLayout(covariant BoxConstraints constraints) {
