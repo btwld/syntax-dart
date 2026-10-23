@@ -251,7 +251,12 @@ class RenderShiftedCode extends RenderProxyBox {
       );
 
   Size _sizeFor(BoxConstraints constraints, Size child) =>
-      constraints.constrain(Size(child.width, child.height));
+      constraints.constrain(
+        Size(
+          constraints.hasBoundedWidth ? constraints.maxWidth : child.width,
+          child.height,
+        ),
+      );
 
   @override
   Size computeDryLayout(covariant BoxConstraints constraints) {
