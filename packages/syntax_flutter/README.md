@@ -21,16 +21,6 @@ HighlightedCode(
   theme: githubDarkTheme,
   lineNumbers: true,
 );
-
-// Highlight as you type. Only the lines an edit can affect are re-tokenized
-// and restyled. textStyle is merged onto the field's own style.
-final controller = SyntaxTextEditingController(
-  highlighter: highlighter,
-  language: 'dart',
-  theme: githubDarkTheme,
-  text: source,
-);
-TextField(controller: controller, maxLines: null, style: defaultCodeTextStyle);
 ```
 
 ```dart
@@ -75,7 +65,7 @@ content.
 For your own widgets, `TokenTextStyles` converts `TokenStyle` to
 `TextStyle`, and `highlightedTextSpan` builds a span tree.
 
-See [`example/`](example) for a live editor with every bundled language
+See [`example/`](example) for a live preview with every bundled language
 and theme.
 
 ## License

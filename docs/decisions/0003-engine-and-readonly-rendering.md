@@ -32,15 +32,16 @@ sync.
 `syntax-dart` owns **the highlighting engine and read-only rendering of
 code, diffs and patches**. It does not own editing, code review, approval,
 selection or comment state, and those concerns are not split into sibling
-packages in this repository either.
+packages in this repository either. `syntax_flutter` no longer ships an
+editing controller (`SyntaxTextEditingController`); editing belongs in the
+consuming application (stargate), built on top of `TokenizedDocument`.
 
 ### In scope
 
 - **`syntax`**:
   - the TextMate grammar compiler, tokenizer and Oniguruma-to-ECMAScript
     regex translator;
-  - grammars, themes, `LanguageRegistry`, `ThemeCollection` and
-    `ThemeResolver`;
+  - grammars, themes and `Highlighter`;
   - `TokenizedDocument` (including budgeted `update` and `tokenize`) for
     incremental line-state reuse;
   - diff parsing, Myers `diffTexts`, word-level inline diffs, `DiffLayout`
@@ -51,17 +52,15 @@ packages in this repository either.
 - **`syntax_flutter`** and **`syntax_noir`**:
   - `HighlightedCode` and `SyntaxCodeHighlighter`;
   - viewport and horizontal/vertical scroll primitives for large read-only
-    views (`IndexedViewport`, `CodeHorizontalScroll`, `RowHeightIndex`);
-  - read-only code, diff and patch views (`PatchView`), including collapsing
-    files, expanding context gaps and scrolling to a row or offset;
-  - `SyntaxTextEditingController`, which is already on `main`, stays in
-    `syntax_flutter` until the consuming app replaces it with its own
-    controller on top of `TokenizedDocument`.
+    views (`IndexedCodeViewport`, `HorizontalCode`, `RowHeightIndex`);
+  - read-only code, diff and patch views (`PatchView`), with collapse,
+    expand and scroll offset passed in or driven by callbacks.
 
 ### Out of scope
 
-- mutable document models, undo/redo history, multi-caret editing and editor
-  commands (`TextDocument`, `EditorController`, `FileListController`);
+- editing controllers, mutable document models, undo/redo history,
+  multi-caret editing and editor commands (`SyntaxTextEditingController`,
+  `TextDocument`, `EditorController`, `FileListController`);
 - diff review state, file approval, hunk/change resolution, merge-conflict
   workflows and comment threads (`PatchController`, `MergeController`,
   `review.dart` and comment widgets);
@@ -71,10 +70,10 @@ packages in this repository either.
 
 - `syntax`, `syntax_flutter` and `syntax_noir` stay small, renderer-focused
   and independent of any application's review or editor state.
-- Read-only improvements from PR #4 (grammar/regex fixes, opt-in catalogs,
-  line-ending preservation, inline diff modes, `DiffLayout`, `renderDiffHtml`
-  and virtualized patch views) land on `main` without pulling in editor or
+- Read-only improvements from PR #4 (grammar/regex fixes, line-ending
+  preservation, inline diff modes, `DiffLayout`, `renderDiffHtml` and
+  virtualized patch views) land on `main` without pulling in editor or
   review controllers.
-- Applications that need editing, review or comments build their own state
-  models above `TokenizedDocument`, `FileDiff`, `DiffLayout` and the
-  read-only widgets.
+- Applications that need editing, review or comments (such as stargate)
+  own their controllers and state models above `TokenizedDocument`,
+  `FileDiff`, `DiffLayout` and the read-only widgets.

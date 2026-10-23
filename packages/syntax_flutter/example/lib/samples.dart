@@ -71,7 +71,7 @@ Syntax highlighting for **Dart** and _Flutter_, using the same
 TextMate grammars as [VS Code](https://code.visualstudio.com).
 
 - Pure Dart core
-- `HighlightedCode` and `SyntaxTextEditingController`
+- `HighlightedCode` and `PatchView`
 
 ```dart
 final highlighter = Highlighter(languages: [dartLanguage]);

@@ -3,8 +3,8 @@
 - First release.
 - `HighlightedCode` for read-only code, with optional line numbers and
   selection.
-- `SyntaxTextEditingController` for highlighting as you type. It
-  re-tokenizes and restyles incrementally.
+- **Breaking:** removed `SyntaxTextEditingController`. Editing belongs in
+  the consuming application on top of `TokenizedDocument`.
 - `PatchView` for diffs and patches, painting the rows from `layoutDiff`:
   - unified and split modes;
   - file headers with change counts;

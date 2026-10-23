@@ -10,7 +10,7 @@ void main() => runApp(const SyntaxDemo());
 
 final _highlighter = Highlighter(languages: bundledLanguages.values);
 
-/// What the right-hand pane shows.
+/// What the pane shows.
 enum _View { preview, diff, patch }
 
 class SyntaxDemo extends StatefulWidget {
@@ -25,12 +25,6 @@ class _SyntaxDemoState extends State<SyntaxDemo> {
   var _themeName = 'github-dark';
   var _view = _View.preview;
   var _mode = DiffMode.unified;
-  late final _controller = SyntaxTextEditingController(
-    highlighter: _highlighter,
-    language: _language,
-    theme: _theme,
-    text: samples[_language],
-  );
 
   SyntaxTheme get _theme => bundledThemes[_themeName]!;
 
@@ -43,37 +37,23 @@ class _SyntaxDemoState extends State<SyntaxDemo> {
     return 'sample.${names.first}';
   }
 
-  late String _previewText = _controller.text;
+  String get _sampleText => samples[_language] ?? '';
 
-  @override
-  void initState() {
-    super.initState();
-    _controller.addListener(_syncPreview);
-  }
-
-  /// Caret moves and theme changes also notify, so only rebuild when the
-  /// text itself changed.
-  void _syncPreview() {
-    if (_controller.text == _previewText) return;
-    setState(() => _previewText = _controller.text);
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
+  /// A small synthetic edit of [_sampleText] for the diff preview.
+  String get _editedSample {
+    final lines = _sampleText.split('\n');
+    if (lines.length > 2) {
+      lines[1] = '${lines[1]} // updated';
+    }
+    return lines.join('\n');
   }
 
   void _selectLanguage(String language) {
     setState(() => _language = language);
-    _controller
-      ..language = language
-      ..text = samples[language] ?? '';
   }
 
   void _selectTheme(String name) {
     setState(() => _themeName = name);
-    _controller.theme = _theme;
   }
 
   @override
@@ -120,63 +100,25 @@ class _SyntaxDemoState extends State<SyntaxDemo> {
                   ),
                   const SizedBox(height: 16),
                   Expanded(
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        final wide = constraints.maxWidth > 900;
-                        final panes = [
-                          _Pane(
-                            title: 'SyntaxTextEditingController',
-                            theme: theme,
-                            actions: [
-                              Text(
-                                'Edit me',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: theme.lineNumberColor,
-                                ),
-                              ),
-                            ],
-                            child: TextField(
-                              controller: _controller,
-                              maxLines: null,
-                              expands: true,
-                              style: code,
-                              cursorColor: theme.cursorColor,
-                              textAlignVertical: TextAlignVertical.top,
-                              decoration: const InputDecoration(
-                                border: InputBorder.none,
-                                contentPadding: EdgeInsets.all(16),
-                              ),
-                            ),
-                          ),
-                          _Pane(
-                            title: switch (_view) {
-                              _View.preview => 'HighlightedCode',
-                              _View.diff => 'PatchView.fromTexts',
-                              _View.patch => 'PatchView.fromPatch',
-                            },
-                            theme: theme,
-                            actions: [
-                              if (_view != _View.preview)
-                                _ModeToggle(
-                                  mode: _mode,
-                                  onChanged: (m) => setState(() => _mode = m),
-                                ),
-                              _ViewToggle(
-                                view: _view,
-                                onChanged: (v) => setState(() => _view = v),
-                              ),
-                            ],
-                            child: _rightPane(theme, code),
-                          ),
-                        ];
-                        return Flex(
-                          direction: wide ? Axis.horizontal : Axis.vertical,
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          spacing: 16,
-                          children: [for (final p in panes) Expanded(child: p)],
-                        );
+                    child: _Pane(
+                      title: switch (_view) {
+                        _View.preview => 'HighlightedCode',
+                        _View.diff => 'PatchView.fromTexts',
+                        _View.patch => 'PatchView.fromPatch',
                       },
+                      theme: theme,
+                      actions: [
+                        if (_view != _View.preview)
+                          _ModeToggle(
+                            mode: _mode,
+                            onChanged: (m) => setState(() => _mode = m),
+                          ),
+                        _ViewToggle(
+                          view: _view,
+                          onChanged: (v) => setState(() => _view = v),
+                        ),
+                      ],
+                      child: _contentPane(theme, code),
                     ),
                   ),
                 ],
@@ -188,18 +130,17 @@ class _SyntaxDemoState extends State<SyntaxDemo> {
     );
   }
 
-  Widget _rightPane(SyntaxTheme theme, TextStyle code) => switch (_view) {
+  Widget _contentPane(SyntaxTheme theme, TextStyle code) => switch (_view) {
     _View.preview => HighlightedCode(
-      _previewText,
+      _sampleText,
       language: _language,
       theme: theme,
       textStyle: code,
       lineNumbers: true,
     ),
-    // Your edits against the original sample.
     _View.diff => PatchView.fromTexts(
-      oldText: samples[_language] ?? '',
-      newText: _previewText,
+      oldText: _sampleText,
+      newText: _editedSample,
       path: _samplePath,
       language: _language,
       theme: theme,
@@ -234,7 +175,7 @@ class _ViewToggle extends StatelessWidget {
       ButtonSegment(
         value: _View.diff,
         label: Text('Diff', softWrap: false),
-        tooltip: 'Your edits compared with the original sample',
+        tooltip: 'Sample diff with PatchView.fromTexts',
       ),
       ButtonSegment(
         value: _View.patch,
