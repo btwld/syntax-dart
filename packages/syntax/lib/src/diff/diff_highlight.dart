@@ -147,8 +147,9 @@ final class HighlightedDiff {
     Highlighter highlighter,
     String? language,
   ) {
-    final lang = language != null
-        ? highlighter.language(language)
+    final effectiveLanguage = language ?? diff.language;
+    final lang = effectiveLanguage != null
+        ? highlighter.language(effectiveLanguage)
         : highlighter.languageForPath(diff.path);
     return lang == null ? null : highlighter.grammar(lang.scopeName);
   }
@@ -261,6 +262,7 @@ final class DiffHighlightCache {
     required this.highlighter,
     required this.theme,
     this.language,
+    this.inlineDiffMode = InlineDiffMode.mergedWords,
   });
 
   /// Provides the grammars.
@@ -271,6 +273,9 @@ final class DiffHighlightCache {
 
   /// The language of every file, or `null` to guess from each path.
   final String? language;
+
+  /// Inline comparison used by all consumers of this cache.
+  final InlineDiffMode inlineDiffMode;
 
   final Map<FileDiff, (Grammar?, HighlightedDiff)> _highlights = Map.identity();
   final Map<FileDiff, WordChanges> _words = Map.identity();
@@ -313,7 +318,8 @@ final class DiffHighlightCache {
   }
 
   /// [file]'s changed words.
-  WordChanges words(FileDiff file) => _words[file] ??= WordChanges.of(file);
+  WordChanges words(FileDiff file) =>
+      _words[file] ??= WordChanges.of(file, mode: inlineDiffMode);
 
   /// [line] of [file] as styled segments, with its changed words marked.
   List<DiffSegment> segmentsFor(FileDiff file, DiffLine line) =>

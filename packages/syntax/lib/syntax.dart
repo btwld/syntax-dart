@@ -34,6 +34,7 @@ export 'src/diff/word_diff.dart';
 export 'src/document.dart';
 export 'src/grammar/scope_stack.dart' show ScopeStack;
 export 'src/highlighter.dart';
+export 'src/presentation.dart';
 export 'src/regex/engine.dart'
     show
         DartRegexEngine,

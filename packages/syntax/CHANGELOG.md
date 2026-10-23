@@ -27,13 +27,20 @@
   - editor colors on `SyntaxTheme`, and `alphaBlend`.
 - Diff tools:
   - `parsePatch` for unified diffs and `git diff` output, including
-    renames, copies, binary files and quoted paths;
-  - `diffTexts`, a Myers line diff that groups changes the way git does;
-  - `WordChanges`;
+    renames, copies, binary files, quoted paths, git header object IDs and
+    modes, and independent transport and source line endings;
+  - `diffTexts`, a Myers line diff that groups changes the way git does,
+    preserving `\n`, `\r\n` and `\r` source line endings and copying `id`,
+    `revision` and `language` onto `FileDiff`;
+  - `WordChanges` and `InlineDiffMode` (`word`, `mergedWords`,
+    `changedSpan`, `character`, `none`), skipping lines over 10,000
+    characters;
   - `HighlightedDiff`, with a `language` override and `segmentsFor`, and
     `DiffHighlightCache` to keep it per file. Both can highlight a slice
     at a time too;
-  - `layoutDiff`, which lays out the rows of a diff view;
+  - `DiffLayout`, `layoutDiff`, `DiffIndicators` and `HunkSeparatorStyle`,
+    which lay out the rows of a diff view lazily;
+  - `renderDiffHtml` and `HtmlDecoration` for multi-theme static diff HTML;
   - `DiffLabels`, the English words a diff view shows;
   - `FileDiff.changeBlocks` for a GitHub-style change bar;
   - `DiffColors`, read from VS Code themes;

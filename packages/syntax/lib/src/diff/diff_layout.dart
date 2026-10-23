@@ -1,3 +1,4 @@
+import 'dart:collection';
 import 'dart:math' as math;
 
 import 'file_diff.dart';
@@ -9,6 +10,33 @@ enum DiffMode {
 
   /// The old file on the left and the new file on the right.
   split,
+}
+
+/// Change markers independent of line background colors.
+enum DiffIndicators {
+  /// Plus and minus symbols.
+  classic,
+
+  /// Colored vertical bars.
+  bars,
+
+  /// No change marker.
+  none,
+}
+
+/// Built-in presentation of context gaps and section metadata.
+enum HunkSeparatorStyle {
+  /// Context count with a comfortably spaced separator.
+  lineInfo,
+
+  /// Compact context count and controls.
+  compact,
+
+  /// Complete patch coordinates and section metadata.
+  metadata,
+
+  /// A minimal gap indicator.
+  minimal,
 }
 
 /// The unchanged lines before hunk `hunk` of file `file`, or after the
@@ -73,10 +101,13 @@ final class DiffNoticeRow extends DiffRow {
 /// The `@@` line that starts a hunk.
 final class DiffHunkHeaderRow extends DiffRow {
   /// The header that starts [hunk].
-  const DiffHunkHeaderRow(super.file, this.hunk);
+  const DiffHunkHeaderRow(super.file, this.hunk, {this.collapsed = false});
 
   /// The hunk this header starts; its [DiffHunk.header] is the text.
   final DiffHunk hunk;
+
+  /// Whether this section's source lines are hidden.
+  final bool collapsed;
 
   @override
   String toString() => 'DiffHunkHeaderRow($file, ${hunk.header})';
@@ -143,38 +174,259 @@ List<DiffRow> layoutDiff(
   DiffMode mode = DiffMode.unified,
   Set<int> collapsed = const {},
   Set<DiffGapId> expanded = const {},
-}) {
-  final rows = <DiffRow>[];
-  for (var f = 0; f < files.length; f++) {
-    final file = files[f];
-    final isCollapsed = file.path.isNotEmpty && collapsed.contains(f);
-    if (file.path.isNotEmpty) {
-      rows.add(DiffFileHeaderRow(f, collapsed: isCollapsed));
-    }
-    if (isCollapsed) continue;
-    if (file.isBinary) {
-      rows.add(DiffNoticeRow(f, DiffNotice.binary));
-      continue;
-    }
-    if (file.hunks.isEmpty) {
-      rows.add(DiffNoticeRow(f, _noticeFor(file)));
-      continue;
-    }
-    final hasTexts = file.newLines != null;
-    for (var h = 0; h < file.hunks.length; h++) {
-      final gap = (file: f, hunk: h);
-      if (hasTexts) _addGap(rows, file, gap, mode, expanded.contains(gap));
-      if (!expanded.contains(gap)) {
-        rows.add(DiffHunkHeaderRow(f, file.hunks[h]));
+}) => DiffLayout(files, mode: mode, collapsed: collapsed, expanded: expanded);
+
+/// Number of context lines revealed from the beginning and end of a gap.
+typedef GapExpansion = ({int before, int after});
+
+final class _RowBlock {
+  _RowBlock(
+    this.start,
+    this.count,
+    this.row, {
+    this.file = -1,
+    this.oldStart,
+    this.newStart,
+    this.oldCount = 0,
+    this.newCount = 0,
+  });
+  final int start, count, file, oldCount, newCount;
+  final int? oldStart, newStart;
+  final DiffRow Function(int) row;
+}
+
+/// Random-access layout storing runs instead of one object per visible line.
+/// Constructing and expanding a large context region costs one block, while
+/// accessing an individual row takes logarithmic time.
+final class DiffLayout extends ListBase<DiffRow> {
+  /// Indexes logical diff rows without allocating a list of every row.
+  DiffLayout(
+    List<FileDiff> files, {
+    this.mode = DiffMode.unified,
+    Set<int> collapsed = const {},
+    Set<DiffGapId> expanded = const {},
+    Map<DiffGapId, GapExpansion> expansions = const {},
+    int contextThreshold = 0,
+    bool expandAll = false,
+    Set<DiffGapId> collapsedHunks = const {},
+    bool showHunkHeaders = false,
+  }) {
+    RangeError.checkNotNegative(contextThreshold, 'contextThreshold');
+    for (var f = 0; f < files.length; f++) {
+      final file = files[f];
+      final closed = file.path.isNotEmpty && collapsed.contains(f);
+      if (file.path.isNotEmpty) _one(DiffFileHeaderRow(f, collapsed: closed));
+      if (closed) continue;
+      if (file.isBinary) {
+        _one(DiffNoticeRow(f, DiffNotice.binary));
+        continue;
       }
-      _addHunk(rows, f, file.hunks[h], mode);
-    }
-    if (hasTexts) {
-      final gap = (file: f, hunk: file.hunks.length);
-      _addGap(rows, file, gap, mode, expanded.contains(gap));
+      if (file.hunks.isEmpty) {
+        _one(DiffNoticeRow(f, _noticeFor(file)));
+        continue;
+      }
+      for (var h = 0; h <= file.hunks.length; h++) {
+        final id = (file: f, hunk: h);
+        final full = expandAll || expanded.contains(id);
+        final gapHidden = _gap(
+          file,
+          id,
+          full,
+          expansions[id],
+          contextThreshold,
+        );
+        if (h == file.hunks.length) break;
+        final folded = collapsedHunks.contains(id);
+        if (folded ||
+            showHunkHeaders ||
+            gapHidden ||
+            (!full && expansions[id] == null)) {
+          _hunkHeaders[(f, file.hunks[h].newStart)] = _length;
+          _one(DiffHunkHeaderRow(f, file.hunks[h], collapsed: folded));
+        }
+        if (!folded) _hunk(f, file.hunks[h]);
+      }
     }
   }
-  return rows;
+
+  /// Unified or side-by-side presentation of changed source lines.
+  final DiffMode mode;
+  final List<_RowBlock> _blocks = [];
+  final Map<(int, int), int> _hunkHeaders = {};
+  int _length = 0;
+
+  /// Number of compact row runs retained by this layout.
+  int get blockCount => _blocks.length;
+  @override
+  int get length => _length;
+  @override
+  set length(int value) => throw UnsupportedError('DiffLayout is immutable');
+  @override
+  void operator []=(int index, DiffRow value) =>
+      throw UnsupportedError('DiffLayout is immutable');
+  @override
+  DiffRow operator [](int index) {
+    RangeError.checkValidIndex(index, this);
+    var low = 0, high = _blocks.length;
+    while (low + 1 < high) {
+      final mid = (low + high) ~/ 2;
+      if (_blocks[mid].start <= index) {
+        low = mid;
+      } else {
+        high = mid;
+      }
+    }
+    final block = _blocks[low];
+    return block.row(index - block.start);
+  }
+
+  void _one(DiffRow row) => _add(1, (_) => row, file: row.file);
+  void _add(
+    int count,
+    DiffRow Function(int) row, {
+    required int file,
+    int? oldStart,
+    int? newStart,
+    int oldCount = 0,
+    int newCount = 0,
+  }) {
+    if (count <= 0) return;
+    _blocks.add(
+      _RowBlock(
+        _length,
+        count,
+        row,
+        file: file,
+        oldStart: oldStart,
+        newStart: newStart,
+        oldCount: oldCount,
+        newCount: newCount,
+      ),
+    );
+    _length += count;
+  }
+
+  /// Finds a visible one-based source line, or null if it is hidden.
+  int? rowForLine(int file, int number, {bool oldSide = false}) {
+    for (final block in _blocks) {
+      if (block.file != file) continue;
+      final start = oldSide ? block.oldStart : block.newStart;
+      final count = oldSide ? block.oldCount : block.newCount;
+      if (start != null && number >= start && number < start + count) {
+        return block.start + number - start;
+      }
+    }
+    return null;
+  }
+
+  /// Finds the header row for a zero-based file index.
+  int? rowForFile(int file) {
+    for (final block in _blocks) {
+      if (block.file == file) return block.start;
+    }
+    return null;
+  }
+
+  /// Finds a visible section header by its file index and new-side start line.
+  int? rowForSection(int file, int newStart) => _hunkHeaders[(file, newStart)];
+
+  bool _gap(
+    FileDiff file,
+    DiffGapId id,
+    bool full,
+    GapExpansion? expansion,
+    int threshold,
+  ) {
+    final lines = file.newLines;
+    if (lines == null) return true;
+    final previous = id.hunk == 0 ? null : file.hunks[id.hunk - 1];
+    final next = id.hunk == file.hunks.length ? null : file.hunks[id.hunk];
+    final first = previous == null ? 1 : _newEnd(previous) + 1;
+    final last = next == null
+        ? lines.length
+        : next.newStart - (next.newCount == 0 ? 0 : 1);
+    final count = math.max(0, last - first + 1);
+    final shift = previous == null ? 0 : _oldEnd(previous) - _newEnd(previous);
+    final before = full || count <= threshold
+        ? count
+        : (expansion?.before ?? 0).clamp(0, count);
+    final after = (expansion?.after ?? 0).clamp(0, count - before);
+    void context(int start, int amount) {
+      _add(
+        amount,
+        (index) {
+          final n = start + index;
+          final line = DiffLine(
+            DiffLineKind.context,
+            lines[n - 1],
+            oldNumber: n + shift,
+            newNumber: n,
+          );
+          return mode == DiffMode.unified
+              ? DiffLineRow(id.file, line)
+              : DiffPairRow(id.file, line, line);
+        },
+        file: id.file,
+        oldStart: start + shift,
+        newStart: start,
+        oldCount: amount,
+        newCount: amount,
+      );
+    }
+
+    context(first, before);
+    if (before + after < count) _one(DiffGapRow(id, count - before - after));
+    context(last - after + 1, after);
+    return before + after < count;
+  }
+
+  void _hunk(int file, DiffHunk hunk) {
+    final lines = hunk.lines;
+    var i = 0;
+    while (i < lines.length) {
+      final start = i;
+      final kind = lines[i].kind;
+      if (mode == DiffMode.unified || kind == DiffLineKind.context) {
+        while (i < lines.length && lines[i].kind == kind) {
+          i++;
+        }
+        final count = i - start;
+        _add(
+          count,
+          (j) => mode == DiffMode.unified
+              ? DiffLineRow(file, lines[start + j])
+              : DiffPairRow(file, lines[start + j], lines[start + j]),
+          file: file,
+          oldStart: lines[start].oldNumber,
+          newStart: lines[start].newNumber,
+          oldCount: kind != DiffLineKind.added ? count : 0,
+          newCount: kind != DiffLineKind.removed ? count : 0,
+        );
+      } else {
+        while (i < lines.length && lines[i].kind == DiffLineKind.removed) {
+          i++;
+        }
+        final addedStart = i;
+        while (i < lines.length && lines[i].kind == DiffLineKind.added) {
+          i++;
+        }
+        final removed = addedStart - start, added = i - addedStart;
+        _add(
+          math.max(removed, added),
+          (j) => DiffPairRow(
+            file,
+            j < removed ? lines[start + j] : null,
+            j < added ? lines[addedStart + j] : null,
+          ),
+          file: file,
+          oldStart: removed > 0 ? lines[start].oldNumber : null,
+          newStart: added > 0 ? lines[addedStart].newNumber : null,
+          oldCount: removed,
+          newCount: added,
+        );
+      }
+    }
+  }
 }
 
 DiffNotice _noticeFor(FileDiff file) => switch (file.kind) {
@@ -186,83 +438,9 @@ DiffNotice _noticeFor(FileDiff file) => switch (file.kind) {
   FileDiffKind.modified => DiffNotice.noChanges,
 };
 
-/// Adds the unchanged lines of [gap], collapsed or as context lines.
-void _addGap(
-  List<DiffRow> rows,
-  FileDiff file,
-  DiffGapId gap,
-  DiffMode mode,
-  bool isExpanded,
-) {
-  final newLines = file.newLines!;
-  final previous = gap.hunk == 0 ? null : file.hunks[gap.hunk - 1];
-  final next = gap.hunk < file.hunks.length ? file.hunks[gap.hunk] : null;
-  final firstNew = previous == null ? 1 : _newEnd(previous) + 1;
-  // A hunk without new lines starts after line newStart, not at it.
-  final lastNew = next == null
-      ? newLines.length
-      : (next.newCount == 0 ? next.newStart : next.newStart - 1);
-  final count = lastNew - firstNew + 1;
-  if (count <= 0) return;
-  if (!isExpanded) {
-    rows.add(DiffGapRow(gap, count));
-    return;
-  }
-  // Old line numbers in a gap are offset by the changes above it.
-  final shift = previous == null ? 0 : _oldEnd(previous) - _newEnd(previous);
-  for (var n = firstNew; n <= lastNew; n++) {
-    final line = DiffLine(
-      DiffLineKind.context,
-      newLines[n - 1],
-      oldNumber: n + shift,
-      newNumber: n,
-    );
-    rows.add(
-      mode == DiffMode.unified
-          ? DiffLineRow(gap.file, line)
-          : DiffPairRow(gap.file, line, line),
-    );
-  }
-}
-
 /// The last new line a hunk covers; for a hunk without new lines, the line
 /// before it.
 int _newEnd(DiffHunk h) =>
     h.newCount == 0 ? h.newStart : h.newStart + h.newCount - 1;
 int _oldEnd(DiffHunk h) =>
     h.oldCount == 0 ? h.oldStart : h.oldStart + h.oldCount - 1;
-
-void _addHunk(List<DiffRow> rows, int file, DiffHunk hunk, DiffMode mode) {
-  final lines = hunk.lines;
-  if (mode == DiffMode.unified) {
-    for (final line in lines) {
-      rows.add(DiffLineRow(file, line));
-    }
-    return;
-  }
-  var i = 0;
-  while (i < lines.length) {
-    if (lines[i].kind == DiffLineKind.context) {
-      rows.add(DiffPairRow(file, lines[i], lines[i]));
-      i++;
-      continue;
-    }
-    final removed = <DiffLine>[];
-    final added = <DiffLine>[];
-    while (i < lines.length && lines[i].kind == DiffLineKind.removed) {
-      removed.add(lines[i++]);
-    }
-    while (i < lines.length && lines[i].kind == DiffLineKind.added) {
-      added.add(lines[i++]);
-    }
-    for (var p = 0; p < math.max(removed.length, added.length); p++) {
-      rows.add(
-        DiffPairRow(
-          file,
-          p < removed.length ? removed[p] : null,
-          p < added.length ? added[p] : null,
-        ),
-      );
-    }
-  }
-}
