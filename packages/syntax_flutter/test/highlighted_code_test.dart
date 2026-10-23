@@ -23,13 +23,14 @@ Widget app(Widget child) => MaterialApp(
 
 HighlightedCode code(
   List<String> lines, {
+  String language = 'dart',
   bool lineNumbers = false,
   bool softWrap = false,
   EdgeInsetsGeometry padding = const EdgeInsets.all(16),
   BorderRadiusGeometry? borderRadius,
 }) => HighlightedCode(
   lines.join('\n'),
-  language: 'dart',
+  language: language,
   theme: githubDarkTheme,
   lineNumbers: lineNumbers,
   softWrap: softWrap,
@@ -423,8 +424,11 @@ void main() {
   testWidgets('a change re-tokenizes only the changed line', (tester) async {
     final lines = numberedLines(50);
     await tester.pumpWidget(app(code(lines)));
+    // A grammar's first use can outlast the first slice.
+    await tester.pumpAndSettle();
     final before = shownLines(tester);
     await tester.pumpWidget(app(code([...lines]..[25] = 'final changed = 1;')));
+    await tester.pumpAndSettle();
     final after = shownLines(tester);
     expect(after.keys, before.keys);
     for (final MapEntry(key: line, value: span) in after.entries) {
@@ -457,9 +461,13 @@ void main() {
     tester,
   ) async {
     final lines = numberedLines(2000)
-      ..[3] = 'a b\u000Cc\rd'
+      ..[3] = 'a\u2028b\u000Cc\rd'
       ..[4] = '';
-    await tester.pumpWidget(app(code(lines, lineNumbers: true)));
+    // Shown plain: the Dart VM in Flutter 3.35 crashes tokenizing U+2028
+    // with the Dart grammar.
+    await tester.pumpWidget(
+      app(code(lines, language: 'text', lineNumbers: true)),
+    );
     final paragraph = tester.renderObject<RenderParagraph>(codeOf(0));
     // The block's last line is where 32 lines of 21 px put it.
     final last = paragraph.text.toPlainText().lastIndexOf('\n') + 1;
@@ -496,12 +504,12 @@ void main() {
     tester,
   ) async {
     final copied = recordClipboard(tester);
-    await tester.pumpWidget(app(code(['a b', 'c'])));
+    await tester.pumpWidget(app(code(['a\u2028b', 'c'], language: 'text')));
     await tester.pumpAndSettle();
     region(tester).selectAll(SelectionChangedCause.keyboard);
     await tester.pump();
     await copy(tester);
-    expect(copied(), 'a b\nc');
+    expect(copied(), 'a\u2028b\nc');
   });
 
   group('copying', () {
