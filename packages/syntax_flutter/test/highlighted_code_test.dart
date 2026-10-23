@@ -258,7 +258,7 @@ void main() {
 
     testWidgets('move the semantics of the code with them', (tester) async {
       final semantics = tester.ensureSemantics();
-      final widths = LineWidths(1500);
+      final widths = LineWidths(1500, guessBlock: -1);
       final horizontal = ScrollController();
       addTearDown(horizontal.dispose);
       const key = Key('code');
@@ -275,6 +275,7 @@ void main() {
               child: Align(
                 alignment: Alignment.topLeft,
                 child: ShiftedCode(
+                  block: 0,
                   offset: offset,
                   widths: widths,
                   child: Semantics(
@@ -305,12 +306,14 @@ void main() {
       semantics.dispose();
     });
 
-    testWidgets('grow the scroll when a row is wider than guessed', (
-      tester,
-    ) async {
-      // The guess is the longest line by characters. A line that renders
-      // wider, with wide characters, is found when it's laid out.
-      final widths = LineWidths(300);
+    /// 100 blocks of 20 px under one horizontal scroll, block [wide]
+    /// being [wideWidth] wide and the others 200.
+    Future<(ScrollController, ScrollController)> blocks(
+      WidgetTester tester,
+      LineWidths widths, {
+      required int wide,
+      required double wideWidth,
+    }) async {
       final horizontal = ScrollController();
       final vertical = ScrollController();
       addTearDown(horizontal.dispose);
@@ -330,19 +333,52 @@ void main() {
                 itemExtent: 20,
                 itemCount: 100,
                 itemBuilder: (context, index) => ShiftedCode(
+                  block: index,
                   offset: offset,
                   widths: widths,
-                  child: SizedBox(width: index == 99 ? 1500 : 200),
+                  child: SizedBox(width: index == wide ? wideWidth : 200),
                 ),
               ),
             ),
           ),
         ),
       );
+      return (horizontal, vertical);
+    }
+
+    testWidgets('grow the scroll when a block is wider than guessed', (
+      tester,
+    ) async {
+      // A line with fewer characters than the guessed one can render
+      // wider, with wide characters; it's found when it's laid out.
+      final (horizontal, vertical) = await blocks(
+        tester,
+        LineWidths(300, guessBlock: 0),
+        wide: 99,
+        wideWidth: 1500,
+      );
       expect(horizontal.position.maxScrollExtent, 0);
       vertical.jumpTo(vertical.position.maxScrollExtent);
       await tester.pump();
       // Picked up in the next frame.
+      await tester.pump();
+      expect(horizontal.position.maxScrollExtent, 1500 - 800);
+    });
+
+    testWidgets('shrink the scroll once the guessed line is measured', (
+      tester,
+    ) async {
+      // A guess scaled up from the start of a very long line can be too
+      // wide, for example when its start has wider characters.
+      final (horizontal, vertical) = await blocks(
+        tester,
+        LineWidths(5000, guessBlock: 50),
+        wide: 50,
+        wideWidth: 1500,
+      );
+      expect(horizontal.position.maxScrollExtent, 5000 - 800);
+      vertical.jumpTo(50 * 20);
+      await tester.pump();
       await tester.pump();
       expect(horizontal.position.maxScrollExtent, 1500 - 800);
     });

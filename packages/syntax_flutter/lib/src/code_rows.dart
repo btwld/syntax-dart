@@ -5,24 +5,37 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 
-/// The widest line laid out so far, which sets how far the code scrolls
-/// sideways. It starts from an estimate and grows when a row turns out
-/// wider, for example a line with wide characters.
+/// How wide the code is, which sets how far it scrolls sideways.
+///
+/// It starts from a guess at the width of one line, the longest by
+/// characters, and grows when a block turns out wider, for example with
+/// wide characters. Once the block holding that line is laid out, its
+/// measured width replaces the guess, which may have been too wide.
 final class LineWidths {
-  /// Starts from a guess of [max].
-  LineWidths(this.max);
+  /// Starts from [guess], the width of a line in block [guessBlock].
+  LineWidths(this._guess, {required this.guessBlock});
+
+  final double _guess;
+
+  /// The block holding the line [max] was first guessed from.
+  final int guessBlock;
+
+  double _measured = 0;
+  bool _guessMeasured = false;
 
   /// The content width the horizontal scroll covers.
-  double max;
+  double get max => _guessMeasured ? _measured : math.max(_guess, _measured);
 
   RenderHorizontalExtent? _extent;
   bool _scheduled = false;
 
-  void _report(double width) {
-    if (width <= max) return;
-    max = width;
+  void _report(int block, double width) {
+    final before = max;
+    if (width > _measured) _measured = width;
+    if (block == guessBlock) _guessMeasured = true;
+    if (max == before) return;
     final extent = _extent;
-    // Rows laid out inside the extent's own layout are picked up by it.
+    // Blocks laid out inside the extent's own layout are picked up by it.
     if (extent == null || extent._layingOut || _scheduled) return;
     _scheduled = true;
     SchedulerBinding.instance.addPostFrameCallback((_) {
@@ -141,13 +154,18 @@ class RenderHorizontalExtent extends RenderProxyBox {
 /// paints and hit-tests it moved left by [offset]'s pixels, clipped to its
 /// own box.
 class ShiftedCode extends SingleChildRenderObjectWidget {
-  /// Shifts [child] by [offset], reporting its width to [widths].
+  /// Shifts [child] by [offset], reporting its width to [widths] as
+  /// [block]'s.
   const ShiftedCode({
     super.key,
+    required this.block,
     required this.offset,
     required this.widths,
     super.child,
   });
+
+  /// The block [child] shows.
+  final int block;
 
   /// The horizontal scroll offset.
   final ViewportOffset offset;
@@ -157,7 +175,7 @@ class ShiftedCode extends SingleChildRenderObjectWidget {
 
   @override
   RenderShiftedCode createRenderObject(BuildContext context) =>
-      RenderShiftedCode(offset, widths);
+      RenderShiftedCode(block, offset, widths);
 
   @override
   void updateRenderObject(
@@ -165,6 +183,7 @@ class ShiftedCode extends SingleChildRenderObjectWidget {
     RenderShiftedCode renderObject,
   ) {
     renderObject
+      ..block = block
       ..offset = offset
       ..widths = widths;
   }
@@ -172,8 +191,18 @@ class ShiftedCode extends SingleChildRenderObjectWidget {
 
 /// The render object of [ShiftedCode].
 class RenderShiftedCode extends RenderProxyBox {
-  /// Shifts its child by [offset], reporting its width to [widths].
-  RenderShiftedCode(this._offset, this._widths);
+  /// Shifts its child by [offset], reporting its width to [widths] as
+  /// [block]'s.
+  RenderShiftedCode(this._block, this._offset, this._widths);
+
+  int _block;
+
+  /// The block the child shows.
+  set block(int value) {
+    if (value == _block) return;
+    _block = value;
+    markNeedsLayout();
+  }
 
   ViewportOffset _offset;
 
@@ -243,7 +272,7 @@ class RenderShiftedCode extends RenderProxyBox {
       return;
     }
     child.layout(_childConstraints(constraints), parentUsesSize: true);
-    _widths._report(child.size.width);
+    _widths._report(_block, child.size.width);
     size = _sizeFor(constraints, child.size);
   }
 
@@ -540,7 +569,12 @@ class _CodeBlockState extends State<CodeBlock> {
       );
     }
     if (widget.offset case final offset?) {
-      code = ShiftedCode(offset: offset, widths: widget.widths!, child: code);
+      code = ShiftedCode(
+        block: widget.index,
+        offset: offset,
+        widths: widget.widths!,
+        child: code,
+      );
     }
     final numbers = widget.numbers;
     if (numbers == null) return code;

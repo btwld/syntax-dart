@@ -120,7 +120,7 @@ class _HighlightedCodeState extends State<HighlightedCode> {
   /// Measurements and plain spans for the current styles and lines.
   Object? _metricsKey;
   List<TextSpan?> _plainSpans = const [];
-  LineWidths _widths = LineWidths(0);
+  LineWidths _widths = LineWidths(0, guessBlock: 0);
 
   /// Built blocks, reused while their lines' spans are the same.
   Object? _blocksKey;
@@ -244,15 +244,18 @@ class _HighlightedCodeState extends State<HighlightedCode> {
     _lineHeight = digit.height;
     _gutterWidth = '${_lines.length}'.length * digit.width + 16;
     // The longest line by characters sets the first guess at the content
-    // width; rows that turn out wider grow it.
-    final longest = _lines.reduce((a, b) => b.length > a.length ? b : a);
+    // width, until its block is laid out.
+    var longest = 0;
+    for (var i = 1; i < _lines.length; i++) {
+      if (_lines[i].length > _lines[longest].length) longest = i;
+    }
+    final line = _lines[longest];
     // A very long line is measured by its start, scaled to its length.
-    final sample = longest.length <= 1000
-        ? longest
-        : longest.substring(0, 1000);
+    final sample = line.length <= 1000 ? line : line.substring(0, 1000);
     final painter = measure(_shown(sample));
     _widths = LineWidths(
-      sample.isEmpty ? 0 : painter.width * longest.length / sample.length,
+      sample.isEmpty ? 0 : painter.width * line.length / sample.length,
+      guessBlock: longest ~/ linesPerBlock,
     );
     painter.dispose();
     digit.dispose();
