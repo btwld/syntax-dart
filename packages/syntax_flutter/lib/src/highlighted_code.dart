@@ -26,8 +26,10 @@ import 'styles.dart';
 /// report intrinsic sizes, so it can't sit inside [IntrinsicHeight] or an
 /// [AlertDialog]'s content.
 ///
-/// A large file is tokenized a slice at a time between frames, top first.
-/// Lines show plain until their colors are ready.
+/// When only the lines on screen are laid out, a large file is tokenized
+/// a slice at a time between frames, top first, and lines show plain until
+/// their colors are ready. Otherwise every line is laid out anyway, so the
+/// code is tokenized at once and laid out once.
 ///
 /// Copying a selection copies the lines between its ends, including lines
 /// scrolled out of view.
@@ -138,7 +140,15 @@ class _HighlightedCodeState extends State<HighlightedCode> {
   void initState() {
     super.initState();
     _selection.onSelectedBlocksChanged = _releaseHeld;
+    PaintingBinding.instance.systemFonts.addListener(_fontsChanged);
   }
+
+  /// A font that loads later, such as one fetched at run time, changes the
+  /// line height and widths measured with the fallback font.
+  void _fontsChanged() => setState(() => _fonts++);
+
+  /// Bumped when system fonts change, so everything measured is again.
+  var _fonts = 0;
 
   void _releaseHeld() {
     final released = [
@@ -158,6 +168,7 @@ class _HighlightedCodeState extends State<HighlightedCode> {
 
   @override
   void dispose() {
+    PaintingBinding.instance.systemFonts.removeListener(_fontsChanged);
     _horizontal.dispose();
     _selection.dispose();
     super.dispose();
@@ -187,11 +198,10 @@ class _HighlightedCodeState extends State<HighlightedCode> {
       _document = null;
       return;
     }
-    final document = (_document ??= TokenizedDocument(grammar))
-      ..grammar = grammar;
-    if (!document.update(widget.code, budget: _sliceBudget)) {
-      _finishLater();
-    }
+    // [_list] finishes the rest, now or between frames.
+    (_document ??= TokenizedDocument(grammar))
+      ..grammar = grammar
+      ..update(widget.code, budget: _sliceBudget);
   }
 
   /// Tokenizes the rest a slice at a time, right after each frame,
@@ -229,7 +239,7 @@ class _HighlightedCodeState extends State<HighlightedCode> {
     }
     final scaler =
         MediaQuery.maybeTextScalerOf(context) ?? TextScaler.noScaling;
-    final metrics = (styles, scaler, _lines);
+    final metrics = (styles, scaler, _lines, _fonts);
     if (metrics == _metricsKey) return;
     _metricsKey = metrics;
     _plainSpans = List.filled(_lines.length, null);
@@ -242,7 +252,21 @@ class _HighlightedCodeState extends State<HighlightedCode> {
     )..layout();
     final digit = measure('0');
     _lineHeight = digit.height;
-    _gutterWidth = '${_lines.length}'.length * digit.width + 16;
+    // The widest label: the widest digit, as many times as the last line
+    // number has digits. Figures can be proportional.
+    var widest = '0';
+    var widestWidth = digit.width;
+    for (var d = 1; d <= 9; d++) {
+      final painter = measure('$d');
+      if (painter.width > widestWidth) {
+        widest = '$d';
+        widestWidth = painter.width;
+      }
+      painter.dispose();
+    }
+    final label = measure(widest * '${_lines.length}'.length);
+    _gutterWidth = label.width + 16;
+    label.dispose();
     // The longest line by characters sets the first guess at the content
     // width, until its block is laid out.
     var longest = 0;
@@ -344,6 +368,12 @@ class _HighlightedCodeState extends State<HighlightedCode> {
   }
 
   Widget _list({required bool virtualize, required ViewportOffset? offset}) {
+    // Every block is laid out unless virtualized, and recoloring them a
+    // slice at a time would lay them all out again each frame, so they
+    // get their colors at once.
+    if (_document case final document? when !document.isComplete) {
+      virtualize ? _finishLater() : document.tokenize();
+    }
     final tokenized = _document?.lines ?? const <DocumentLine>[];
     final count = (_lines.length + linesPerBlock - 1) ~/ linesPerBlock;
     final key = (

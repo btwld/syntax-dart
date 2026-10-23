@@ -22,4 +22,7 @@
   without freezing. It tokenizes between frames, and code taller than its
   box now scrolls. Line numbers keep the height of their lines, and
   copying keeps line breaks and the lines scrolled out of view.
+- **Breaking:** `HighlightedCode` with more than 200 lines can't report
+  intrinsic sizes, so it can't sit inside `IntrinsicHeight` or an
+  `AlertDialog`'s content. Give it a size instead.
 - `HighlighterScope` for sharing one `Highlighter`.

@@ -132,6 +132,32 @@ void main() {
       expect(find.byType(ListView), findsNothing);
     });
 
+    testWidgets('inside a scroll view, code is colored at once', (
+      tester,
+    ) async {
+      // Every block is laid out there, so slicing would lay them all out
+      // again each frame.
+      await tester.pumpWidget(
+        app(SingleChildScrollView(child: code(numberedLines(3000)))),
+      );
+      expect(colored(shownLines(tester)[2999]!), isTrue);
+    });
+
+    testWidgets('measures again when system fonts change', (tester) async {
+      await tester.pumpWidget(app(code(numberedLines(10))));
+      final before = tester.widget<CodeBlock>(block(0));
+      await tester.pump();
+      expect(identical(tester.widget<CodeBlock>(block(0)), before), isTrue);
+      // What the engine sends when a font finishes loading.
+      await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+        SystemChannels.system.name,
+        SystemChannels.system.codec.encodeMessage({'type': 'fontsChange'}),
+        (_) {},
+      );
+      await tester.pump();
+      expect(identical(tester.widget<CodeBlock>(block(0)), before), isFalse);
+    });
+
     testWidgets('short code hugs its lines and keeps intrinsic sizes', (
       tester,
     ) async {
@@ -216,6 +242,20 @@ void main() {
         }
       }
     }
+
+    testWidgets('fit the widest label', (tester) async {
+      await tester.pumpWidget(
+        app(code(numberedLines(1000), lineNumbers: true)),
+      );
+      final last = builtBlocks(tester).last;
+      final numbers = tester.renderObject<RenderParagraph>(numbersOf(last));
+      expect(
+        numbers.getMaxIntrinsicWidth(double.infinity),
+        lessThanOrEqualTo(numbers.size.width),
+      );
+      // Four digits of 14 px, and 16 px after them.
+      expect(tester.getSize(numbersOf(last)).width, 4 * 14);
+    });
 
     testWidgets('stay aligned with their lines', (tester) async {
       await tester.pumpWidget(app(code(numberedLines(20), lineNumbers: true)));
