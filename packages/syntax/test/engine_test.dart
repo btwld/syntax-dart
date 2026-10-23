@@ -11,9 +11,11 @@ List<Object?>? scanBoth(
   bool allowG = false,
 }) {
   List<Object?>? run(bool combine) {
-    final m = DartRegexEngine(combinePatterns: combine)
-        .createScanner(patterns)
-        .findNextMatch('$line\n', start, allowA: allowA, allowG: allowG);
+    // No size limit, so the combined path is tested whatever the default.
+    final m =
+        DartRegexEngine(combinePatterns: combine, combineMaxSource: 1 << 30)
+            .createScanner(patterns)
+            .findNextMatch('$line\n', start, allowA: allowA, allowG: allowG);
     if (m == null) return null;
     return [
       m.patternIndex,

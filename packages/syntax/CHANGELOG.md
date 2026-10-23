@@ -7,6 +7,9 @@
 - An Oniguruma-to-ECMAScript regex translator, so grammars run on Dart's
   built-in `RegExp`. Capture offsets are measured from the match start,
   so finding them costs the same anywhere in a long line.
+- A rule's patterns are searched with one combined regex only when they're
+  small (`DartRegexEngine.combineMaxSource`). Grammars with very large
+  patterns, such as TypeScript, no longer stall on first use.
 - VS Code theme resolution, plus HTML and ANSI rendering.
 - Renderer-neutral building blocks:
   - `TokenizedDocument` for incremental highlighting;
