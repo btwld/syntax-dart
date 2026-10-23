@@ -203,7 +203,9 @@ final class HighlightedDiff {
     }
     if (document == null) return byNumber[number] ?? const [];
     final lines = document.lines;
-    return number <= lines.length ? lines[number - 1].themed(_theme) : const [];
+    return number >= 1 && number <= lines.length
+        ? lines[number - 1].themed(_theme)
+        : const [];
   }
 
   /// [line] as styled segments, ready to paint. With [words], the segments

@@ -560,6 +560,10 @@ int c() {
       while (!done) {
         done = sliced.tokenize(budget: Duration.zero);
       }
+      // Numbers outside the file have no tokens, as in the other paths.
+      expect(sliced.oldLine(0), isEmpty);
+      expect(sliced.newLine(-1), isEmpty);
+      expect(sliced.newLine(41), isEmpty);
       for (final line in lines) {
         expect(
           [for (final t in sliced.tokensFor(line)) (t.text, t.style)],
