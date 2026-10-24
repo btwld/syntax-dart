@@ -5,6 +5,5 @@ environment:
 workspace:
   - packages/syntax
   - packages/syntax_flutter
-  - packages/syntax_flutter/example
 dev_dependencies:
   lints: ^6.0.0

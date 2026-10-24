@@ -18,16 +18,14 @@ theme.
 | [`packages/syntax_flutter/example`](packages/syntax_flutter/example) | A read-only code, diff and patch preview with a picker for every bundled language and theme. |
 | [`packages/syntax_noir`](packages/syntax_noir) | Terminal widgets on [noir](https://github.com/btwld/noir): a `CodeHighlighter` for noir's `CodeView` and a `PatchView`. Needs Dart 3.10, so it sits outside the workspace. |
 
-None of the packages is published yet. Renderers paint what the core lays
-out, see [ADR-0002](docs/decisions/0002-renderer-neutral-core.md) and
-[ADR-0003](docs/decisions/0003-engine-and-readonly-rendering.md).
+`syntax`, `syntax_flutter`, and `syntax_noir` are version 0.0.1 and are not
+on pub.dev yet. Renderers paint what the core lays out.
 
 ## Why another highlighter
 
 Highlighters on pub.dev were either highlight.js ports, hand-written
 lexers or Flutter-only. None ran VS Code's TextMate grammars in pure Dart
-with output that matches VS Code. The survey and the reasoning are in
-[docs/decisions/0001](docs/decisions/0001-textmate-engine-on-dart-regexp.md).
+with output that matches VS Code.
 
 ## How it works
 
@@ -134,8 +132,8 @@ dart run packages/syntax/benchmark/long_line.dart
 flutter pub get
 ```
 
-The workspace includes Flutter packages, so it resolves with the Flutter
-SDK.
+The workspace is `syntax` and `syntax_flutter`, so it resolves with the
+Flutter SDK.
 
 ```bash
 cd packages/syntax && dart test
@@ -145,8 +143,17 @@ cd packages/syntax && dart test
 cd packages/syntax_flutter && flutter test
 ```
 
+The example is not a workspace member. Resolve it, then run it:
+
 ```bash
-cd packages/syntax_flutter/example && flutter run -d chrome
+cd packages/syntax_flutter/example && flutter pub get && flutter run -d chrome
+```
+
+`syntax_noir` resolves on its own. Its `pubspec_overrides.yaml` pins
+`syntax` to the sibling package and is not part of the published archive.
+
+```bash
+cd packages/syntax_noir && dart pub get && dart test
 ```
 
 The bundled grammars, themes and goldens are generated from npm. To add a
@@ -168,8 +175,8 @@ Shiki grammar:
 
 ## Not done yet
 
-- **Publishing:** neither package is on pub.dev yet. Drop `publish_to:
-  none` and publish `syntax` first, since `syntax_flutter` depends on it.
+- **Publishing:** upload `syntax` 0.0.1 first, then `syntax_flutter` and
+  `syntax_noir`. The example app stays `publish_to: none`.
 - **Background tokenizing:** an isolate helper for very large documents.
   Today tokenizing is synchronous.
 - **Optional Oniguruma engine:** a `RegexEngine` adapter over

@@ -4,7 +4,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 import 'package:syntax/syntax.dart';
 
-/// Internal viewport adapter that measures only mounted source rows.
+/// Scrollable list that measures only the rows it builds.
 /// Large unmounted ranges occupy estimated sliver space, so jumping to a
 /// distant row never requires building all preceding widgets.
 class IndexedCodeViewport extends StatefulWidget {

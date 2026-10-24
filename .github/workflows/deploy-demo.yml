@@ -29,6 +29,13 @@ jobs:
           channel: stable
           cache: true
 
+      # Same order as CI: the example is not a workspace member, and Flutter
+      # 3.35 fails root `flutter pub get` until the example has a package
+      # config (flutter/flutter#175650).
+      - name: Install example dependencies
+        working-directory: packages/syntax_flutter/example
+        run: flutter pub get
+
       - name: Install dependencies
         run: flutter pub get
 

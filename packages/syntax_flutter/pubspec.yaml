@@ -1,16 +1,16 @@
 name: syntax_flutter
 description: >-
-  Flutter widgets for syntax: syntax-highlighted code views and a highlighting
-  TextEditingController, driven by TextMate grammars and VS Code themes.
-version: 0.1.0-dev
+  Flutter widgets for syntax: read-only highlighted code and diff views,
+  driven by TextMate grammars and VS Code themes.
+version: 0.0.1
 repository: https://github.com/btwld/syntax-dart/tree/main/packages/syntax_flutter
+homepage: https://github.com/btwld/syntax-dart
 issue_tracker: https://github.com/btwld/syntax-dart/issues
-publish_to: none
 topics:
   - syntax-highlighting
   - code
   - widget
-  - editor
+  - flutter
 environment:
   sdk: ^3.9.0
   flutter: ">=3.35.0"
@@ -18,7 +18,7 @@ resolution: workspace
 dependencies:
   flutter:
     sdk: flutter
-  syntax: ^0.1.0-dev
+  syntax: ^0.0.1
 dev_dependencies:
   flutter_test:
     sdk: flutter
