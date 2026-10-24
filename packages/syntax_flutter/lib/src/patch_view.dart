@@ -2,7 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
-import 'package:syntax/syntax.dart';
+import 'package:syntax_core/syntax.dart';
 
 import 'chrome.dart';
 import 'highlighter_scope.dart';

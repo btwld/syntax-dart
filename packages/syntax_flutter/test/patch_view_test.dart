@@ -4,9 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:syntax/langs/dart.dart';
-import 'package:syntax/themes/github_dark.dart';
-import 'package:syntax/themes/github_light.dart';
+import 'package:syntax_core/langs/dart.dart';
+import 'package:syntax_core/themes/github_dark.dart';
+import 'package:syntax_core/themes/github_light.dart';
 import 'package:syntax_flutter/syntax_flutter.dart';
 
 final highlighter = Highlighter(languages: [dartLanguage]);

@@ -2,7 +2,7 @@
   "name": "syntax-tool",
   "private": true,
   "type": "module",
-  "description": "Pulls TextMate grammars/themes into packages/syntax and records Shiki's output as the conformance oracle.",
+  "description": "Pulls TextMate grammars/themes into packages/syntax_core and records Shiki's output as the conformance oracle.",
   "scripts": {
     "generate": "node generate.mjs",
     "samples": "node samples.mjs",

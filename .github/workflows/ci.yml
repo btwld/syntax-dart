@@ -154,4 +154,4 @@ jobs:
         working-directory: tool
         run: npm ci && npm run generate
       - name: Check for differences
-        run: git diff --exit-code -- packages/syntax/lib packages/syntax/NOTICE
+        run: git diff --exit-code -- packages/syntax_core/lib packages/syntax_core/NOTICE

@@ -1,4 +1,4 @@
-// Generates packages/syntax/lib/langs/*.dart and lib/themes/*.dart from the
+// Generates packages/syntax_core/lib/langs/*.dart and lib/themes/*.dart from the
 // tm-grammars and tm-themes npm packages (the same data Shiki ships).
 //
 // Each grammar and theme becomes a `const` Dart value in its own library,
@@ -73,7 +73,7 @@ function writeLangs() {
     fs.writeFileSync(
       path.join(dir, file),
       header(meta.source, meta.license) +
-        `import 'package:syntax/syntax.dart' show Language;\n\n` +
+        `import 'package:syntax_core/syntax.dart' show Language;\n\n` +
         `/// ${meta.displayName} (\`${meta.scopeName}\`).\n` +
         `const ${id} = Language(\n` +
         `  name: ${dartString(name)},\n` +
@@ -104,7 +104,7 @@ function writeThemes() {
     fs.writeFileSync(
       path.join(dir, file),
       header(meta.source, meta.license) +
-        `import 'package:syntax/syntax.dart' show SyntaxTheme;\n\n` +
+        `import 'package:syntax_core/syntax.dart' show SyntaxTheme;\n\n` +
         `/// ${meta.displayName}.\n` +
         `const ${id} = SyntaxTheme(\n` +
         `  name: ${dartString(name)},\n` +
@@ -122,7 +122,7 @@ function writeIndex(dir, type, listName, exports) {
     '//',
     '// Importing this library pulls in every bundled entry. Import',
     '// individual files instead to keep app size down.',
-    `import 'package:syntax/syntax.dart' show ${type};`,
+    `import 'package:syntax_core/syntax.dart' show ${type};`,
     '',
     ...exports.map(({ file }) => `import '${file}';`),
     '',
