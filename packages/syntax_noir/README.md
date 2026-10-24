@@ -58,9 +58,8 @@ blend, so translucent theme colors are painted over the background first.
 
 See [`example/main.dart`](example/main.dart).
 
-`pubspec_overrides.yaml` points `syntax` at the sibling package in this
-repo. That file is not part of the published package. After `syntax` is on
-pub.dev, a checkout without the override resolves it from there.
+Checkouts resolve `syntax_core` from the sibling package through the
+workspace. The published package depends on hosted `syntax_core`.
 
 ## License
 

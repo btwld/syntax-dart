@@ -16,7 +16,7 @@ theme.
 | [`packages/syntax_core`](packages/syntax_core) | Pure Dart, zero dependencies. Contains the tokenizer, themes, HTML/ANSI rendering, diff tools (patch parsing, line diffs, word-level changes), and the renderer-neutral pieces other renderers build on. It runs on the VM, AOT, the web and inside Flutter. |
 | [`packages/syntax_flutter`](packages/syntax_flutter) | Contains `HighlightedCode` (read-only highlighted code), `PatchView` (a highlighted diff or patch, unified or split) and `HighlighterScope`. |
 | [`packages/syntax_flutter/example`](packages/syntax_flutter/example) | A read-only code, diff and patch preview with a picker for every bundled language and theme. |
-| [`packages/syntax_noir`](packages/syntax_noir) | Terminal widgets on [noir](https://github.com/btwld/noir): a `CodeHighlighter` for noir's `CodeView` and a `PatchView`. Needs Dart 3.10, so it sits outside the workspace. |
+| [`packages/syntax_noir`](packages/syntax_noir) | Terminal widgets on [noir](https://github.com/btwld/noir): a `CodeHighlighter` for noir's `CodeView` and a `PatchView`. Needs Dart 3.10. It is a workspace member and resolves `syntax_core` from this repo. |
 
 Install [`syntax_core`](https://pub.dev/packages/syntax_core),
 [`syntax_flutter`](https://pub.dev/packages/syntax_flutter), and
@@ -134,8 +134,8 @@ dart run packages/syntax_core/benchmark/long_line.dart
 flutter pub get
 ```
 
-The workspace is `syntax` and `syntax_flutter`, so it resolves with the
-Flutter SDK.
+The workspace is `syntax_core`, `syntax_flutter`, and `syntax_noir`, so it
+resolves with the Flutter SDK.
 
 ```bash
 cd packages/syntax_core && dart test
@@ -151,8 +151,8 @@ The example is not a workspace member. Resolve it, then run it:
 cd packages/syntax_flutter/example && flutter pub get && flutter run -d chrome
 ```
 
-`syntax_noir` resolves on its own. Its `pubspec_overrides.yaml` pins
-`syntax` to the sibling package and is not part of the published archive.
+`syntax_noir` is in the workspace, so `syntax_core` resolves to
+`packages/syntax_core`. The published package depends on hosted `syntax_core`.
 
 ```bash
 cd packages/syntax_noir && dart pub get && dart test
