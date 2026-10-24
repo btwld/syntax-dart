@@ -1,0 +1,104 @@
+# Publish one package to pub.dev from a version tag.
+# Tag format (required): <package>-v<semver>
+#   syntax_core-v0.0.1
+#   syntax_flutter-v0.0.3
+#   syntax_noir-v0.0.1
+#
+# On each package's pub.dev Admin → Automated publishing, enable GitHub Actions:
+#   repository: btwld/syntax-dart
+#   tag pattern: <package>-v{{version}}
+#     e.g. syntax_core-v{{version}}
+#
+# Uses OIDC (permissions.id-token: write). No publish token secret.
+name: Publish to pub.dev
+
+on:
+  push:
+    tags:
+      - "syntax_core-v[0-9]+.[0-9]+.[0-9]+*"
+      - "syntax_flutter-v[0-9]+.[0-9]+.[0-9]+*"
+      - "syntax_noir-v[0-9]+.[0-9]+.[0-9]+*"
+
+jobs:
+  publish:
+    permissions:
+      id-token: write
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Parse package and version from tag
+        id: tag
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          case "$tag" in
+            syntax_core-v*) package=syntax_core ;;
+            syntax_flutter-v*) package=syntax_flutter ;;
+            syntax_noir-v*) package=syntax_noir ;;
+            *)
+              echo "Unsupported tag: $tag"
+              exit 1
+              ;;
+          esac
+          version="${tag#${package}-v}"
+          dir="packages/${package}"
+          if [[ ! -d "$dir" ]]; then
+            echo "Missing package directory: $dir"
+            echo "This repo currently must have packages/syntax_core (not syntax_darts)."
+            exit 1
+          fi
+          {
+            echo "package=$package"
+            echo "version=$version"
+            echo "dir=$dir"
+          } >> "$GITHUB_OUTPUT"
+          echo "Publishing $package@$version from $dir (tag $tag)"
+
+      - name: Verify pubspec name and version match tag
+        working-directory: ${{ steps.tag.outputs.dir }}
+        env:
+          EXPECT_PACKAGE: ${{ steps.tag.outputs.package }}
+          EXPECT_VERSION: ${{ steps.tag.outputs.version }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os, re
+          from pathlib import Path
+          t = Path("pubspec.yaml").read_text()
+          name = re.search(r"^name:\s*(\S+)", t, re.M).group(1)
+          version = re.search(r"^version:\s*(\S+)", t, re.M).group(1)
+          expect_name = os.environ["EXPECT_PACKAGE"]
+          expect_version = os.environ["EXPECT_VERSION"]
+          if name != expect_name:
+              raise SystemExit(f"pubspec name {name!r} != tag package {expect_name!r}")
+          if version != expect_version:
+              raise SystemExit(f"pubspec version {version!r} != tag version {expect_version!r}")
+          print(f"OK {name} {version}")
+          PY
+
+      - name: Set up Dart (OIDC for pub.dev)
+        uses: dart-lang/setup-dart@v1
+
+      - name: Set up Flutter (syntax_flutter only)
+        if: steps.tag.outputs.package == 'syntax_flutter'
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Resolve dependencies
+        working-directory: ${{ steps.tag.outputs.dir }}
+        run: |
+          set -euo pipefail
+          if [[ "${{ steps.tag.outputs.package }}" == "syntax_flutter" ]]; then
+            flutter pub get
+          else
+            dart pub get
+          fi
+
+      - name: Publish
+        working-directory: ${{ steps.tag.outputs.dir }}
+        run: dart pub publish --force
