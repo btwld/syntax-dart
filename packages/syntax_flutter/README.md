@@ -55,7 +55,11 @@ so it expects a `MaterialApp`.
 
 Code always reads left to right, also in right-to-left apps.
 `HighlightedCode` shows a language the highlighter doesn't know as plain
-text.
+text. Give a large file a bounded height, for example with `Expanded`: it
+then lays out only the lines on screen. Inside another scroll view every
+line is laid out. Above 200 lines, `HighlightedCode` has no intrinsic
+height, so it cannot sit inside `IntrinsicHeight` or an `AlertDialog`'s
+content.
 
 `HighlightedCode` options:
 
