@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:syntax_darts/syntax.dart';
+import 'package:syntax_core/syntax.dart';
 
 import 'horizontal_scroll.dart';
 import 'styles.dart';

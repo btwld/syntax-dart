@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:syntax_darts/langs/dart.dart';
-import 'package:syntax_darts/langs/json.dart';
-import 'package:syntax_darts/themes/github_dark.dart';
-import 'package:syntax_darts/themes/github_light.dart';
+import 'package:syntax_core/langs/dart.dart';
+import 'package:syntax_core/langs/json.dart';
+import 'package:syntax_core/themes/github_dark.dart';
+import 'package:syntax_core/themes/github_light.dart';
 import 'package:syntax_flutter/syntax_flutter.dart';
 
 import 'code_helpers.dart';

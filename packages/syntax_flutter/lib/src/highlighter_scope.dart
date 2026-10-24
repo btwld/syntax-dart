@@ -1,5 +1,5 @@
 import 'package:flutter/widgets.dart';
-import 'package:syntax_darts/syntax.dart';
+import 'package:syntax_core/syntax.dart';
 
 /// Provides a [Highlighter] to [HighlightedCode] widgets below it, so the
 /// compiled grammars are shared.

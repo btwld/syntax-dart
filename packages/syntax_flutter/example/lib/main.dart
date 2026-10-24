@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:syntax_darts/langs/all.dart';
-import 'package:syntax_darts/themes/all.dart';
+import 'package:syntax_core/langs/all.dart';
+import 'package:syntax_core/themes/all.dart';
 import 'package:syntax_flutter/syntax_flutter.dart';
 
 import 'samples.dart';

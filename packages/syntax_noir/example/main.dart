@@ -1,7 +1,7 @@
 import 'package:noir/noir.dart';
-import 'package:syntax_darts/langs/dart.dart';
-import 'package:syntax_darts/syntax.dart' as syntax;
-import 'package:syntax_darts/themes/github_dark.dart';
+import 'package:syntax_core/langs/dart.dart';
+import 'package:syntax_core/syntax.dart' as syntax;
+import 'package:syntax_core/themes/github_dark.dart';
 import 'package:syntax_noir/syntax_noir.dart';
 
 // Run in a terminal: dart run example/main.dart

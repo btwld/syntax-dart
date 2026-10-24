@@ -1,6 +1,6 @@
 # syntax_noir
 
-Terminal widgets for [syntax](https://pub.dev/packages/syntax_darts) on
+Terminal widgets for [syntax](https://pub.dev/packages/syntax_core) on
 [noir](https://pub.dev/packages/noir): code highlighted with TextMate
 grammars and VS Code themes, with the same colors as VS Code.
 
@@ -11,9 +11,9 @@ import syntax with a prefix:
 
 ```dart
 import 'package:noir/noir.dart';
-import 'package:syntax_darts/langs/dart.dart';
-import 'package:syntax_darts/syntax.dart' as syntax;
-import 'package:syntax_darts/themes/github_dark.dart';
+import 'package:syntax_core/langs/dart.dart';
+import 'package:syntax_core/syntax.dart' as syntax;
+import 'package:syntax_core/themes/github_dark.dart';
 import 'package:syntax_noir/syntax_noir.dart';
 
 final highlighter = syntax.Highlighter(languages: [dartLanguage]);
