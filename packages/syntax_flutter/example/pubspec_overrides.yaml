@@ -1,5 +1,5 @@
-# Pins syntax to this repo. Not published: the root .gitignore matches
-# pubspec_overrides.yaml, so the pub.dev example resolves syntax from pub.
+# Pins syntax to this repo. .pubignore keeps it out of the published
+# package, so the pub.dev example resolves syntax from pub.
 dependency_overrides:
   syntax:
     path: ../../syntax

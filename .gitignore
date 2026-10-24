@@ -1,7 +1,6 @@
 .dart_tool/
 build/
 pubspec.lock
-pubspec_overrides.yaml
 coverage/
 .pub-cache/
 tool/node_modules/
