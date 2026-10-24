@@ -38,7 +38,7 @@ class _CounterState extends State<Counter> {
   'yaml': r'''
 name: syntax_example
 description: >-
-  Live editor and preview for syntax_flutter.
+  Read-only code, diff and patch preview for syntax_flutter.
 publish_to: none
 version: 1.0.0+1
 
