@@ -113,7 +113,15 @@ jobs:
           flutter-version: 3.35.x
           channel: stable
           cache: true
-      - run: flutter pub get
+      # Flutter 3.35 `flutter pub get` passes `--example` and then fails if a
+      # workspace member's example has no package config
+      # (flutter/flutter#175650). Resolve the example first. It stays out of
+      # the workspace so the published package can be fetched on its own.
+      - name: Install example dependencies
+        working-directory: packages/syntax_flutter/example
+        run: flutter pub get
+      - name: Install dependencies
+        run: flutter pub get
       - name: Test syntax
         working-directory: packages/syntax
         run: dart test
