@@ -27,13 +27,14 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Install dependencies
-        run: flutter pub get
-
-      # The example is not a workspace member, so pub get at the root does
-      # not fetch it. Its pubspec_overrides.yaml pins syntax to this repo.
+      # Flutter 3.35 `flutter pub get` fails if a workspace member's example
+      # has no package config (flutter/flutter#175650). Resolve the example
+      # first on every Flutter job. It is not a workspace member.
       - name: Install example dependencies
         working-directory: packages/syntax_flutter/example
+        run: flutter pub get
+
+      - name: Install dependencies
         run: flutter pub get
 
       - name: Check formatting

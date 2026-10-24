@@ -66,9 +66,8 @@ The work is split into these packages:
   - a `Highlighter` facade, with output as tokens, HTML and ANSI;
   - bundled grammars and themes as generated `const` maps, one library
     each, so they are tree-shakeable.
-- **`syntax_flutter`** contains the `TextSpan` conversion and the read-only
-  `HighlightedCode` and `PatchView` widgets. They reuse line state from
-  `TokenizedDocument`. Editing belongs in the consuming application.
+- **`syntax_flutter`** contains the `TextSpan` conversion, a `HighlightedCode`
+  widget and a highlighting `TextEditingController` that reuses line state.
 
 **Test oracle:** real Shiki (vscode-textmate + Oniguruma WASM), run from
 `tool/` with Node. It produces golden tokens and colors for each bundled

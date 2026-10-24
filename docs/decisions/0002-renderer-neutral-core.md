@@ -53,10 +53,9 @@ Renderers own:
   `DiffNotice` value, and `DiffLabels` gives English defaults that a
   renderer, or an app, extends to translate.
 
-`syntax_flutter` now follows this. `HighlightedCode` and `PatchView` paint
-code and `layoutDiff` rows, `HighlighterScope` shares one `Highlighter`,
-and the `SyntaxThemeColors` getters wrap the core colors. An application
-that edits keeps its own controller on top of `TokenizedDocument`.
+`syntax_flutter` now follows this. `PatchView` paints `layoutDiff` rows,
+`SyntaxTextEditingController` keeps a `TokenizedDocument`, and the
+`SyntaxThemeColors` getters wrap the core colors.
 
 ### `syntax_noir`
 
