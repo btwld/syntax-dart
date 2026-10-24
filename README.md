@@ -18,8 +18,10 @@ theme.
 | [`packages/syntax_flutter/example`](packages/syntax_flutter/example) | A read-only code, diff and patch preview with a picker for every bundled language and theme. |
 | [`packages/syntax_noir`](packages/syntax_noir) | Terminal widgets on [noir](https://github.com/btwld/noir): a `CodeHighlighter` for noir's `CodeView` and a `PatchView`. Needs Dart 3.10, so it sits outside the workspace. |
 
-`syntax`, `syntax_flutter`, and `syntax_noir` are version 0.0.1 and are not
-on pub.dev yet. Renderers paint what the core lays out.
+Install [`syntax`](https://pub.dev/packages/syntax),
+[`syntax_flutter`](https://pub.dev/packages/syntax_flutter), and
+[`syntax_noir`](https://pub.dev/packages/syntax_noir) from pub.dev (0.0.1).
+Renderers paint what the core lays out.
 
 ## Why another highlighter
 
@@ -175,8 +177,6 @@ Shiki grammar:
 
 ## Not done yet
 
-- **Publishing:** upload `syntax` 0.0.1 first, then `syntax_flutter` and
-  `syntax_noir`. The example app stays `publish_to: none`.
 - **Background tokenizing:** an isolate helper for very large documents.
   Today tokenizing is synchronous.
 - **Optional Oniguruma engine:** a `RegexEngine` adapter over
