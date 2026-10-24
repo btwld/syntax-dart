@@ -1,0 +1,5 @@
+# Local pin for this checkout and CI. .pubignore keeps it out of the
+# published archive. The published package depends on hosted syntax_core.
+dependency_overrides:
+  syntax_core:
+    path: ../syntax_core

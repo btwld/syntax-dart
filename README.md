@@ -18,7 +18,7 @@ theme.
 | [`packages/syntax_flutter/example`](packages/syntax_flutter/example) | A read-only code, diff and patch preview with a picker for every bundled language and theme. |
 | [`packages/syntax_noir`](packages/syntax_noir) | Terminal widgets on [noir](https://github.com/btwld/noir): a `CodeHighlighter` for noir's `CodeView` and a `PatchView`. Needs Dart 3.10, so it sits outside the workspace. |
 
-Install [`syntax_darts`](https://pub.dev/packages/syntax_core),
+Install [`syntax_core`](https://pub.dev/packages/syntax_core),
 [`syntax_flutter`](https://pub.dev/packages/syntax_flutter), and
 [`syntax_noir`](https://pub.dev/packages/syntax_noir) from pub.dev (0.0.1).
 Renderers paint what the core lays out.

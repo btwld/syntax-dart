@@ -4,7 +4,7 @@ description: >-
   grammars and themes and renders tokens, diffs, HTML, or ANSI. No Flutter
   required.
 version: 0.0.1
-repository: https://github.com/btwld/syntax-dart/tree/main/packages/syntax
+repository: https://github.com/btwld/syntax-dart/tree/main/packages/syntax_core
 homepage: https://github.com/btwld/syntax-dart
 issue_tracker: https://github.com/btwld/syntax-dart/issues
 topics:

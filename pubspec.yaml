@@ -3,6 +3,7 @@ publish_to: none
 environment:
   sdk: ^3.9.0
 workspace:
+  - packages/syntax_core
   - packages/syntax_flutter
   - packages/syntax_noir
 dev_dependencies:

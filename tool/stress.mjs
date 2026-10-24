@@ -1,6 +1,6 @@
 // Stress test: records Shiki's scopes for every grammar in tm-grammars,
 // using the upstream sample for each. Usage: node stress.mjs <outDir>
-// Then, from packages/syntax_darts:
+// Then, from packages/syntax_core:
 //   dart run tool/stress.dart <outDir> ../../tool/node_modules/tm-grammars/grammars
 import fs from 'node:fs'
 import path from 'node:path'
