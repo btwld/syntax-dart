@@ -11,7 +11,10 @@ library;
 
 export 'package:syntax/syntax.dart';
 
+export 'src/chrome.dart';
 export 'src/highlighted_code.dart';
 export 'src/highlighter_scope.dart';
+export 'src/horizontal_scroll.dart';
+export 'src/indexed_viewport.dart';
 export 'src/patch_view.dart';
 export 'src/styles.dart';

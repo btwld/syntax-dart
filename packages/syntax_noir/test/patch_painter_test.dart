@@ -268,6 +268,35 @@ void main() {
     final noNewline = syntax.diffTexts('a\n', 'b');
     expect(paintAll([noNewline]).last, contains('b ⊘'));
   });
+
+  test(
+    'display flags control line numbers, indicators, backgrounds and offsets',
+    () {
+      final custom = PatchPainter(
+        files: files,
+        highlights: syntax.DiffHighlightCache(
+          highlighter: highlighter,
+          theme: githubDarkTheme,
+        ),
+        showBackgrounds: false,
+        showLineNumbers: false,
+        indicators: syntax.DiffIndicators.bars,
+        hunkSeparatorStyle: syntax.HunkSeparatorStyle.minimal,
+      );
+      final rows = syntax.layoutDiff(files);
+      final added = rows.whereType<syntax.DiffLineRow>().firstWhere(
+        (r) => r.line.kind == syntax.DiffLineKind.added,
+      );
+      final painted = custom.paint(added, width: 40);
+      expect(painted.toPlainText().trimRight(), ' ┃   int total = 0;');
+      expect(
+        spansOf(painted).first.style?.backgroundColor,
+        noirColor(githubDarkTheme.background),
+      );
+      final shifted = custom.paint(added, width: 40, codeOffset: 4);
+      expect(shifted.toPlainText().trimRight(), ' ┃ t total = 0;');
+    },
+  );
 }
 
 final class _Spanish extends syntax.DiffLabels {

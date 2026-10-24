@@ -25,6 +25,10 @@ class _SyntaxDemoState extends State<SyntaxDemo> {
   var _themeName = 'github-dark';
   var _view = _View.preview;
   var _mode = DiffMode.unified;
+  final Set<int> _collapsedDiff = {};
+  final Set<DiffGapId> _expandedDiff = {};
+  final Set<int> _collapsedPatch = {};
+  final Set<DiffGapId> _expandedPatch = {};
 
   SyntaxTheme get _theme => bundledThemes[_themeName]!;
 
@@ -49,7 +53,11 @@ class _SyntaxDemoState extends State<SyntaxDemo> {
   }
 
   void _selectLanguage(String language) {
-    setState(() => _language = language);
+    setState(() {
+      _language = language;
+      _collapsedDiff.clear();
+      _expandedDiff.clear();
+    });
   }
 
   void _selectTheme(String name) {
@@ -145,12 +153,24 @@ class _SyntaxDemoState extends State<SyntaxDemo> {
       language: _language,
       theme: theme,
       mode: _mode,
+      collapsed: _collapsedDiff,
+      expanded: _expandedDiff,
+      onToggleFile: (file) => setState(() {
+        if (!_collapsedDiff.remove(file)) _collapsedDiff.add(file);
+      }),
+      onExpandGap: (id) => setState(() => _expandedDiff.add(id)),
       textStyle: code.copyWith(fontSize: 12.5),
     ),
     _View.patch => PatchView.fromPatch(
       samplePatch,
       theme: theme,
       mode: _mode,
+      collapsed: _collapsedPatch,
+      expanded: _expandedPatch,
+      onToggleFile: (file) => setState(() {
+        if (!_collapsedPatch.remove(file)) _collapsedPatch.add(file);
+      }),
+      onExpandGap: (id) => setState(() => _expandedPatch.add(id)),
       textStyle: code.copyWith(fontSize: 12.5),
     ),
   };

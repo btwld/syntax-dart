@@ -134,4 +134,13 @@ void main() {
       ),
     );
   });
+
+  test('sticky header updates when selection moves to another file', () async {
+    final driver = await launch(arguments: ['sticky']);
+    expect((await driver.capture()).lines.first.trim(), 'first.dart');
+    for (var i = 0; i < 4; i++) {
+      await driver.sendKey('down');
+    }
+    expect((await driver.capture()).lines.first.trim(), 'second.dart');
+  });
 }

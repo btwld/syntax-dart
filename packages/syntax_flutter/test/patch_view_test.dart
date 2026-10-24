@@ -35,6 +35,30 @@ Future<void> pump(WidgetTester tester, Widget view) => tester.pumpWidget(
   ),
 );
 
+/// Hosts a [PatchView] with caller-owned [collapsed] and [expanded] sets.
+Widget host(
+  Widget Function(
+    Set<int> collapsed,
+    Set<DiffGapId> expanded,
+    ValueChanged<int> toggleFile,
+    ValueChanged<DiffGapId> expandGap,
+  )
+  builder,
+) {
+  final collapsed = <int>{};
+  final expanded = <DiffGapId>{};
+  return StatefulBuilder(
+    builder: (context, setState) => builder(
+      collapsed,
+      expanded,
+      (file) => setState(() {
+        if (!collapsed.remove(file)) collapsed.add(file);
+      }),
+      (id) => setState(() => expanded.add(id)),
+    ),
+  );
+}
+
 /// Whether [span] has a run of exactly [text].
 bool hasRun(InlineSpan span, String text) =>
     span is TextSpan &&
@@ -127,7 +151,16 @@ void main() {
   testWidgets('tapping a file header collapses and expands it', (tester) async {
     await pump(
       tester,
-      const PatchView.fromPatch(patch, theme: githubDarkTheme),
+      host(
+        (collapsed, expanded, toggleFile, expandGap) => PatchView.fromPatch(
+          patch,
+          theme: githubDarkTheme,
+          collapsed: collapsed,
+          expanded: expanded,
+          onToggleFile: toggleFile,
+          onExpandGap: expandGap,
+        ),
+      ),
     );
     expect(find.text('  int total = 0;'), findsOneWidget);
     await tester.tap(find.text('lib/a.dart'));
@@ -143,11 +176,17 @@ void main() {
     final after = before.replaceFirst('v10 = 10', 'v10 = 100');
     await pump(
       tester,
-      PatchView.fromTexts(
-        oldText: before,
-        newText: after,
-        path: 'values.dart',
-        theme: githubLightTheme,
+      host(
+        (collapsed, expanded, toggleFile, expandGap) => PatchView.fromTexts(
+          oldText: before,
+          newText: after,
+          path: 'values.dart',
+          theme: githubLightTheme,
+          collapsed: collapsed,
+          expanded: expanded,
+          onToggleFile: toggleFile,
+          onExpandGap: expandGap,
+        ),
       ),
     );
     expect(find.text('Show 6 unchanged lines'), findsOneWidget);
@@ -165,11 +204,17 @@ void main() {
     // Removing four lines leaves old numbers wider than any new one.
     await pump(
       tester,
-      PatchView.fromTexts(
-        oldText: lines(1, 12),
-        newText: lines(5, 12),
-        path: 'values.dart',
-        theme: githubDarkTheme,
+      host(
+        (collapsed, expanded, toggleFile, expandGap) => PatchView.fromTexts(
+          oldText: lines(1, 12),
+          newText: lines(5, 12),
+          path: 'values.dart',
+          theme: githubDarkTheme,
+          collapsed: collapsed,
+          expanded: expanded,
+          onToggleFile: toggleFile,
+          onExpandGap: expandGap,
+        ),
       ),
     );
     await tester.tap(find.text('Show 5 unchanged lines'));
@@ -179,6 +224,26 @@ void main() {
       tester.getSize(find.text('12')).height,
       tester.getSize(find.text('final v12 = 12;')).height,
     );
+  });
+
+  testWidgets('gutter width fits the widest digit', (tester) async {
+    await pump(
+      tester,
+      PatchView.fromTexts(
+        oldText: lines(1, 1000),
+        newText: lines(1, 1000).replaceFirst('v999 = 999', 'v999 = 0'),
+        path: 'values.dart',
+        theme: githubDarkTheme,
+      ),
+    );
+    final number = tester.renderObject<RenderParagraph>(
+      find.text('1000').first,
+    );
+    expect(
+      number.getMaxIntrinsicWidth(double.infinity),
+      lessThanOrEqualTo(number.size.width),
+    );
+    expect(tester.getSize(find.text('1000').first).width, 4 * 14 + 8);
   });
 
   testWidgets('expanding every gap shows both files in order', (tester) async {
@@ -199,12 +264,18 @@ void main() {
       final after = edited.join('\n') + (run.isEven ? '\n' : '');
       await pump(
         tester,
-        PatchView.fromTexts(
-          oldText: before,
-          newText: after,
-          path: 'f.txt',
-          contextLines: run % 4,
-          theme: githubDarkTheme,
+        host(
+          (collapsed, expanded, toggleFile, expandGap) => PatchView.fromTexts(
+            oldText: before,
+            newText: after,
+            path: 'f.txt',
+            contextLines: run % 4,
+            theme: githubDarkTheme,
+            collapsed: collapsed,
+            expanded: expanded,
+            onToggleFile: toggleFile,
+            onExpandGap: expandGap,
+          ),
         ),
       );
       while (find.textContaining('unchanged line').evaluate().isNotEmpty) {
@@ -248,11 +319,17 @@ void main() {
   ) async {
     await pump(
       tester,
-      PatchView.fromTexts(
-        oldText: lines(1, 6),
-        newText: lines(1, 6).replaceFirst('final v5 = 5;\n', ''),
-        contextLines: 0,
-        theme: githubDarkTheme,
+      host(
+        (collapsed, expanded, toggleFile, expandGap) => PatchView.fromTexts(
+          oldText: lines(1, 6),
+          newText: lines(1, 6).replaceFirst('final v5 = 5;\n', ''),
+          contextLines: 0,
+          theme: githubDarkTheme,
+          collapsed: collapsed,
+          expanded: expanded,
+          onToggleFile: toggleFile,
+          onExpandGap: expandGap,
+        ),
       ),
     );
     expect(find.text('Show 4 unchanged lines'), findsOneWidget);
@@ -406,24 +483,35 @@ new mode 100755
     }
   });
 
-  testWidgets('the same files list keeps state; a new list resets it', (
+  testWidgets('collapsed and expanded follow the caller-provided sets', (
     tester,
   ) async {
     final files = parsePatch(patch);
-    await pump(tester, PatchView(files: files, theme: githubDarkTheme));
-    await tester.tap(find.text('lib/a.dart'));
-    await tester.pump();
+    await pump(
+      tester,
+      PatchView(files: files, theme: githubDarkTheme, collapsed: const {0}),
+    );
     expect(find.text('  int total = 0;'), findsNothing);
-    await pump(tester, PatchView(files: files, theme: githubLightTheme));
-    expect(find.text('  int total = 0;'), findsNothing);
-    await pump(tester, PatchView(files: [...files], theme: githubLightTheme));
+    await pump(
+      tester,
+      PatchView(files: files, theme: githubLightTheme, collapsed: const {}),
+    );
     expect(find.text('  int total = 0;'), findsOneWidget);
   });
 
   testWidgets('Enter on a focused file header collapses it', (tester) async {
     await pump(
       tester,
-      const PatchView.fromPatch(patch, theme: githubDarkTheme),
+      host(
+        (collapsed, expanded, toggleFile, expandGap) => PatchView.fromPatch(
+          patch,
+          theme: githubDarkTheme,
+          collapsed: collapsed,
+          expanded: expanded,
+          onToggleFile: toggleFile,
+          onExpandGap: expandGap,
+        ),
+      ),
     );
     Focus.of(tester.element(find.text('lib/a.dart'))).requestFocus();
     await tester.pump();
@@ -490,27 +578,6 @@ new mode 100755
     expect(find.text('Mostrar 1 línea sin cambios'), findsOneWidget);
   });
 
-  testWidgets('a new source resets collapsed files', (tester) async {
-    await pump(
-      tester,
-      const PatchView.fromPatch(patch, theme: githubDarkTheme),
-    );
-    await tester.tap(find.text('lib/a.dart'));
-    await tester.pump();
-    expect(find.text('  int total = 0;'), findsNothing);
-    await pump(
-      tester,
-      PatchView.fromTexts(
-        oldText: 'a\n',
-        newText: 'b\n',
-        path: 'x.dart',
-        theme: githubDarkTheme,
-      ),
-    );
-    expect(find.text('x.dart'), findsOneWidget);
-    expect(find.text('b'), findsOneWidget);
-  });
-
   testWidgets('a long file colors its rows between frames', (tester) async {
     final before = [for (var i = 0; i < 4000; i++) 'final v$i = $i;'];
     final after = [...before]..[3000] = 'final v3000 = 300000;';
@@ -537,6 +604,182 @@ new mode 100755
     }
     expect(hasRun(added(), 'final'), isTrue);
   });
+
+  testWidgets(
+    'IndexedCodeViewport preserves visible anchor when a row shrinks',
+    (tester) async {
+      final scroll = ScrollController();
+      addTearDown(scroll.dispose);
+      var height = 800.0;
+      var revision = 0;
+      late StateSetter update;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Align(
+            alignment: Alignment.topLeft,
+            child: SizedBox(
+              width: 600,
+              height: 300,
+              child: StatefulBuilder(
+                builder: (context, setState) {
+                  update = setState;
+                  return IndexedCodeViewport(
+                    controller: scroll,
+                    count: 100,
+                    layoutKey: revision,
+                    identity: (index) => index,
+                    indexOf: (identity) => identity as int,
+                    builder: (context, index) => SizedBox(
+                      key: ValueKey('row-$index'),
+                      height: index == 2 ? height : 24,
+                      child: Text(index == 2 ? 'Tall row' : 'Line $index'),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      scroll.jumpTo(548);
+      await tester.pumpAndSettle();
+      update(() {
+        height = 200;
+        revision++;
+      });
+      await tester.pumpAndSettle();
+      expect(scroll.offset, closeTo(48, .1));
+      expect(find.text('Tall row').hitTestable(), findsOneWidget);
+    },
+  );
+
+  testWidgets('PatchView supports horizontal scroll when wrap is false', (
+    tester,
+  ) async {
+    final longOld = 'final oldLine = "${'a' * 120}";\n';
+    final longNew = 'final newLine = "${'b' * 120}";\n';
+    await pump(
+      tester,
+      PatchView.fromTexts(
+        oldText: longOld,
+        newText: longNew,
+        path: 'a.dart',
+        theme: githubDarkTheme,
+        wrap: false,
+        showLineNumbers: false,
+        indicators: DiffIndicators.bars,
+        hunkSeparatorStyle: HunkSeparatorStyle.minimal,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(HorizontalCode), findsWidgets);
+    expect(find.text('┃'), findsNWidgets(2));
+  });
+
+  testWidgets('shrinkWrap with stickyHeaders works in unbounded height', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      SingleChildScrollView(
+        child: PatchView.fromPatch(
+          patch,
+          theme: githubDarkTheme,
+          shrinkWrap: true,
+          stickyHeaders: true,
+        ),
+      ),
+    );
+    expect(tester.takeException(), isNull);
+    expect(find.text('lib/a.dart'), findsNWidgets(2));
+  });
+
+  testWidgets('expanding a gap at the top of the screen preserves scroll', (
+    tester,
+  ) async {
+    final before = lines(1, 60);
+    final after = before
+        .replaceFirst('v5 = 5', 'v5 = 50')
+        .replaceFirst('v45 = 45', 'v45 = 450');
+    final scroll = ScrollController();
+    addTearDown(scroll.dispose);
+    await pump(
+      tester,
+      SizedBox(
+        height: 300,
+        child: host(
+          (collapsed, expanded, toggleFile, expandGap) => PatchView.fromTexts(
+            oldText: before,
+            newText: after,
+            path: 'values.dart',
+            theme: githubDarkTheme,
+            scrollController: scroll,
+            collapsed: collapsed,
+            expanded: expanded,
+            onToggleFile: toggleFile,
+            onExpandGap: expandGap,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final gapFinder = find.textContaining('unchanged lines').first;
+    scroll.jumpTo(200);
+    await tester.pumpAndSettle();
+    final gapTop = tester.getTopLeft(gapFinder).dy;
+    final viewTop = tester.getTopLeft(find.byType(PatchView)).dy;
+    scroll.jumpTo(scroll.offset + (gapTop - viewTop));
+    await tester.pumpAndSettle();
+    final beforeOffset = scroll.offset;
+    expect(beforeOffset, greaterThan(100));
+
+    await tester.tap(gapFinder);
+    await tester.pumpAndSettle();
+    // Must stay anchored at the expanded gap, not jump back to 0.
+    expect(scroll.offset, greaterThanOrEqualTo(beforeOffset - 30));
+    expect(find.text('final v9 = 9;'), findsOneWidget);
+  });
+
+  testWidgets(
+    'HorizontalCode re-registers when group changes in didUpdateWidget',
+    (tester) async {
+      final groupA = HorizontalCodeGroup()..offset = 40;
+      final groupB = HorizontalCodeGroup()..offset = 120;
+      Widget build(HorizontalCodeGroup group) => Directionality(
+        textDirection: TextDirection.ltr,
+        child: Align(
+          alignment: Alignment.topLeft,
+          child: SizedBox(
+            width: 100,
+            height: 30,
+            child: HorizontalCode(
+              group: group,
+              child: const SizedBox(width: 500, height: 20),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpWidget(build(groupA));
+      await tester.pump();
+      ScrollableState horizontalScroll() =>
+          tester.state<ScrollableState>(find.byType(Scrollable));
+      expect(horizontalScroll().position.pixels, 40);
+
+      await tester.pumpWidget(build(groupB));
+      await tester.pump();
+      expect(horizontalScroll().position.pixels, 120);
+
+      // Moving the old group no longer affects the widget.
+      groupA.move(10);
+      await tester.pump();
+      expect(horizontalScroll().position.pixels, 120);
+
+      groupB.move(200);
+      await tester.pump();
+      expect(horizontalScroll().position.pixels, 200);
+    },
+  );
 }
 
 final class _Spanish extends DiffLabels {

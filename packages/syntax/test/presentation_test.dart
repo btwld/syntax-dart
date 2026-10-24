@@ -115,6 +115,13 @@ void main() {
     expect(layout.rowForLine(0, 4), isNotNull);
     expect(layout.rowForLine(0, 7), isNull);
     expect(layout.whereType<DiffHunkHeaderRow>().last.collapsed, isTrue);
+
+    final heights = RowHeightIndex(5, estimatedHeight: 20);
+    expect(heights.offsetFor(3), 60);
+    expect(heights.measure(1, 50), 30);
+    expect(heights.offsetFor(3), 90);
+    expect(heights.rowAt(65), 1);
+    expect(heights.rowAt(70), 2);
   });
 
   test('renderDiffHtml renders unified and split diffs and escapes HTML', () {
