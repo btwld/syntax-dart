@@ -1,10 +1,10 @@
-## 0.1.0-dev
+## 0.0.1
 
 - First release.
 - `HighlightedCode` for read-only code, with optional line numbers and
   selection.
-- **Breaking:** removed `SyntaxTextEditingController`. Editing belongs in
-  the consuming application on top of `TokenizedDocument`.
+- Read-only. Editing belongs in the consuming application on top of
+  `TokenizedDocument`.
 - `PatchView` for diffs and patches, painting the rows from `layoutDiff`:
   - unified and split modes;
   - file headers with change counts;
@@ -30,7 +30,7 @@
   without freezing. It tokenizes between frames, and code taller than its
   box now scrolls. Line numbers keep the height of their lines, and
   copying keeps line breaks and the lines scrolled out of view.
-- **Breaking:** `HighlightedCode` with more than 200 lines can't report
-  intrinsic sizes, so it can't sit inside `IntrinsicHeight` or an
-  `AlertDialog`'s content. Give it a size instead.
+- `HighlightedCode` with more than 200 lines can't report intrinsic
+  sizes, so it can't sit inside `IntrinsicHeight` or an `AlertDialog`'s
+  content. Give it a size instead.
 - `HighlighterScope` for sharing one `Highlighter`.

@@ -1,4 +1,4 @@
-## 0.1.0-dev
+## 0.0.1
 
 - First release.
 - A TextMate tokenizer ported from vscode-textmate. It supports

@@ -1,0 +1,5 @@
+# Local pin. The root .gitignore matches this filename, so it is not
+# published. CI and this checkout resolve syntax from the sibling package.
+dependency_overrides:
+  syntax:
+    path: ../syntax

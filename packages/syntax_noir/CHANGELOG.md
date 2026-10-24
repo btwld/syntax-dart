@@ -1,4 +1,4 @@
-## 0.1.0-dev
+## 0.0.1
 
 - First release.
 - `SyntaxCodeHighlighter`, a `CodeHighlighter` for noir's `CodeView`. It

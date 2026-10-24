@@ -12,6 +12,3 @@ tool/node_modules/
 *.iml
 .vscode/
 .claude/
-
-# Private planning notes
-docs/internal/

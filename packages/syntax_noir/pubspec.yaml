@@ -2,10 +2,10 @@ name: syntax_noir
 description: >-
   Terminal widgets for syntax on noir: a code highlighter for noir's CodeView
   and a patch view with word-level changes, driven by TextMate grammars.
-version: 0.1.0-dev
+version: 0.0.1
 repository: https://github.com/btwld/syntax-dart/tree/main/packages/syntax_noir
+homepage: https://github.com/btwld/syntax-dart
 issue_tracker: https://github.com/btwld/syntax-dart/issues
-publish_to: none
 topics:
   - syntax-highlighting
   - tui
@@ -19,12 +19,7 @@ platforms:
   windows:
 dependencies:
   noir: ^0.0.4
-  syntax: ^0.1.0-dev
-# Until syntax is published. This package needs Dart 3.10 for noir, so it
-# is not part of the workspace, whose packages support Dart 3.9.
-dependency_overrides:
-  syntax:
-    path: ../syntax
+  syntax: ^0.0.1
 dev_dependencies:
   lints: ^6.0.0
   # Exact, while it is an alpha.

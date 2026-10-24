@@ -1,16 +1,17 @@
 name: syntax_example
-description: Live editor and preview for syntax_flutter.
+description: Read-only preview of highlighted code, diffs, and patches.
 publish_to: none
 version: 1.0.0+1
 environment:
   sdk: ^3.9.0
-resolution: workspace
+  flutter: ">=3.35.0"
 dependencies:
   flutter:
     sdk: flutter
   google_fonts: ">=8.0.0 <10.0.0"
-  syntax: ^0.1.0-dev
-  syntax_flutter: ^0.1.0-dev
+  syntax: ^0.0.1
+  syntax_flutter:
+    path: ../
 dev_dependencies:
   flutter_lints: ^6.0.0
 flutter:

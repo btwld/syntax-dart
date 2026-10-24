@@ -1,6 +1,6 @@
 # ADR-0003: Keep syntax-dart to the engine and read-only rendering
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-10-23
 **Amends:** [ADR-0001](0001-textmate-engine-on-dart-regexp.md), [ADR-0002](0002-renderer-neutral-core.md)
 
@@ -34,7 +34,7 @@ code, diffs and patches**. It does not own editing, code review, approval,
 selection or comment state, and those concerns are not split into sibling
 packages in this repository either. `syntax_flutter` no longer ships an
 editing controller (`SyntaxTextEditingController`); editing belongs in the
-consuming application (stargate), built on top of `TokenizedDocument`.
+consuming application, built on top of `TokenizedDocument`.
 
 ### In scope
 
@@ -74,6 +74,6 @@ consuming application (stargate), built on top of `TokenizedDocument`.
   preservation, inline diff modes, `DiffLayout`, `renderDiffHtml` and
   virtualized patch views) land on `main` without pulling in editor or
   review controllers.
-- Applications that need editing, review or comments (such as stargate)
-  own their controllers and state models above `TokenizedDocument`,
+- Applications that need editing, review or comments own their
+  controllers and state models above `TokenizedDocument`,
   `FileDiff`, `DiffLayout` and the read-only widgets.

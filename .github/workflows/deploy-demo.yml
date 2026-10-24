@@ -32,6 +32,10 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Install example dependencies
+        working-directory: packages/syntax_flutter/example
+        run: flutter pub get
+
       # Reads where Pages serves the site: /syntax-dart when it is public,
       # the root of its own subdomain when it is private. Fails if Pages is
       # not enabled with GitHub Actions as its source.

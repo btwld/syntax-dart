@@ -5,7 +5,7 @@
     "display": "standalone",
     "background_color": "#0D1117",
     "theme_color": "#0D1117",
-    "description": "Live editor and preview for syntax_flutter.",
+    "description": "Read-only preview of highlighted code, diffs, and patches.",
     "orientation": "any",
     "prefer_related_applications": false,
     "icons": [
