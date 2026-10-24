@@ -30,6 +30,9 @@ FileDiff diffTexts(
   String path = '',
   int contextLines = 3,
   bool indentHeuristic = true,
+  String? id,
+  int revision = 0,
+  String? language,
 }) {
   RangeError.checkNotNegative(contextLines, 'contextLines');
   final before = _Text(oldText);
@@ -88,6 +91,11 @@ FileDiff diffTexts(
   }
 
   return FileDiff(
+    identity: id,
+    revision: revision,
+    language: language,
+    oldText: oldText,
+    newText: newText,
     oldPath: path,
     newPath: path,
     kind: FileDiffKind.modified,
@@ -113,18 +121,21 @@ DiffHunk _hunk(
           oldNumber: e.oldIndex + 1,
           newNumber: e.newIndex + 1,
           noNewlineAtEnd: after.isLastWithoutNewline(e.newIndex),
+          sourceLineEnding: after.ending(e.newIndex),
         ),
         EditKind.delete => DiffLine(
           DiffLineKind.removed,
           before.lines[e.oldIndex],
           oldNumber: e.oldIndex + 1,
           noNewlineAtEnd: before.isLastWithoutNewline(e.oldIndex),
+          sourceLineEnding: before.ending(e.oldIndex),
         ),
         EditKind.insert => DiffLine(
           DiffLineKind.added,
           after.lines[e.newIndex],
           newNumber: e.newIndex + 1,
           noNewlineAtEnd: after.isLastWithoutNewline(e.newIndex),
+          sourceLineEnding: after.ending(e.newIndex),
         ),
       },
   ];
@@ -170,15 +181,19 @@ final RegExp _sectionStart = RegExp(r'^[A-Za-z_$]');
 final class _Text {
   factory _Text(String text) {
     if (text.isEmpty) return _Text._(const [], const [], false);
-    final raw = text.split('\n');
-    final noFinalNewline = !text.endsWith('\n');
-    if (!noFinalNewline) raw.removeLast();
-    final lines = text.contains('\r')
-        ? [
-            for (final line in raw)
-              line.endsWith('\r') ? line.substring(0, line.length - 1) : line,
-          ]
-        : raw;
+    final raw = <String>[];
+    final lines = <String>[];
+    var start = 0;
+    for (final match in RegExp(r'\r\n|\r|\n').allMatches(text)) {
+      raw.add(text.substring(start, match.end));
+      lines.add(text.substring(start, match.start));
+      start = match.end;
+    }
+    final noFinalNewline = start < text.length;
+    if (noFinalNewline) {
+      raw.add(text.substring(start));
+      lines.add(text.substring(start));
+    }
     return _Text._(raw, lines, noFinalNewline);
   }
 
@@ -193,4 +208,8 @@ final class _Text {
 
   bool isLastWithoutNewline(int index) =>
       _noFinalNewline && index == lines.length - 1;
+
+  String ending(int index) => isLastWithoutNewline(index)
+      ? '\n'
+      : raw[index].substring(lines[index].length);
 }
