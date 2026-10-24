@@ -28,6 +28,15 @@ void main() {
       crlfParsed.hunks.single.lines.map((l) => (l.text, l.sourceLineEnding)),
       [('one', '\r\n'), ('one', '\n'), ('two', '\r\n')],
     );
+
+    final bareModes = parsePatch(
+      'diff --git a/add b/add\nnew file mode\n--- /dev/null\n+++ b/add\n@@ -0,0 +1 @@\n+a\n'
+      'diff --git a/del b/del\ndeleted file mode\n--- a/del\n+++ /dev/null\n@@ -1 +0,0 @@\n-a\n',
+    );
+    expect(bareModes.map((f) => (f.kind, f.oldMode, f.newMode)), [
+      (FileDiffKind.added, null, null),
+      (FileDiffKind.deleted, null, null),
+    ]);
   });
 
   test('splits lone CR lines, preserves metadata and compares endings', () {
@@ -147,6 +156,70 @@ void main() {
     expect(split, contains('class="added '));
     expect(split, contains('white-space:pre-wrap'));
   });
+
+  test(
+    'renderDiffHtml splits tokens where any theme changes style and scopes fragments',
+    () {
+      // Theme A colors only keywords (`final`); Theme B colors only numbers (`1`).
+      // In Theme A, ` x = 1;` is merged into one token; in Theme B, `final x = `
+      // is merged into one token and `1` is separate.
+      final themeA = SyntaxTheme.fromJson({
+        'type': 'dark',
+        'colors': {
+          'editor.foreground': '#aaaaaa',
+          'editor.background': '#000000',
+        },
+        'tokenColors': [
+          {
+            'scope': 'storage',
+            'settings': {'foreground': '#ff0000'},
+          },
+        ],
+      });
+      final themeB = SyntaxTheme.fromJson({
+        'type': 'dark',
+        'colors': {
+          'editor.foreground': '#aaaaaa',
+          'editor.background': '#000000',
+        },
+        'tokenColors': [
+          {
+            'scope': 'constant.numeric',
+            'settings': {'foreground': '#00ff00'},
+          },
+        ],
+      });
+      final file1 = diffTexts('', 'final x = 1;\n', path: 'a.dart');
+      final html1 = renderDiffHtml(
+        [file1],
+        highlighter: highlighter,
+        themes: {'a': themeA, 'b': themeB},
+      );
+      expect(html1, contains('>final</span>'));
+      expect(html1, contains('>1</span>'));
+      expect(html1, contains('color:#ff0000'));
+      expect(html1, contains('color:#00ff00'));
+
+      final file2 = diffTexts('', '123;\n', path: 'b.dart');
+      final html2 = renderDiffHtml(
+        [file2],
+        highlighter: highlighter,
+        themes: {'a': themeA, 'b': themeB},
+      );
+      final scopePattern = RegExp(r'data-scope="(f[0-9a-f]{8})"');
+      final scope1 = scopePattern.firstMatch(html1)!.group(1)!;
+      final scope2 = scopePattern.firstMatch(html2)!.group(1)!;
+      expect(scope1, isNot(scope2));
+      expect(
+        html1,
+        contains('.syntax-code[data-scope="$scope1"][data-theme="a"] .s0{'),
+      );
+      expect(
+        html2,
+        contains('.syntax-code[data-scope="$scope2"][data-theme="a"] .s0{'),
+      );
+    },
+  );
 
   test('renderDiffHtml validates palette keys', () {
     final file = diffTexts('a\n', 'b\n', path: 'a.dart');

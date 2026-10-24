@@ -2,7 +2,6 @@ import 'diff/diff_highlight.dart';
 import 'diff/diff_layout.dart';
 import 'diff/file_diff.dart';
 import 'diff/word_diff.dart';
-import 'grammar/scope_stack.dart';
 import 'highlighter.dart';
 import 'theme/theme.dart';
 
@@ -52,27 +51,44 @@ String renderDiffHtml(
   };
   String lineHtml(FileDiff file, DiffLine? line, {bool old = false}) {
     if (line == null) return '<td class="empty"></td>';
-    final tokens = caches.values.first.highlighted(file).tokensFor(line);
-    // Use raw scope boundaries consistently across themes rather than assuming
-    // different themes merge the same adjacent tokens.
-    final segments = caches.values.first.segmentsFor(file, line);
-    var offset = 0;
+    // Split tokens wherever any theme's style or inline-diff state changes.
+    final segmentsByTheme = {
+      for (final entry in caches.entries)
+        entry.key: entry.value.segmentsFor(file, line),
+    };
+    final indices = {for (final key in themes.keys) key: 0};
+    final ends = {
+      for (final entry in segmentsByTheme.entries)
+        entry.key: entry.value.isEmpty ? 0 : entry.value.first.text.length,
+    };
+    var pos = 0;
     final code = StringBuffer();
-    for (final segment in segments) {
-      final at = offset;
-      final scopes =
-          tokens
-              .where((t) => t.offset <= at && t.offset + t.text.length > at)
-              .firstOrNull
-              ?.scopes ??
-          ScopeStack.root('text.plain');
+    while (pos < line.text.length) {
+      var next = line.text.length;
+      for (final entry in segmentsByTheme.entries) {
+        final key = entry.key;
+        final segs = entry.value;
+        var index = indices[key]!;
+        while (index < segs.length && ends[key]! <= pos) {
+          index++;
+          if (index < segs.length) {
+            ends[key] = ends[key]! + segs[index].text.length;
+          }
+        }
+        indices[key] = index;
+        if (index < segs.length && ends[key]! < next) {
+          next = ends[key]!;
+        }
+      }
+      final changed =
+          segmentsByTheme.values.first[indices[themes.keys.first]!].changed;
       code.write(
-        output.token(segment.text, {
-          for (final entry in themes.entries)
-            entry.key: entry.value.styleFor(scopes),
-        }, segment.changed ? const HtmlDecoration(className: 'changed') : null),
+        output.token(line.text.substring(pos, next), {
+          for (final entry in segmentsByTheme.entries)
+            entry.key: entry.value[indices[entry.key]!].style,
+        }, changed ? const HtmlDecoration(className: 'changed') : null),
       );
-      offset += segment.text.length;
+      pos = next;
     }
     final decoration = decorateLine?.call(file, line);
     final number = old ? line.oldNumber : line.newNumber ?? line.oldNumber;
@@ -128,7 +144,7 @@ final class _HtmlOutput {
   final Map<String, SyntaxTheme> themes;
   final bool wrap;
   final Map<String, String> _classes = {};
-  final List<String> _rules = [];
+  final List<(String, String, String)> _rules = [];
   String token(
     String text,
     Map<String, TokenStyle> styles,
@@ -140,9 +156,7 @@ final class _HtmlOutput {
     final name = _classes.putIfAbsent(key, () {
       final name = 's${_classes.length}';
       for (final entry in styles.entries) {
-        _rules.add(
-          '.syntax-code[data-theme="${entry.key}"] .$name{${_css(entry.value)}}',
-        );
+        _rules.add((entry.key, name, _css(entry.value)));
       }
       return name;
     });
@@ -150,17 +164,40 @@ final class _HtmlOutput {
   }
 
   String finish(String body) {
+    final scope = _scopeFor(body);
+    final selector = '.syntax-code[data-scope="$scope"]';
     final css = StringBuffer(
-      '.syntax-code{background:var(--syntax-background);color:var(--syntax-foreground);overflow:auto}.syntax-code pre{margin:0}.syntax-code code{font-family:monospace;white-space:${wrap ? 'pre-wrap' : 'pre'}}.syntax-code .gutter{display:inline-block;min-width:4ch;padding-right:1ch;color:var(--syntax-muted);user-select:none}.syntax-code .diff{width:100%;border-collapse:collapse;table-layout:fixed}.syntax-code td{vertical-align:top}.syntax-code th{text-align:left}.syntax-code .added{background:var(--syntax-added)}.syntax-code .removed{background:var(--syntax-removed)}.syntax-code .added .changed{background:var(--syntax-added-word)}.syntax-code .removed .changed{background:var(--syntax-removed-word)}.syntax-code .separator{user-select:none;color:var(--syntax-muted)}',
+      '$selector{background:var(--syntax-background);color:var(--syntax-foreground);overflow:auto}$selector pre{margin:0}$selector code{font-family:monospace;white-space:${wrap ? 'pre-wrap' : 'pre'}}$selector .gutter{display:inline-block;min-width:4ch;padding-right:1ch;color:var(--syntax-muted);user-select:none}$selector .diff{width:100%;border-collapse:collapse;table-layout:fixed}$selector td{vertical-align:top}$selector th{text-align:left}$selector .added{background:var(--syntax-added)}$selector .removed{background:var(--syntax-removed)}$selector .added .changed{background:var(--syntax-added-word)}$selector .removed .changed{background:var(--syntax-removed-word)}$selector .separator{user-select:none;color:var(--syntax-muted)}',
     );
     for (final entry in themes.entries) {
       final colors = DiffColors.of(entry.value);
       css.write(
-        '.syntax-code[data-theme="${entry.key}"]{--syntax-background:${colorToHex(entry.value.background)};--syntax-foreground:${colorToHex(entry.value.foreground)};--syntax-muted:${colorToHex(colors.muted)};--syntax-added:${colorToHex(colors.insertedLine)};--syntax-removed:${colorToHex(colors.removedLine)};--syntax-added-word:${colorToHex(colors.insertedText)};--syntax-removed-word:${colorToHex(colors.removedText)}}',
+        '$selector[data-theme="${entry.key}"]{--syntax-background:${colorToHex(entry.value.background)};--syntax-foreground:${colorToHex(entry.value.foreground)};--syntax-muted:${colorToHex(colors.muted)};--syntax-added:${colorToHex(colors.insertedLine)};--syntax-removed:${colorToHex(colors.removedLine)};--syntax-added-word:${colorToHex(colors.insertedText)};--syntax-removed-word:${colorToHex(colors.removedText)}}',
       );
     }
-    css.writeAll(_rules);
-    return '<style>$css</style><section class="syntax-code" data-theme="${themes.keys.first}">$body</section>';
+    for (final (themeKey, name, rule) in _rules) {
+      css.write('$selector[data-theme="$themeKey"] .$name{$rule}');
+    }
+    return '<style>$css</style><section class="syntax-code" data-scope="$scope" data-theme="${themes.keys.first}">$body</section>';
+  }
+
+  String _scopeFor(String body) {
+    var hash = 0x811c9dc5;
+    void mix(String text) {
+      for (var i = 0; i < text.length; i++) {
+        hash = ((hash ^ text.codeUnitAt(i)) * 0x01000193) & 0xffffffff;
+      }
+    }
+
+    mix(wrap ? '1' : '0');
+    for (final entry in themes.entries) {
+      mix('${entry.key}:${entry.value.background}:${entry.value.foreground};');
+    }
+    for (final (themeKey, name, rule) in _rules) {
+      mix('$themeKey:$name:$rule;');
+    }
+    mix(body);
+    return 'f${hash.toRadixString(16).padLeft(8, '0')}';
   }
 }
 

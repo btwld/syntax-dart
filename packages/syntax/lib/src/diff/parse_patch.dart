@@ -311,11 +311,11 @@ final class _FileBuilder {
     } else if (line.startsWith('new mode ')) {
       newMode = line.substring(9);
     } else if (line.startsWith('new file mode')) {
-      newMode = line.substring(14);
+      if (line.startsWith('new file mode ')) newMode = line.substring(14);
       added = true;
     } else if (line.startsWith('deleted file mode')) {
+      if (line.startsWith('deleted file mode ')) oldMode = line.substring(18);
       deleted = true;
-      oldMode = line.substring(18);
     } else if (line.startsWith('rename from ')) {
       moved = FileDiffKind.renamed;
       oldPath = _unquote(line.substring(12));
