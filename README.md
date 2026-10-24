@@ -19,16 +19,13 @@ theme.
 | [`packages/syntax_noir`](packages/syntax_noir) | Terminal widgets on [noir](https://github.com/btwld/noir): a `CodeHighlighter` for noir's `CodeView` and a `PatchView`. Needs Dart 3.10, so it sits outside the workspace. |
 
 `syntax`, `syntax_flutter`, and `syntax_noir` are version 0.0.1 and are not
-on pub.dev yet. Renderers paint what the core lays out, see
-[ADR-0002](docs/decisions/0002-renderer-neutral-core.md) and
-[ADR-0003](docs/decisions/0003-engine-and-readonly-rendering.md).
+on pub.dev yet. Renderers paint what the core lays out.
 
 ## Why another highlighter
 
 Highlighters on pub.dev were either highlight.js ports, hand-written
 lexers or Flutter-only. None ran VS Code's TextMate grammars in pure Dart
-with output that matches VS Code. The survey and the reasoning are in
-[docs/decisions/0001](docs/decisions/0001-textmate-engine-on-dart-regexp.md).
+with output that matches VS Code.
 
 ## How it works
 
