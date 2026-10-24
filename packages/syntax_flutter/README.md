@@ -1,12 +1,12 @@
 # syntax_flutter
 
-Flutter widgets for [syntax](https://pub.dev/packages/syntax): code highlighted with TextMate grammars
+Flutter widgets for [syntax](https://pub.dev/packages/syntax_core): code highlighted with TextMate grammars
 and VS Code themes.
 
 ```dart
-import 'package:syntax/langs/dart.dart';
-import 'package:syntax/langs/yaml.dart';
-import 'package:syntax/themes/github_dark.dart';
+import 'package:syntax_core/langs/dart.dart';
+import 'package:syntax_core/langs/yaml.dart';
+import 'package:syntax_core/themes/github_dark.dart';
 import 'package:syntax_flutter/syntax_flutter.dart';
 
 final highlighter = Highlighter(languages: [dartLanguage, yamlLanguage]);

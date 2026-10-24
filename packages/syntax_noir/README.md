@@ -1,6 +1,6 @@
 # syntax_noir
 
-Terminal widgets for [syntax](https://pub.dev/packages/syntax) on
+Terminal widgets for [syntax](https://pub.dev/packages/syntax_core) on
 [noir](https://pub.dev/packages/noir): code highlighted with TextMate
 grammars and VS Code themes, with the same colors as VS Code.
 
@@ -11,9 +11,9 @@ import syntax with a prefix:
 
 ```dart
 import 'package:noir/noir.dart';
-import 'package:syntax/langs/dart.dart';
-import 'package:syntax/syntax.dart' as syntax;
-import 'package:syntax/themes/github_dark.dart';
+import 'package:syntax_core/langs/dart.dart';
+import 'package:syntax_core/syntax.dart' as syntax;
+import 'package:syntax_core/themes/github_dark.dart';
 import 'package:syntax_noir/syntax_noir.dart';
 
 final highlighter = syntax.Highlighter(languages: [dartLanguage]);
@@ -58,9 +58,8 @@ blend, so translucent theme colors are painted over the background first.
 
 See [`example/main.dart`](example/main.dart).
 
-`pubspec_overrides.yaml` points `syntax` at the sibling package in this
-repo. That file is not part of the published package. After `syntax` is on
-pub.dev, a checkout without the override resolves it from there.
+Checkouts resolve `syntax_core` from the sibling package through the
+workspace. The published package depends on hosted `syntax_core`.
 
 ## License
 

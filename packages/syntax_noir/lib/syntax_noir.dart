@@ -1,4 +1,4 @@
-/// Terminal widgets for [syntax](https://pub.dev/packages/syntax) on
+/// Terminal widgets for [syntax](https://pub.dev/packages/syntax_core) on
 /// [noir](https://pub.dev/packages/noir): syntax highlighting with TextMate
 /// grammars and VS Code themes.
 ///
@@ -12,7 +12,7 @@
 ///
 /// ```dart
 /// import 'package:noir/noir.dart';
-/// import 'package:syntax/syntax.dart' as syntax;
+/// import 'package:syntax_core/syntax.dart' as syntax;
 /// import 'package:syntax_noir/syntax_noir.dart';
 /// ```
 library;

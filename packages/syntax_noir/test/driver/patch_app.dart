@@ -1,7 +1,7 @@
 import 'package:noir/noir.dart';
-import 'package:syntax/langs/dart.dart';
-import 'package:syntax/syntax.dart' as syntax;
-import 'package:syntax/themes/github_dark.dart';
+import 'package:syntax_core/langs/dart.dart';
+import 'package:syntax_core/syntax.dart' as syntax;
+import 'package:syntax_core/themes/github_dark.dart';
 import 'package:syntax_noir/syntax_noir.dart';
 
 /// The app the driver tests launch: twenty lines with `v10` changed, side

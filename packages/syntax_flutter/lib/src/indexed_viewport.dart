@@ -2,7 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
-import 'package:syntax/syntax.dart';
+import 'package:syntax_core/syntax.dart';
 
 /// Scrollable list that measures only the rows it builds.
 /// Large unmounted ranges occupy estimated sliver space, so jumping to a

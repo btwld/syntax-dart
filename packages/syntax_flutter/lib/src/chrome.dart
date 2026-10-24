@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:syntax/syntax.dart';
+import 'package:syntax_core/syntax.dart';
 
 import 'styles.dart';
 

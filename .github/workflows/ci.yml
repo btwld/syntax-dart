@@ -40,13 +40,13 @@ jobs:
       - name: Check formatting
         run: >-
           dart format --output=none --set-exit-if-changed
-          packages/syntax
+          packages/syntax_core
           packages/syntax_flutter/lib
           packages/syntax_flutter/test
           packages/syntax_flutter/example/lib
 
-      - name: Analyze syntax
-        working-directory: packages/syntax
+      - name: Analyze syntax_core
+        working-directory: packages/syntax_core
         run: dart analyze --fatal-infos
 
       - name: Analyze syntax_flutter
@@ -59,14 +59,14 @@ jobs:
 
       # Includes the conformance suite, which compares every bundled grammar
       # with Shiki's output recorded in test/fixtures/golden.
-      - name: Test syntax (VM)
-        working-directory: packages/syntax
+      - name: Test syntax_core (VM)
+        working-directory: packages/syntax_core
         run: dart test
 
       # The web runs on the browser's RegExp engine, so run the tests that
       # don't read fixtures with dart:io there too.
-      - name: Test syntax (Chrome)
-        working-directory: packages/syntax
+      - name: Test syntax_core (Chrome)
+        working-directory: packages/syntax_core
         run: >-
           dart test -p chrome
           test/translator_test.dart
@@ -81,8 +81,8 @@ jobs:
         working-directory: packages/syntax_flutter/example
         run: flutter build web --release
 
-  # syntax_noir needs Dart 3.10 for noir, so it resolves on its own instead
-  # of in the workspace.
+  # syntax_noir is a workspace member. syntax_core resolves from the
+  # workspace; do not path-override it.
   syntax-noir:
     runs-on: ubuntu-latest
     defaults:
@@ -95,8 +95,6 @@ jobs:
           flutter-version: 3.47.5
           channel: stable
           cache: true
-      # pubspec_overrides.yaml pins syntax to this repo. .pubignore keeps
-      # it out of the published archive.
       - run: dart pub get
       - run: dart format --output=none --set-exit-if-changed .
       - run: dart analyze --fatal-infos
@@ -104,14 +102,17 @@ jobs:
       # noir_driver and checks what it painted.
       - run: dart test
 
-  # The oldest SDKs the pubspecs allow: Dart 3.9 and Flutter 3.35.
+  # Oldest SDKs that can resolve this workspace. syntax_noir requires
+  # Dart 3.10 and is a workspace member, so Flutter 3.35 (Dart 3.9) cannot
+  # pub get. Flutter 3.38.1 is the first stable that bundles Dart 3.10.0;
+  # 3.38.0 shipped a Dart 3.10 beta that does not satisfy ^3.10.0.
   minimum-sdk:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: 3.35.x
+          flutter-version: 3.38.1
           channel: stable
           cache: true
       # Flutter 3.35 `flutter pub get` passes `--example` and then fails if a
@@ -123,8 +124,8 @@ jobs:
         run: flutter pub get
       - name: Install dependencies
         run: flutter pub get
-      - name: Test syntax
-        working-directory: packages/syntax
+      - name: Test syntax_core
+        working-directory: packages/syntax_core
         run: dart test
       - name: Test syntax_flutter
         working-directory: packages/syntax_flutter
@@ -154,4 +155,4 @@ jobs:
         working-directory: tool
         run: npm ci && npm run generate
       - name: Check for differences
-        run: git diff --exit-code -- packages/syntax/lib packages/syntax/NOTICE
+        run: git diff --exit-code -- packages/syntax_core/lib packages/syntax_core/NOTICE

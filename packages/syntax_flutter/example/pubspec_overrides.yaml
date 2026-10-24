@@ -1,5 +1,2 @@
-# Pins syntax to this repo. .pubignore keeps it out of the published
-# package, so the pub.dev example resolves syntax from pub.
-dependency_overrides:
-  syntax:
-    path: ../../syntax
+# Example resolves syntax_core from pub.dev / syntax_flutter from path.
+dependency_overrides: {}
