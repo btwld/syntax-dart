@@ -676,6 +676,110 @@ new mode 100755
     expect(find.byType(HorizontalCode), findsWidgets);
     expect(find.text('┃'), findsNWidgets(2));
   });
+
+  testWidgets('shrinkWrap with stickyHeaders works in unbounded height', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      SingleChildScrollView(
+        child: PatchView.fromPatch(
+          patch,
+          theme: githubDarkTheme,
+          shrinkWrap: true,
+          stickyHeaders: true,
+        ),
+      ),
+    );
+    expect(tester.takeException(), isNull);
+    expect(find.text('lib/a.dart'), findsNWidgets(2));
+  });
+
+  testWidgets('expanding a gap at the top of the screen preserves scroll', (
+    tester,
+  ) async {
+    final before = lines(1, 60);
+    final after = before
+        .replaceFirst('v5 = 5', 'v5 = 50')
+        .replaceFirst('v45 = 45', 'v45 = 450');
+    final scroll = ScrollController();
+    addTearDown(scroll.dispose);
+    await pump(
+      tester,
+      SizedBox(
+        height: 300,
+        child: host(
+          (collapsed, expanded, toggleFile, expandGap) => PatchView.fromTexts(
+            oldText: before,
+            newText: after,
+            path: 'values.dart',
+            theme: githubDarkTheme,
+            scrollController: scroll,
+            collapsed: collapsed,
+            expanded: expanded,
+            onToggleFile: toggleFile,
+            onExpandGap: expandGap,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final gapFinder = find.textContaining('unchanged lines').first;
+    scroll.jumpTo(200);
+    await tester.pumpAndSettle();
+    final gapTop = tester.getTopLeft(gapFinder).dy;
+    final viewTop = tester.getTopLeft(find.byType(PatchView)).dy;
+    scroll.jumpTo(scroll.offset + (gapTop - viewTop));
+    await tester.pumpAndSettle();
+    final beforeOffset = scroll.offset;
+    expect(beforeOffset, greaterThan(100));
+
+    await tester.tap(gapFinder);
+    await tester.pumpAndSettle();
+    // Must stay anchored at the expanded gap, not jump back to 0.
+    expect(scroll.offset, greaterThanOrEqualTo(beforeOffset - 30));
+    expect(find.text('final v9 = 9;'), findsOneWidget);
+  });
+
+  testWidgets(
+    'HorizontalCode re-registers when group changes in didUpdateWidget',
+    (tester) async {
+      final groupA = HorizontalCodeGroup()..offset = 40;
+      final groupB = HorizontalCodeGroup()..offset = 120;
+      Widget build(HorizontalCodeGroup group) => Directionality(
+        textDirection: TextDirection.ltr,
+        child: Align(
+          alignment: Alignment.topLeft,
+          child: SizedBox(
+            width: 100,
+            height: 30,
+            child: HorizontalCode(
+              group: group,
+              child: const SizedBox(width: 500, height: 20),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpWidget(build(groupA));
+      await tester.pump();
+      ScrollableState horizontalScroll() =>
+          tester.state<ScrollableState>(find.byType(Scrollable));
+      expect(horizontalScroll().position.pixels, 40);
+
+      await tester.pumpWidget(build(groupB));
+      await tester.pump();
+      expect(horizontalScroll().position.pixels, 120);
+
+      // Moving the old group no longer affects the widget.
+      groupA.move(10);
+      await tester.pump();
+      expect(horizontalScroll().position.pixels, 120);
+
+      groupB.move(200);
+      await tester.pump();
+      expect(horizontalScroll().position.pixels, 200);
+    },
+  );
 }
 
 final class _Spanish extends DiffLabels {

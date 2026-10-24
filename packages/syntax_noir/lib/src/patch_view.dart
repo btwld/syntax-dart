@@ -372,8 +372,10 @@ class _PatchViewState extends State<PatchView> {
         backgroundColor: noirColor(widget.theme.background),
         selectedBackgroundColor: noirColor(widget.theme.background),
         onChanged: (visual) {
-          _selected = heights.rowAt(visual.toDouble());
-          _selectedSubrow = visual - heights.offsetFor(_selected).toInt();
+          setState(() {
+            _selected = heights.rowAt(visual.toDouble());
+            _selectedSubrow = visual - heights.offsetFor(_selected).toInt();
+          });
         },
         onSelect: (visual) {
           if (rows.isNotEmpty) {

@@ -30,30 +30,49 @@ class _AppState extends State<_App> {
   void _expandGap(syntax.DiffGapId id) => setState(() => _expanded.add(id));
 
   @override
-  Widget build(BuildContext context) => widget.args.contains('empty')
-      ? PatchView(
-          files: const [],
-          highlighter: _highlighter,
-          theme: githubDarkTheme,
-          collapsed: _collapsed,
-          expanded: _expanded,
-          onToggleFile: _toggleFile,
-          onExpandGap: _expandGap,
-          autofocus: true,
-        )
-      : PatchView.fromTexts(
-          oldText: _before,
-          newText: _before.replaceFirst('v10 = 10', 'v10 = 100'),
-          path: 'values.dart',
-          highlighter: _highlighter,
-          theme: githubDarkTheme,
-          mode: widget.args.contains('split')
-              ? syntax.DiffMode.split
-              : syntax.DiffMode.unified,
-          collapsed: _collapsed,
-          expanded: _expanded,
-          onToggleFile: _toggleFile,
-          onExpandGap: _expandGap,
-          autofocus: true,
-        );
+  Widget build(BuildContext context) {
+    if (widget.args.contains('empty')) {
+      return PatchView(
+        files: const [],
+        highlighter: _highlighter,
+        theme: githubDarkTheme,
+        collapsed: _collapsed,
+        expanded: _expanded,
+        onToggleFile: _toggleFile,
+        onExpandGap: _expandGap,
+        autofocus: true,
+      );
+    }
+    if (widget.args.contains('sticky')) {
+      return PatchView(
+        files: [
+          syntax.diffTexts('a\n', 'b\n', path: 'first.dart'),
+          syntax.diffTexts('c\n', 'd\n', path: 'second.dart'),
+        ],
+        highlighter: _highlighter,
+        theme: githubDarkTheme,
+        stickyHeaders: true,
+        collapsed: _collapsed,
+        expanded: _expanded,
+        onToggleFile: _toggleFile,
+        onExpandGap: _expandGap,
+        autofocus: true,
+      );
+    }
+    return PatchView.fromTexts(
+      oldText: _before,
+      newText: _before.replaceFirst('v10 = 10', 'v10 = 100'),
+      path: 'values.dart',
+      highlighter: _highlighter,
+      theme: githubDarkTheme,
+      mode: widget.args.contains('split')
+          ? syntax.DiffMode.split
+          : syntax.DiffMode.unified,
+      collapsed: _collapsed,
+      expanded: _expanded,
+      onToggleFile: _toggleFile,
+      onExpandGap: _expandGap,
+      autofocus: true,
+    );
+  }
 }

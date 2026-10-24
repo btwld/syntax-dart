@@ -91,11 +91,20 @@ class _HorizontalCodeState extends State<HorizontalCode> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    context.dependOnInheritedWidgetOfExactType<HorizontalCodeScope>();
+    _syncGroup();
+  }
+
+  @override
+  void didUpdateWidget(HorizontalCode oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.group != widget.group) _syncGroup();
+  }
+
+  void _syncGroup() {
     final group =
         widget.group ??
-        context
-            .dependOnInheritedWidgetOfExactType<HorizontalCodeScope>()
-            ?.group;
+        context.getInheritedWidgetOfExactType<HorizontalCodeScope>()?.group;
     if (_group != group) {
       _group?._members.remove(this);
       _group = group;
