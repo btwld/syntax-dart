@@ -38,7 +38,7 @@ class _CounterState extends State<Counter> {
   'yaml': r'''
 name: syntax_example
 description: >-
-  Live editor and preview for syntax_flutter.
+  Read-only code, diff and patch preview for syntax_flutter.
 publish_to: none
 version: 1.0.0+1
 
@@ -71,7 +71,7 @@ Syntax highlighting for **Dart** and _Flutter_, using the same
 TextMate grammars as [VS Code](https://code.visualstudio.com).
 
 - Pure Dart core
-- `HighlightedCode` and `SyntaxTextEditingController`
+- `HighlightedCode` and `PatchView`
 
 ```dart
 final highlighter = Highlighter(languages: [dartLanguage]);

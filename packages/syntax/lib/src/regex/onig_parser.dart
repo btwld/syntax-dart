@@ -332,7 +332,24 @@ final class _Parser {
       _expect(')');
       return _groups[index] = _Group(_GroupKind.capture, body, index: index);
     } else if (c == '~') {
-      _fail('absent operator');
+      _i++;
+      if (_atEnd) _fail('absent operator');
+      // The absent repeater consumes characters only while its body does not
+      // match. Stopper/expression forms use a distinct range-state operator.
+      if (_peek == '|') _fail('absent range operator');
+      final body = _parseAlternation(flags);
+      _expect(')');
+      if (!_isValidAbsentRepeater(body, flags)) {
+        _fail('absent operator');
+      }
+      return _Quant(
+        _Group(
+          _GroupKind.nonCapture,
+          _Seq([_Group(_GroupKind.negativeLookahead, body), _Dot(true)]),
+        ),
+        0,
+        null,
+      );
     } else if (c == '(') {
       _fail('conditional');
     } else {
@@ -354,6 +371,142 @@ final class _Parser {
     if (!_lookingAt(s)) _fail('expected $s');
     _i += s.length;
   }
+
+  /// `(?:(?!body)[\s\S])*` matches Oniguruma's `(?~body)` only when [body]
+  /// is a single character or a non-self-overlapping literal delimiter
+  /// immediately followed by that delimiter.
+  bool _isValidAbsentRepeater(_Node body, _Flags flags) {
+    if (_peekQuantifier(flags)) return false;
+    if (_isSingleChar(body)) return true;
+    final chars = _literalChars(body);
+    if (chars == null || chars.length < 2) return false;
+    for (var offset = 1; offset < chars.length; offset++) {
+      var overlaps = true;
+      for (var j = 0; offset + j < chars.length; j++) {
+        if (!_sameChar(chars[offset + j], chars[j])) {
+          overlaps = false;
+          break;
+        }
+      }
+      if (overlaps) return false;
+    }
+    final saved = _i;
+    try {
+      for (final expected in chars) {
+        _skipExtended(flags);
+        if (_atEnd || _peek == '|' || _peek == ')') return false;
+        final actual = _readLiteralChar(flags);
+        if (actual == null ||
+            actual.cp != expected.cp ||
+            actual.ci != expected.ci ||
+            _peekQuantifier(flags)) {
+          return false;
+        }
+      }
+      return true;
+    } on UnsupportedPatternException {
+      return false;
+    } finally {
+      _i = saved;
+    }
+  }
+
+  bool _peekQuantifier(_Flags flags) {
+    final saved = _i;
+    try {
+      _skipExtended(flags);
+      if (_atEnd) return false;
+      final c = _peek;
+      if (c == '*' || c == '+' || c == '?') return true;
+      return c == '{' && _tryInterval() != null;
+    } finally {
+      _i = saved;
+    }
+  }
+
+  _Char? _readLiteralChar(_Flags flags) {
+    final c = _peek;
+    if (c == r'\') {
+      _i++;
+      if (_atEnd) return null;
+      final esc = _peek;
+      if (const {
+        'A',
+        'G',
+        'z',
+        'Z',
+        'b',
+        'B',
+        'd',
+        'D',
+        'w',
+        'W',
+        's',
+        'S',
+        'h',
+        'H',
+        'R',
+        'N',
+        'O',
+        'X',
+        'K',
+        'p',
+        'P',
+        'k',
+        'g',
+        'y',
+        'Y',
+      }.contains(esc)) {
+        return null;
+      }
+      if (_isDigit(esc)) {
+        final node = _parseNumericEscape(flags);
+        return node is _Char ? node : null;
+      }
+      return _Char(_readEscapedChar(inClass: false), flags.i);
+    }
+    if (c == '(' ||
+        c == '[' ||
+        c == '.' ||
+        c == '^' ||
+        c == r'$' ||
+        c == '*' ||
+        c == '+' ||
+        c == '?') {
+      return null;
+    }
+    return _Char(_readCodePoint(), flags.i);
+  }
+
+  static bool _isSingleChar(_Node node) => switch (node) {
+    _Char() || _Class() || _Dot() => true,
+    _Word(:final assertion) => !assertion,
+    _Raw(:final es, :final assertion) => !assertion && !es.startsWith('(?:'),
+    _Seq(:final items) => items.length == 1 && _isSingleChar(items.single),
+    _Group(kind: _GroupKind.nonCapture, :final body) => _isSingleChar(body),
+    _Alt(:final branches) => branches.every(_isSingleChar),
+    _ => false,
+  };
+
+  static List<_Char>? _literalChars(_Node node) => switch (node) {
+    _Char() => [node],
+    _Seq(:final items) => () {
+      final chars = <_Char>[];
+      for (final item in items) {
+        final sub = _literalChars(item);
+        if (sub == null) return null;
+        chars.addAll(sub);
+      }
+      return chars.isEmpty ? null : chars;
+    }(),
+    _Group(kind: _GroupKind.nonCapture, :final body) => _literalChars(body),
+    _ => null,
+  };
+
+  static bool _sameChar(_Char a, _Char b) => a.ci || b.ci
+      ? String.fromCharCode(a.cp).toLowerCase() ==
+            String.fromCharCode(b.cp).toLowerCase()
+      : a.cp == b.cp;
 
   _Node _parseEscape(_Flags flags) {
     _i++; // backslash

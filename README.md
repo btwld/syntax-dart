@@ -1,23 +1,26 @@
 # syntax
 
 Syntax highlighting for Dart and Flutter that uses the same TextMate
-grammars and VS Code themes as VS Code, Shiki and GitHub. On every bundled
+grammars and VS Code themes as VS Code, Shiki and GitHub. These packages
+are the highlighting engine and read-only views of code, diffs and
+patches; editing belongs in the application. On every bundled
 sample, its tokens and colors match Shiki's exactly; see
 [Verified against Shiki](#verified-against-shiki).
 
 Try it in the browser: the [live demo](https://btwld.github.io/syntax-dart/)
-has an editor, a diff view and a patch view for every bundled language and
+has a code view, a diff view and a patch view for every bundled language and
 theme.
 
 | Package | What it is |
 |---|---|
 | [`packages/syntax`](packages/syntax) | Pure Dart, zero dependencies. Contains the tokenizer, themes, HTML/ANSI rendering, diff tools (patch parsing, line diffs, word-level changes), and the renderer-neutral pieces other renderers build on. It runs on the VM, AOT, the web and inside Flutter. |
-| [`packages/syntax_flutter`](packages/syntax_flutter) | Contains `HighlightedCode`, `SyntaxTextEditingController` (an incremental, as-you-type controller), `PatchView` (a highlighted diff or patch, unified or split) and `HighlighterScope`. |
-| [`packages/syntax_flutter/example`](packages/syntax_flutter/example) | A live editor and preview with a picker for every bundled language and theme. |
+| [`packages/syntax_flutter`](packages/syntax_flutter) | Contains `HighlightedCode` (read-only highlighted code), `PatchView` (a highlighted diff or patch, unified or split) and `HighlighterScope`. |
+| [`packages/syntax_flutter/example`](packages/syntax_flutter/example) | A read-only code, diff and patch preview with a picker for every bundled language and theme. |
 | [`packages/syntax_noir`](packages/syntax_noir) | Terminal widgets on [noir](https://github.com/btwld/noir): a `CodeHighlighter` for noir's `CodeView` and a `PatchView`. Needs Dart 3.10, so it sits outside the workspace. |
 
 None of the packages is published yet. Renderers paint what the core lays
-out, see [ADR-0002](docs/decisions/0002-renderer-neutral-core.md).
+out, see [ADR-0002](docs/decisions/0002-renderer-neutral-core.md) and
+[ADR-0003](docs/decisions/0003-engine-and-readonly-rendering.md).
 
 ## Why another highlighter
 
@@ -93,8 +96,8 @@ JavaScript engine and about 3× faster than its Oniguruma WASM engine.
 
 On the VM, more than 90% of the time is spent inside `RegExp` itself, and
 the same patterns run about 10× faster in V8. A 1,000-line file still
-tokenizes in about 20 ms. While you type, `SyntaxTextEditingController`
-only re-tokenizes the lines an edit can affect.
+tokenizes in about 20 ms, and `TokenizedDocument` only re-tokenizes the
+lines an edit can affect.
 
 Capture offsets are measured from the start of each match, so the
 tokenizer's own cost does not depend on where in a line a match is.

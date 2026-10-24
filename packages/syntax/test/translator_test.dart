@@ -123,6 +123,13 @@ void main() {
       ]);
     });
 
+    test('absent repeater consumes until its body matches', () {
+      expect(scan(r'/\*(?~\*/)\*/', 'a /* x * y */ b /* z */'), [2, 13]);
+      expect(scan(r'a(?~bc)bc', 'axbybcz'), [0, 6]);
+      expect(scan(r'a(?~/)b', 'a12b/c'), [0, 4]);
+      expect(scan(r'a(?~[0-9])9', 'abc9'), [0, 4]);
+    });
+
     test(r'Unicode \w and \b on non-ASCII lines', () {
       expect(scan(r'\b\w+\b', 'Функция'), [0, 7]);
       expect(scan(r'\b\w+\b', 'plain'), [0, 5]);
@@ -301,10 +308,22 @@ void main() {
       () => translateOnigPattern(r'(?(1)a|b)'),
       throwsA(isA<UnsupportedPatternException>()),
     );
-    expect(
-      () => translateOnigPattern(r'(?~abc)'),
-      throwsA(isA<UnsupportedPatternException>()),
-    );
+    for (final pattern in [
+      r'(?~',
+      r'(?~)',
+      r'(?~|abc)',
+      r'(?~abc)',
+      r'(?~bc)b',
+      r'(?~bc)bc*',
+      r'(?~aa)aa',
+      r'(?~a+)a+',
+    ]) {
+      expect(
+        () => translateOnigPattern(pattern),
+        throwsA(isA<UnsupportedPatternException>()),
+        reason: pattern,
+      );
+    }
     // Out of the Unicode range: rejected instead of throwing RangeError.
     expect(
       () => translateOnigPattern(r'\x{110000}'),

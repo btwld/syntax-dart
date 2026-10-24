@@ -2,7 +2,6 @@
 /// highlighting with TextMate grammars and VS Code themes.
 ///
 /// - [HighlightedCode] shows read-only, highlighted code.
-/// - [SyntaxTextEditingController] highlights a `TextField` as you type.
 /// - [PatchView] shows a diff or patch, unified or split.
 /// - [HighlighterScope] shares one [Highlighter] across the widget tree.
 ///
@@ -16,4 +15,3 @@ export 'src/highlighted_code.dart';
 export 'src/highlighter_scope.dart';
 export 'src/patch_view.dart';
 export 'src/styles.dart';
-export 'src/syntax_text_controller.dart';

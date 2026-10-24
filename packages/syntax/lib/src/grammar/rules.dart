@@ -7,6 +7,7 @@
 // built per rule the first time the rule is on top of the stack.
 
 import '../regex/engine.dart';
+import 'raw_map.dart';
 
 /// Pseudo rule id the scanner reports when a rule's `end` pattern matched.
 const int endRuleId = -1;
@@ -345,8 +346,4 @@ final class RuleFactory {
   }
 }
 
-Map<String, Object?> _asMap(Object? value) => value is Map<String, Object?>
-    ? value
-    : value is Map
-    ? value.cast<String, Object?>()
-    : const {};
+Map<String, Object?> _asMap(Object? value) => asGrammarMap(value);

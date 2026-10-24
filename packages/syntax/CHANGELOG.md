@@ -9,7 +9,14 @@
   so finding them costs the same anywhere in a long line.
 - A rule's patterns are searched with one combined regex only when they're
   small (`DartRegexEngine.combineMaxSource`). Grammars with very large
-  patterns, such as TypeScript, no longer stall on first use.
+  patterns, such as TypeScript, no longer stall on first use. Oniguruma's
+  absent repeater `(?~...)` is translated, and combined scanners fall back
+  to individual scans on non-ASCII lines and Dart 3.9 native runtimes.
+- Equal `const` grammar maps are cloned per grammar, and decoded untyped
+  maps keep stable views, so TextMate rule identities stay distinct.
+- `Highlighter` tracks `revision`, supports `setLanguageForPath`,
+  `clearPathLanguages` and compound file suffixes, and keeps aliases from
+  shadowing canonical language names.
 - VS Code theme resolution, plus HTML and ANSI rendering.
 - Renderer-neutral building blocks:
   - `TokenizedDocument` for incremental highlighting. With a time budget,
