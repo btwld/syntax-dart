@@ -24,6 +24,7 @@
     blocks a UI thread;
   - `StyledRange` and `Highlighter.highlightRanges` for styling a whole
     string;
+  - `RowHeightIndex` for logarithmic prefix-sum row height indexing;
   - editor colors on `SyntaxTheme`, and `alphaBlend`.
 - Diff tools:
   - `parsePatch` for unified diffs and `git diff` output, including

@@ -38,8 +38,16 @@ class Counter {
 
 /// The changes to a small class, unified. Arrow keys move, Enter expands
 /// hidden lines or collapses the file.
-class PatchDemo extends StatelessWidget {
+class PatchDemo extends StatefulWidget {
   const PatchDemo({super.key});
+
+  @override
+  State<PatchDemo> createState() => _PatchDemoState();
+}
+
+class _PatchDemoState extends State<PatchDemo> {
+  final Set<int> _collapsed = {};
+  final Set<syntax.DiffGapId> _expanded = {};
 
   @override
   Widget build(BuildContext context) => PatchView.fromTexts(
@@ -48,6 +56,12 @@ class PatchDemo extends StatelessWidget {
     path: 'lib/counter.dart',
     highlighter: highlighter,
     theme: githubDarkTheme,
+    collapsed: _collapsed,
+    expanded: _expanded,
+    onToggleFile: (file) => setState(() {
+      if (!_collapsed.remove(file)) _collapsed.add(file);
+    }),
+    onExpandGap: (id) => setState(() => _expanded.add(id)),
     autofocus: true,
   );
 }

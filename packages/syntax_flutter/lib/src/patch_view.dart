@@ -4,35 +4,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:syntax/syntax.dart';
 
+import 'chrome.dart';
 import 'highlighter_scope.dart';
+import 'horizontal_scroll.dart';
+import 'indexed_viewport.dart';
 import 'styles.dart';
 
 /// A syntax-highlighted view of code changes.
 ///
 /// Show a `git diff` with [PatchView.fromPatch], compare two versions of a
-/// file with [PatchView.fromTexts], or pass [FileDiff]s directly. Each file
-/// with a path gets a header with its status and change counts, which
-/// collapses the file when tapped. Lines show old and new line numbers,
-/// the changed words inside edited lines are highlighted, and colors come
-/// from [theme]'s diff colors. Long lines wrap. Code reads left to right
-/// even in a right-to-left app.
-///
-/// When the full texts are known, as with [PatchView.fromTexts], the
-/// unchanged lines between hunks can be expanded and highlighting is exact.
-/// For a parsed patch each hunk is highlighted on its own.
-///
-/// The patch is parsed, or the texts diffed, whenever the source changes,
-/// and each file is highlighted the first time it is shown. For very large
-/// inputs, build the [FileDiff]s ahead of time, for example in an isolate,
-/// and pass them to the default constructor.
-///
-/// The view uses Material widgets and icons, so it needs a [MaterialApp]
-/// or another ancestor that provides an [Overlay], and an app that bundles
-/// the Material icons font. Its words come from [labels].
+/// file with [PatchView.fromTexts], or pass [FileDiff]s directly.
 class PatchView extends StatefulWidget {
-  /// Shows [files] as they are. The view resets its collapsed files and
-  /// expanded lines when it gets a different list, compared by identity, so
-  /// keep the same list across rebuilds.
+  /// Shows [files] with caller-owned [collapsed] and [expanded] sets.
   const PatchView({
     super.key,
     required List<FileDiff> files,
@@ -40,12 +23,27 @@ class PatchView extends StatefulWidget {
     this.highlighter,
     this.language,
     this.mode = DiffMode.unified,
+    this.collapsed = const {},
+    this.expanded = const {},
+    this.onToggleFile,
+    this.onExpandGap,
     this.textStyle,
     this.selectable = true,
     this.shrinkWrap = false,
     this.physics,
     this.padding = const EdgeInsets.all(12),
     this.labels = const DiffLabels(),
+    this.inlineDiffMode = InlineDiffMode.mergedWords,
+    this.wrap = true,
+    this.showBackgrounds = true,
+    this.showChangeIndicators = true,
+    this.indicators = DiffIndicators.classic,
+    this.showLineNumbers = true,
+    this.hunkSeparatorStyle = HunkSeparatorStyle.lineInfo,
+    this.stickyHeaders = false,
+    this.headerBuilder,
+    this.hunkBuilder,
+    this.scrollController,
   }) : _files = files,
        _patch = null,
        _texts = null;
@@ -58,20 +56,33 @@ class PatchView extends StatefulWidget {
     this.highlighter,
     this.language,
     this.mode = DiffMode.unified,
+    this.collapsed = const {},
+    this.expanded = const {},
+    this.onToggleFile,
+    this.onExpandGap,
     this.textStyle,
     this.selectable = true,
     this.shrinkWrap = false,
     this.physics,
     this.padding = const EdgeInsets.all(12),
     this.labels = const DiffLabels(),
+    this.inlineDiffMode = InlineDiffMode.mergedWords,
+    this.wrap = true,
+    this.showBackgrounds = true,
+    this.showChangeIndicators = true,
+    this.indicators = DiffIndicators.classic,
+    this.showLineNumbers = true,
+    this.hunkSeparatorStyle = HunkSeparatorStyle.lineInfo,
+    this.stickyHeaders = false,
+    this.headerBuilder,
+    this.hunkBuilder,
+    this.scrollController,
   }) : _files = null,
        _patch = patch,
        _texts = null;
 
   /// Shows the changes from [oldText] to [newText], with [contextLines]
-  /// unchanged lines around each change. [path] names the file in the
-  /// header and, unless [language] is set, picks the language from its
-  /// extension.
+  /// unchanged lines around each change.
   const PatchView.fromTexts({
     super.key,
     required String oldText,
@@ -82,12 +93,27 @@ class PatchView extends StatefulWidget {
     this.highlighter,
     this.language,
     this.mode = DiffMode.unified,
+    this.collapsed = const {},
+    this.expanded = const {},
+    this.onToggleFile,
+    this.onExpandGap,
     this.textStyle,
     this.selectable = true,
     this.shrinkWrap = false,
     this.physics,
     this.padding = const EdgeInsets.all(12),
     this.labels = const DiffLabels(),
+    this.inlineDiffMode = InlineDiffMode.mergedWords,
+    this.wrap = true,
+    this.showBackgrounds = true,
+    this.showChangeIndicators = true,
+    this.indicators = DiffIndicators.classic,
+    this.showLineNumbers = true,
+    this.hunkSeparatorStyle = HunkSeparatorStyle.lineInfo,
+    this.stickyHeaders = false,
+    this.headerBuilder,
+    this.hunkBuilder,
+    this.scrollController,
   }) : _files = null,
        _patch = null,
        _texts = (oldText, newText, path, contextLines);
@@ -102,51 +128,88 @@ class PatchView extends StatefulWidget {
   /// Defaults to the nearest [HighlighterScope].
   final Highlighter? highlighter;
 
-  /// The language of every file, by name or alias. Defaults to guessing
-  /// each file's language from its path.
+  /// The language of every file, by name or alias, or `null` to guess from path.
   final String? language;
 
   /// Whether changes are shown in one column or side by side.
   final DiffMode mode;
 
-  /// Base style for code and line numbers. Defaults to
-  /// [defaultCodeTextStyle].
+  /// Zero-based indices of files whose lines are hidden.
+  final Set<int> collapsed;
+
+  /// Context gaps whose unchanged lines are shown.
+  final Set<DiffGapId> expanded;
+
+  /// Called when a file header is tapped or activated.
+  final ValueChanged<int>? onToggleFile;
+
+  /// Called when a collapsed context gap is tapped or activated.
+  final ValueChanged<DiffGapId>? onExpandGap;
+
+  /// Base style for code and line numbers. Defaults to [defaultCodeTextStyle].
   final TextStyle? textStyle;
 
-  /// Allows selecting and copying code. Line numbers and markers are left
-  /// out of the selection.
+  /// Allows selecting and copying code. Line numbers and markers are excluded.
   final bool selectable;
 
   /// Sizes the view to its content, for use inside another scroll view.
-  /// This builds every row up front instead of only the visible ones, so
-  /// avoid it for long patches.
   final bool shrinkWrap;
 
-  /// Passed to the underlying [ListView].
+  /// Passed to the underlying scroll view.
   final ScrollPhysics? physics;
 
   /// Space around the files, inside the scroll view.
   final EdgeInsetsGeometry padding;
 
-  /// The words the view shows and announces. Extend [DiffLabels] to
-  /// translate them.
+  /// The words the view shows and announces. Extend [DiffLabels] to translate.
   final DiffLabels labels;
+
+  /// Algorithm for highlighting inline changes.
+  final InlineDiffMode inlineDiffMode;
+
+  /// Wraps long lines; false enables synchronized horizontal scrolling.
+  final bool wrap;
+
+  /// Paints added and removed line backgrounds.
+  final bool showBackgrounds;
+
+  /// Displays addition and removal markers in gutters.
+  final bool showChangeIndicators;
+
+  /// Marker style; [showChangeIndicators] can disable every marker.
+  final DiffIndicators indicators;
+
+  /// Shows old/new source numbers in gutters.
+  final bool showLineNumbers;
+
+  /// Built-in styling for unchanged gaps and section metadata.
+  final HunkSeparatorStyle hunkSeparatorStyle;
+
+  /// Keeps the current file header visible above the scroll viewport.
+  final bool stickyHeaders;
+
+  /// Replaces a file header; invoke the supplied callback to fold the file.
+  final Widget Function(BuildContext, FileDiff, bool, VoidCallback)?
+  headerBuilder;
+
+  /// Replaces a hunk separator.
+  final Widget Function(BuildContext, FileDiff, DiffHunk)? hunkBuilder;
+
+  /// Optional controller for the underlying vertical viewport.
+  final ScrollController? scrollController;
 
   @override
   State<PatchView> createState() => _PatchViewState();
 }
 
-/// How long a frame spends highlighting files: while it builds a file's
-/// first rows, and again after it, until every file shown is done.
 const _sliceBudget = Duration(milliseconds: 6);
 
 class _PatchViewState extends State<PatchView> {
-  Object? _sourceKey;
+  late ScrollController _scroll;
+  int _stickyFile = 0;
+  Object? _sourceKey, _highlightKey;
   List<FileDiff> _files = const [];
-  final Set<int> _collapsed = {};
-  final Set<DiffGapId> _expandedGaps = {};
-
-  Object? _highlightKey;
+  final _horizontal = HorizontalCodeGroup();
   DiffHighlightCache? _highlights;
   bool _slicing = false;
   _Palette? _palette;
@@ -155,7 +218,7 @@ class _PatchViewState extends State<PatchView> {
     final key = (widget._files, widget._patch, widget._texts);
     if (key == _sourceKey) return;
     _sourceKey = key;
-    _files = switch ((widget._files, widget._patch, widget._texts)) {
+    _files = switch (key) {
       (final files?, _, _) => files,
       (_, final patch?, _) => parsePatch(patch),
       (_, _, (final before, final after, final path, final context)?) => [
@@ -163,30 +226,29 @@ class _PatchViewState extends State<PatchView> {
       ],
       _ => const [],
     };
-    _collapsed.clear();
-    _expandedGaps.clear();
+    _stickyFile = 0;
     _highlights = null;
-    _layoutVersion++;
   }
 
   DiffHighlightCache _highlightsFor(Highlighter highlighter) {
-    final key = (widget.theme, highlighter, widget.language);
+    final key = (
+      widget.theme,
+      highlighter,
+      widget.language,
+      widget.inlineDiffMode,
+    );
     if (key != _highlightKey || _highlights == null) {
       _highlightKey = key;
       _highlights = DiffHighlightCache(
         highlighter: highlighter,
         theme: widget.theme,
         language: widget.language,
+        inlineDiffMode: widget.inlineDiffMode,
       );
     }
     return _highlights!;
   }
 
-  /// Highlights the files shown so far a slice at a time, right after each
-  /// frame, repainting the rows as their lines get colors.
-  ///
-  /// Post-frame callbacks rather than timers, so nothing is left pending
-  /// when the view goes away, including in widget tests.
   void _finishLater() {
     if (_slicing) return;
     _slicing = true;
@@ -209,48 +271,82 @@ class _PatchViewState extends State<PatchView> {
   _Palette _paletteFor(BuildContext context) {
     final textStyle = widget.textStyle ?? defaultCodeTextStyle;
     final scaler = MediaQuery.textScalerOf(context);
+    final effectiveIndicators = widget.showChangeIndicators
+        ? widget.indicators
+        : DiffIndicators.none;
     if (_palette case final p?
         when p.theme == widget.theme &&
             p.textStyle == textStyle &&
-            p.scaler == scaler) {
+            p.scaler == scaler &&
+            p.wrap == widget.wrap &&
+            p.backgrounds == widget.showBackgrounds &&
+            p.indicators == effectiveIndicators &&
+            p.lineNumbers == widget.showLineNumbers) {
       return p;
     }
-    return _palette = _Palette(widget.theme, textStyle, scaler);
-  }
-
-  /// Bumped whenever the files, collapsed files or expanded gaps change.
-  int _layoutVersion = 0;
-  Object? _rowsKey;
-  List<DiffRow> _rows = const [];
-
-  List<DiffRow> _layout() {
-    final key = (_layoutVersion, widget.mode);
-    if (key == _rowsKey) return _rows;
-    _rowsKey = key;
-    return _rows = layoutDiff(
-      _files,
-      mode: widget.mode,
-      collapsed: _collapsed,
-      expanded: _expandedGaps,
+    return _palette = _Palette(
+      widget.theme,
+      textStyle,
+      scaler,
+      wrap: widget.wrap,
+      backgrounds: widget.showBackgrounds,
+      indicators: effectiveIndicators,
+      lineNumbers: widget.showLineNumbers,
     );
   }
-
-  /// Changes what is collapsed or expanded, then lays out again.
-  void _toggle(VoidCallback change) => setState(() {
-    change();
-    _layoutVersion++;
-  });
 
   @override
   void initState() {
     super.initState();
+    _scroll = widget.scrollController ?? ScrollController();
     _syncSource();
   }
 
   @override
   void didUpdateWidget(PatchView oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.scrollController != widget.scrollController) {
+      if (oldWidget.scrollController == null) _scroll.dispose();
+      _scroll = widget.scrollController ?? ScrollController();
+    }
     _syncSource();
+  }
+
+  @override
+  void dispose() {
+    if (widget.scrollController == null) _scroll.dispose();
+    super.dispose();
+  }
+
+  Object _identity(DiffRow row) {
+    final id = _files[row.file].id;
+    return switch (row) {
+      DiffFileHeaderRow() => (id, 'file', 0),
+      DiffHunkHeaderRow(:final hunk) => (id, 'hunk', hunk.newStart),
+      DiffGapRow(:final id) => (_files[id.file].id, 'gap', id.hunk),
+      DiffNoticeRow() => (id, 'notice', 0),
+      DiffLineRow(:final line) => (
+        id,
+        line.kind == DiffLineKind.removed ? 'old' : 'new',
+        line.kind == DiffLineKind.removed ? line.oldNumber! : line.newNumber!,
+      ),
+      DiffPairRow(:final left, :final right) => (
+        id,
+        right == null ? 'old' : 'new',
+        right?.newNumber ?? left!.oldNumber!,
+      ),
+    };
+  }
+
+  int? _indexOf(Object key, List<DiffRow> rows) {
+    if (key is! (String, String, int) || rows is! DiffLayout) return null;
+    final file = _files.indexWhere((file) => file.id == key.$1);
+    if (file < 0) return null;
+    if (key.$2 == 'old' || key.$2 == 'new') {
+      return rows.rowForLine(file, key.$3, oldSide: key.$2 == 'old');
+    }
+    if (key.$2 == 'hunk') return rows.rowForSection(file, key.$3);
+    return rows.rowForFile(file);
   }
 
   @override
@@ -258,29 +354,93 @@ class _PatchViewState extends State<PatchView> {
     final highlighter = widget.highlighter ?? HighlighterScope.of(context);
     final palette = _paletteFor(context);
     final labels = widget.labels;
-    final rows = _layout();
-
-    Widget list = ListView.builder(
-      padding: widget.padding,
-      shrinkWrap: widget.shrinkWrap,
-      physics: widget.physics,
-      itemCount: rows.isEmpty ? 1 : rows.length,
-      itemBuilder: (context, index) {
-        if (rows.isEmpty) return _notice(labels.noFiles, palette);
-        final row = _buildRow(rows[index], palette, highlighter, labels);
-        // Space between files.
-        return index > 0 && rows[index - 1].file != rows[index].file
-            ? Padding(padding: const EdgeInsets.only(top: 16), child: row)
-            : row;
-      },
+    final rows = layoutDiff(
+      _files,
+      mode: widget.mode,
+      collapsed: widget.collapsed,
+      expanded: widget.expanded,
     );
+
+    Widget buildRow(BuildContext context, int index) {
+      if (rows.isEmpty) return _notice(labels.noFiles, palette);
+      final row = _buildRow(rows[index], palette, highlighter, labels);
+      return index > 0 && rows[index - 1].file != rows[index].file
+          ? Padding(padding: const EdgeInsets.only(top: 16), child: row)
+          : row;
+    }
+
+    Widget list = widget.shrinkWrap
+        ? ListView.builder(
+            controller: _scroll,
+            padding: widget.padding,
+            shrinkWrap: true,
+            physics: widget.physics,
+            itemCount: rows.isEmpty ? 1 : rows.length,
+            itemBuilder: buildRow,
+          )
+        : IndexedCodeViewport(
+            controller: _scroll,
+            count: rows.isEmpty ? 1 : rows.length,
+            builder: buildRow,
+            layoutKey: (
+              _files,
+              widget.mode,
+              Object.hashAllUnordered(widget.collapsed),
+              Object.hashAllUnordered(widget.expanded),
+              widget.wrap,
+              widget.textStyle,
+              widget.showLineNumbers,
+              widget.showChangeIndicators,
+              widget.indicators,
+              widget.hunkSeparatorStyle,
+            ),
+            identity: (index) =>
+                rows.isEmpty ? 'empty' : _identity(rows[index]),
+            indexOf: (key) => _indexOf(key, rows),
+            padding: widget.padding,
+            physics: widget.physics,
+            estimatedHeight: palette.lineHeight,
+            onFirstRow: (index) {
+              if (!widget.stickyHeaders || rows.isEmpty) return;
+              final file = rows[index.clamp(0, rows.length - 1)].file;
+              if (file != _stickyFile && mounted) {
+                setState(() => _stickyFile = file);
+              }
+            },
+          );
+
+    if (widget.stickyHeaders && _files.isNotEmpty) {
+      final index = _stickyFile.clamp(0, _files.length - 1);
+      list = Column(
+        children: [
+          _buildRow(
+            DiffFileHeaderRow(
+              index,
+              collapsed: widget.collapsed.contains(index),
+            ),
+            palette,
+            highlighter,
+            labels,
+          ),
+          Expanded(child: list),
+        ],
+      );
+    }
     if (widget.selectable) list = SelectionArea(child: list);
-    return DefaultSelectionStyle(
-      selectionColor: widget.theme.selectionColor,
-      child: ColoredBox(
-        color: palette.background,
-        // Code reads left to right whatever the app's direction.
-        child: Directionality(textDirection: TextDirection.ltr, child: list),
+    return SyntaxChrome(
+      theme: widget.theme,
+      child: HorizontalCodeScope(
+        group: _horizontal,
+        child: DefaultSelectionStyle(
+          selectionColor: widget.theme.selectionColor,
+          child: ColoredBox(
+            color: palette.background,
+            child: Directionality(
+              textDirection: TextDirection.ltr,
+              child: list,
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -292,58 +452,192 @@ class _PatchViewState extends State<PatchView> {
     DiffLabels labels,
   ) {
     switch (row) {
-      // Headers and notices are not code, so they stay out of selections.
       case DiffFileHeaderRow(:final file, :final collapsed):
-        return SelectionContainer.disabled(
-          child: _FileHeaderBar(
-            file: _files[file],
-            collapsed: collapsed,
-            palette: palette,
-            labels: labels,
-            onToggle: () => _toggle(() {
-              _collapsed.contains(file)
-                  ? _collapsed.remove(file)
-                  : _collapsed.add(file);
-            }),
-          ),
-        );
+        void toggle() => widget.onToggleFile?.call(file);
+        final header = widget.headerBuilder != null
+            ? widget.headerBuilder!(context, _files[file], collapsed, toggle)
+            : _fileHeaderBar(
+                _files[file],
+                collapsed,
+                palette,
+                labels,
+                widget.onToggleFile == null ? null : toggle,
+              );
+        return SelectionContainer.disabled(child: header);
       case DiffNoticeRow(:final notice):
         return _notice(labels.notice(notice), palette);
       case DiffHunkHeaderRow(:final hunk):
+        if (widget.hunkBuilder case final builder?) {
+          return SelectionContainer.disabled(
+            child: builder(context, _files[row.file], hunk),
+          );
+        }
+        final baseStyle = palette.mutedText;
+        final style = widget.hunkSeparatorStyle;
+        final header =
+            style != HunkSeparatorStyle.compact || hunk.section.isEmpty
+            ? hunk.header
+            : hunk.section;
+        final sectionStart = header.length - hunk.section.length;
         return SelectionContainer.disabled(
-          child: _HunkHeaderBar(hunk: hunk, palette: palette),
+          child: Container(
+            color: palette.hunkBackground,
+            padding: EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: style == HunkSeparatorStyle.compact ? 2 : 3,
+            ),
+            child: Text.rich(
+              TextSpan(
+                children: [
+                  TextSpan(
+                    text: header.substring(0, sectionStart),
+                    style: baseStyle,
+                  ),
+                  TextSpan(
+                    text: header.substring(sectionStart),
+                    style: baseStyle.copyWith(color: palette.foreground),
+                  ),
+                ],
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
         );
       case DiffGapRow(:final id, :final count):
+        final style = widget.hunkSeparatorStyle;
         return SelectionContainer.disabled(
-          child: _GapBar(
-            text: labels.showUnchangedLines(count),
-            palette: palette,
-            onExpand: () => _toggle(() => _expandedGaps.add(id)),
+          child: Material(
+            color: palette.hunkBackground,
+            child: Semantics(
+              button: true,
+              child: InkWell(
+                onTap: widget.onExpandGap == null
+                    ? null
+                    : () => widget.onExpandGap!(id),
+                child: Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: style == HunkSeparatorStyle.compact ? 1 : 4,
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.unfold_more, size: 16, color: palette.muted),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          style == HunkSeparatorStyle.minimal
+                              ? '⋯'
+                              : labels.showUnchangedLines(count),
+                          style: palette.mutedText,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           ),
         );
       case DiffLineRow(:final file, :final line):
-        return _UnifiedLine(
-          line: line,
-          spans: _spans(file, line, highlighter, palette),
-          gutterWidth: palette.gutterWidth(_files[file]),
-          palette: palette,
-          labels: labels,
+        return ColoredBox(
+          color: palette.lineBackground(line.kind),
+          child: IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _gutterCell(
+                  [line.oldNumber, line.newNumber],
+                  line.kind,
+                  palette.gutterWidth(_files[file]),
+                  palette,
+                  labels,
+                ),
+                Expanded(
+                  child: _codeCell(file, line, highlighter, palette, labels),
+                ),
+              ],
+            ),
+          ),
         );
       case DiffPairRow(:final file, :final left, :final right):
-        return _SplitLine(
-          left: left,
-          right: right,
-          leftSpans: left == null
-              ? null
-              : _spans(file, left, highlighter, palette),
-          rightSpans: right == null
-              ? null
-              : _spans(file, right, highlighter, palette),
-          gutterWidth: palette.gutterWidth(_files[file]),
-          palette: palette,
-          labels: labels,
+        final gutterWidth = palette.gutterWidth(_files[file]);
+        Widget side(DiffLine? line, {required bool old}) {
+          if (line == null) return ColoredBox(color: palette.emptySide);
+          return ColoredBox(
+            color: palette.lineBackground(line.kind),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _gutterCell(
+                  [old ? line.oldNumber : line.newNumber],
+                  line.kind,
+                  gutterWidth,
+                  palette,
+                  labels,
+                ),
+                Expanded(
+                  child: _codeCell(file, line, highlighter, palette, labels),
+                ),
+              ],
+            ),
+          );
+        }
+        return IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(child: side(left, old: true)),
+              SizedBox(width: 1, child: ColoredBox(color: palette.divider)),
+              Expanded(child: side(right, old: false)),
+            ],
+          ),
         );
     }
+  }
+
+  Widget _codeCell(
+    int file,
+    DiffLine line,
+    Highlighter highlighter,
+    _Palette palette,
+    DiffLabels labels,
+  ) {
+    Widget text = Text.rich(
+      TextSpan(
+        style: palette.code,
+        children: _spans(file, line, highlighter, palette),
+      ),
+      softWrap: palette.wrap,
+    );
+    if (!palette.wrap) text = HorizontalCode(child: text);
+    return Padding(
+      padding: const EdgeInsets.only(right: 12),
+      child: line.noNewlineAtEnd
+          ? Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Flexible(child: text),
+                SelectionContainer.disabled(
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 6),
+                    child: Tooltip(
+                      message: labels.noNewlineAtEnd,
+                      child: SizedBox(
+                        height: palette.lineHeight,
+                        child: Icon(
+                          Icons.do_not_disturb_on_outlined,
+                          size: palette.lineHeight * 0.6,
+                          color: palette.removed,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            )
+          : text,
+    );
   }
 
   static Widget _notice(String text, _Palette palette) =>
@@ -387,356 +681,256 @@ class _PatchViewState extends State<PatchView> {
   }
 }
 
-/// Colors and text styles derived from the theme, shared by every row.
 final class _Palette {
-  _Palette(this.theme, this.textStyle, this.scaler)
-    : styles = TokenTextStyles(theme, base: textStyle) {
-    final diff = DiffColors.of(theme);
-    inserted = Color(diff.inserted);
-    removed = Color(diff.removed);
-    insertedLine = Color(diff.insertedLine);
-    removedLine = Color(diff.removedLine);
-    insertedText = Color(diff.insertedText);
-    removedText = Color(diff.removedText);
-    headerBackground = Color(diff.fileHeader);
-    hunkBackground = Color(diff.hunkHeader);
-    emptySide = Color(diff.emptySide);
-    divider = Color(diff.divider);
-    label = Color(diff.muted);
-  }
+  _Palette(
+    this.theme,
+    this.textStyle,
+    this.scaler, {
+    this.wrap = true,
+    this.backgrounds = true,
+    this.indicators = DiffIndicators.classic,
+    this.lineNumbers = true,
+  }) : styles = TokenTextStyles(theme, base: textStyle),
+       diff = DiffColors.of(theme);
 
+  final bool wrap, backgrounds, lineNumbers;
+  final DiffIndicators indicators;
   final SyntaxTheme theme;
   final TextStyle textStyle;
   final TextScaler scaler;
   final TokenTextStyles styles;
-  late final Color inserted;
-  late final Color removed;
-  late final Color insertedLine;
-  late final Color removedLine;
-  late final Color insertedText;
-  late final Color removedText;
-  late final Color headerBackground;
-  late final Color hunkBackground;
-  late final Color emptySide;
-  late final Color divider;
+  final DiffColors diff;
 
-  /// Labels such as hunk headers need more contrast than line numbers.
-  late final Color label;
+  Color get inserted => Color(diff.inserted);
+  Color get removed => Color(diff.removed);
+  Color get insertedLine => Color(diff.insertedLine);
+  Color get removedLine => Color(diff.removedLine);
+  Color get insertedText => Color(diff.insertedText);
+  Color get removedText => Color(diff.removedText);
+  Color get headerBackground => Color(diff.fileHeader);
+  Color get hunkBackground => Color(diff.hunkHeader);
+  Color get emptySide => Color(diff.emptySide);
+  Color get divider => Color(diff.divider);
+  Color get label => Color(diff.muted);
 
   Color get background => theme.backgroundColor;
   Color get foreground => theme.foregroundColor;
   Color get muted => theme.lineNumberColor;
-
   TextStyle get code => styles.base;
-
-  /// Line numbers use the theme's line-number color.
   late final TextStyle numberText = code.copyWith(color: muted);
-
   late final TextStyle mutedText = code.copyWith(color: label);
 
-  /// Painted over the line background, so a changed line's gutter is
-  /// twice as strong as its code area.
-  Color gutterBackground(DiffLineKind kind) => switch (kind) {
-    DiffLineKind.added => insertedLine,
-    DiffLineKind.removed => removedLine,
-    DiffLineKind.context => const Color(0x00000000),
-  };
+  Color gutterBackground(DiffLineKind kind) => !backgrounds
+      ? background
+      : switch (kind) {
+          DiffLineKind.added => insertedLine,
+          DiffLineKind.removed => removedLine,
+          DiffLineKind.context => const Color(0x00000000),
+        };
 
-  Color lineBackground(DiffLineKind kind) => switch (kind) {
-    DiffLineKind.added => insertedLine,
-    DiffLineKind.removed => removedLine,
-    DiffLineKind.context => background,
-  };
+  Color lineBackground(DiffLineKind kind) => !backgrounds
+      ? background
+      : switch (kind) {
+          DiffLineKind.added => insertedLine,
+          DiffLineKind.removed => removedLine,
+          DiffLineKind.context => background,
+        };
 
-  /// The size of one digit, which is also the height of one line of code.
-  late final Size _digit = () {
-    final painter = TextPainter(
-      text: TextSpan(text: '0', style: code),
-      textDirection: TextDirection.ltr,
-      textScaler: scaler,
-    )..layout();
-    final size = painter.size;
-    painter.dispose();
-    return size;
+  TextPainter _measure(String text) => TextPainter(
+    text: TextSpan(text: text, style: code),
+    textDirection: TextDirection.ltr,
+    textScaler: scaler,
+  )..layout();
+
+  late final (double height, String widestDigit) _digitMetrics = () {
+    final zero = _measure('0');
+    final height = zero.height;
+    var widest = '0';
+    var widestWidth = zero.width;
+    zero.dispose();
+    for (var d = 1; d <= 9; d++) {
+      final painter = _measure('$d');
+      if (painter.width > widestWidth) {
+        widest = '$d';
+        widestWidth = painter.width;
+      }
+      painter.dispose();
+    }
+    return (height, widest);
   }();
 
-  double get lineHeight => _digit.height;
-
+  double get lineHeight => _digitMetrics.$1;
   final Map<FileDiff, double> _gutterWidths = Map.identity();
 
-  /// Width of one line-number column, sized for the file's largest number.
-  double gutterWidth(FileDiff file) => _gutterWidths.putIfAbsent(
-    file,
-    () => '${math.max(file.maxLineNumber, 1)}'.length * _digit.width + 16,
-  );
+  double gutterWidth(FileDiff file) => _gutterWidths.putIfAbsent(file, () {
+    final digits = '${math.max(file.maxLineNumber, 1)}'.length;
+    final painter = _measure(_digitMetrics.$2 * digits);
+    final width = painter.width + 16;
+    painter.dispose();
+    return width;
+  });
 }
 
-class _FileHeaderBar extends StatelessWidget {
-  const _FileHeaderBar({
-    required this.file,
-    required this.collapsed,
-    required this.palette,
-    required this.labels,
-    required this.onToggle,
-  });
-
-  final FileDiff file;
-  final bool collapsed;
-  final _Palette palette;
-  final DiffLabels labels;
-  final VoidCallback onToggle;
-
-  @override
-  Widget build(BuildContext context) {
-    final code = palette.code;
-    final additions = file.additions;
-    final deletions = file.deletions;
-    final label = labels.status(file.kind);
-    final color = switch (file.kind) {
-      FileDiffKind.added => palette.inserted,
-      FileDiffKind.deleted => palette.removed,
-      _ => palette.label,
-    };
-    final radius = collapsed
-        ? BorderRadius.circular(6)
-        : const BorderRadius.vertical(top: Radius.circular(6));
-    return Material(
-      color: palette.headerBackground,
+Widget _fileHeaderBar(
+  FileDiff file,
+  bool collapsed,
+  _Palette palette,
+  DiffLabels labels,
+  VoidCallback? onToggle,
+) {
+  final code = palette.code;
+  final label = labels.status(file.kind);
+  final color = switch (file.kind) {
+    FileDiffKind.added => palette.inserted,
+    FileDiffKind.deleted => palette.removed,
+    _ => palette.label,
+  };
+  final radius = collapsed
+      ? BorderRadius.circular(6)
+      : const BorderRadius.vertical(top: Radius.circular(6));
+  return Material(
+    color: palette.headerBackground,
+    borderRadius: radius,
+    child: InkWell(
       borderRadius: radius,
-      child: InkWell(
-        borderRadius: radius,
-        onTap: onToggle,
-        child: Semantics(
-          button: true,
-          expanded: !collapsed,
-          label: labels.fileHeader(file),
-          excludeSemantics: true,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(6, 7, 12, 7),
-            // Narrow headers drop the extras before the path gets too short.
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final width = constraints.maxWidth;
-                final counts = !file.isBinary && width >= 180;
-                return Row(
-                  children: [
-                    Icon(
-                      collapsed ? Icons.chevron_right : Icons.expand_more,
-                      size: 18,
-                      color: palette.muted,
-                    ),
-                    const SizedBox(width: 4),
-                    if (label != null && width >= 260) ...[
-                      _Badge(label: label, color: color, style: code),
-                      const SizedBox(width: 8),
-                    ],
-                    Expanded(
-                      child: _PathText(file: file, palette: palette),
-                    ),
-                    if (counts) ...[
-                      const SizedBox(width: 12),
-                      Text(
-                        '+$additions',
-                        style: code.copyWith(
-                          color: palette.inserted,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        '−$deletions',
-                        style: code.copyWith(
-                          color: palette.removed,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                    if (counts && width >= 400) ...[
-                      const SizedBox(width: 8),
-                      _DiffStat(file: file, palette: palette),
-                    ],
-                  ],
-                );
-              },
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _PathText extends StatelessWidget {
-  const _PathText({required this.file, required this.palette});
-
-  final FileDiff file;
-  final _Palette palette;
-
-  @override
-  Widget build(BuildContext context) {
-    final style = palette.code.copyWith(fontWeight: FontWeight.w600);
-    if (!file.isRenameOrCopy) {
-      return Text(
-        file.path,
-        style: style,
-        overflow: TextOverflow.ellipsis,
-        maxLines: 1,
-      );
-    }
-    // The old path gets at most 40% of the room, so the new one, which
-    // matters more, keeps the rest.
-    return LayoutBuilder(
-      builder: (context, constraints) => Row(
-        children: [
-          ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: constraints.maxWidth * 0.4),
-            child: Text(
-              file.oldPath ?? '',
-              style: style.copyWith(
-                color: palette.label,
-                fontWeight: FontWeight.normal,
-              ),
-              overflow: TextOverflow.ellipsis,
-              maxLines: 1,
-            ),
-          ),
-          Flexible(
-            child: Text.rich(
-              TextSpan(
-                children: [
-                  TextSpan(
-                    text: ' → ',
-                    style: style.copyWith(color: palette.label),
-                  ),
-                  TextSpan(text: file.newPath ?? '', style: style),
-                ],
-              ),
-              overflow: TextOverflow.ellipsis,
-              maxLines: 1,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _Badge extends StatelessWidget {
-  const _Badge({required this.label, required this.color, required this.style});
-
-  final String label;
-  final Color color;
-  final TextStyle style;
-
-  @override
-  Widget build(BuildContext context) => DecoratedBox(
-    decoration: BoxDecoration(
-      color: color.withValues(alpha: 0.14),
-      borderRadius: BorderRadius.circular(4),
-    ),
-    child: Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-      child: Text(
-        label,
-        style: style.copyWith(
-          color: color,
-          fontSize: (style.fontSize ?? 14) * 0.85,
-          fontWeight: FontWeight.w600,
-          height: 1.4,
-        ),
-      ),
-    ),
-  );
-}
-
-/// Five blocks showing the share of additions and deletions, like GitHub.
-class _DiffStat extends StatelessWidget {
-  const _DiffStat({required this.file, required this.palette});
-
-  final FileDiff file;
-  final _Palette palette;
-
-  @override
-  Widget build(BuildContext context) {
-    final (:added, :removed) = file.changeBlocks();
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        for (var i = 0; i < FileDiff.changeBarSize; i++)
-          Container(
-            width: 7,
-            height: 7,
-            margin: const EdgeInsets.only(left: 1.5),
-            decoration: BoxDecoration(
-              color: i < added
-                  ? palette.inserted
-                  : (i < added + removed ? palette.removed : palette.divider),
-              borderRadius: BorderRadius.circular(1.5),
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-class _HunkHeaderBar extends StatelessWidget {
-  const _HunkHeaderBar({required this.hunk, required this.palette});
-
-  final DiffHunk hunk;
-  final _Palette palette;
-
-  @override
-  Widget build(BuildContext context) {
-    final style = palette.mutedText;
-    final header = hunk.header;
-    // The section, such as the enclosing function, ends the header.
-    final sectionStart = header.length - hunk.section.length;
-    return Container(
-      color: palette.hunkBackground,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
-      child: Text.rich(
-        TextSpan(
-          children: [
-            TextSpan(text: header.substring(0, sectionStart), style: style),
-            TextSpan(
-              text: header.substring(sectionStart),
-              style: style.copyWith(color: palette.foreground),
-            ),
-          ],
-        ),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-    );
-  }
-}
-
-class _GapBar extends StatelessWidget {
-  const _GapBar({
-    required this.text,
-    required this.palette,
-    required this.onExpand,
-  });
-
-  final String text;
-  final _Palette palette;
-  final VoidCallback onExpand;
-
-  @override
-  Widget build(BuildContext context) => Material(
-    color: palette.hunkBackground,
-    child: Semantics(
-      button: true,
-      child: InkWell(
-        onTap: onExpand,
+      onTap: onToggle,
+      child: Semantics(
+        button: true,
+        expanded: !collapsed,
+        label: labels.fileHeader(file),
+        excludeSemantics: true,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-          child: Row(
-            children: [
-              Icon(Icons.unfold_more, size: 16, color: palette.muted),
-              const SizedBox(width: 8),
-              Text(text, style: palette.mutedText),
-            ],
+          padding: const EdgeInsets.fromLTRB(6, 7, 12, 7),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final width = constraints.maxWidth;
+              final counts = !file.isBinary && width >= 180;
+              final (:added, :removed) = file.changeBlocks();
+              final pathStyle = code.copyWith(fontWeight: FontWeight.w600);
+              return Row(
+                children: [
+                  Icon(
+                    collapsed ? Icons.chevron_right : Icons.expand_more,
+                    size: 18,
+                    color: palette.muted,
+                  ),
+                  const SizedBox(width: 4),
+                  if (label != null && width >= 260) ...[
+                    DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: color.withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 1,
+                        ),
+                        child: Text(
+                          label,
+                          style: code.copyWith(
+                            color: color,
+                            fontSize: (code.fontSize ?? 14) * 0.85,
+                            fontWeight: FontWeight.w600,
+                            height: 1.4,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                  Expanded(
+                    child: !file.isRenameOrCopy
+                        ? Text(
+                            file.path,
+                            style: pathStyle,
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
+                          )
+                        : LayoutBuilder(
+                            builder: (context, inner) => Row(
+                              children: [
+                                ConstrainedBox(
+                                  constraints: BoxConstraints(
+                                    maxWidth: inner.maxWidth * 0.4,
+                                  ),
+                                  child: Text(
+                                    file.oldPath ?? '',
+                                    style: pathStyle.copyWith(
+                                      color: palette.label,
+                                      fontWeight: FontWeight.normal,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                    maxLines: 1,
+                                  ),
+                                ),
+                                Flexible(
+                                  child: Text.rich(
+                                    TextSpan(
+                                      children: [
+                                        TextSpan(
+                                          text: ' → ',
+                                          style: pathStyle.copyWith(
+                                            color: palette.label,
+                                          ),
+                                        ),
+                                        TextSpan(
+                                          text: file.newPath ?? '',
+                                          style: pathStyle,
+                                        ),
+                                      ],
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                    maxLines: 1,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                  ),
+                  if (counts) ...[
+                    const SizedBox(width: 12),
+                    Text(
+                      '+${file.additions}',
+                      style: code.copyWith(
+                        color: palette.inserted,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      '−${file.deletions}',
+                      style: code.copyWith(
+                        color: palette.removed,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                  if (counts && width >= 400) ...[
+                    const SizedBox(width: 8),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (var i = 0; i < FileDiff.changeBarSize; i++)
+                          Container(
+                            width: 7,
+                            height: 7,
+                            margin: const EdgeInsets.only(left: 1.5),
+                            decoration: BoxDecoration(
+                              color: i < added
+                                  ? palette.inserted
+                                  : (i < added + removed
+                                        ? palette.removed
+                                        : palette.divider),
+                              borderRadius: BorderRadius.circular(1.5),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
+                ],
+              );
+            },
           ),
         ),
       ),
@@ -744,45 +938,32 @@ class _GapBar extends StatelessWidget {
   );
 }
 
-/// Line numbers and the `+`/`−` marker, kept out of text selection.
-/// Screen readers hear whether the line was added or removed instead.
-class _Gutter extends StatelessWidget {
-  const _Gutter({
-    required this.numbers,
-    required this.kind,
-    required this.width,
-    required this.palette,
-    required this.labels,
-  });
-
-  /// The old and new numbers in the unified view, one of them when split.
-  final List<int?> numbers;
-  final DiffLineKind kind;
-  final double width;
-  final _Palette palette;
-  final DiffLabels labels;
-
-  @override
-  Widget build(BuildContext context) {
-    final style = palette.numberText;
-    final (marker, markerColor) = switch (kind) {
-      DiffLineKind.added => ('+', palette.inserted),
-      DiffLineKind.removed => ('−', palette.removed),
-      DiffLineKind.context => (' ', palette.muted),
-    };
-    final number = kind == DiffLineKind.removed ? numbers.first : numbers.last;
-    return Semantics(
-      // Context lines need no announcement before their code.
-      label: kind == DiffLineKind.context
-          ? null
-          : labels.changedLine(kind, number),
-      excludeSemantics: true,
-      child: SelectionContainer.disabled(
-        child: ColoredBox(
-          color: palette.gutterBackground(kind),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+Widget _gutterCell(
+  List<int?> numbers,
+  DiffLineKind kind,
+  double width,
+  _Palette palette,
+  DiffLabels labels,
+) {
+  final style = palette.numberText;
+  final (marker, markerColor) = switch (kind) {
+    DiffLineKind.added => ('+', palette.inserted),
+    DiffLineKind.removed => ('−', palette.removed),
+    DiffLineKind.context => (' ', palette.muted),
+  };
+  final number = kind == DiffLineKind.removed ? numbers.first : numbers.last;
+  return Semantics(
+    label: kind == DiffLineKind.context
+        ? null
+        : labels.changedLine(kind, number),
+    excludeSemantics: true,
+    child: SelectionContainer.disabled(
+      child: ColoredBox(
+        color: palette.gutterBackground(kind),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (palette.lineNumbers)
               for (final n in numbers)
                 SizedBox(
                   width: width,
@@ -795,179 +976,20 @@ class _Gutter extends StatelessWidget {
                     ),
                   ),
                 ),
-              SizedBox(
-                width: 20,
-                child: Text(
-                  marker,
-                  textAlign: TextAlign.center,
-                  style: style.copyWith(color: markerColor),
-                ),
+            SizedBox(
+              width: 20,
+              child: Text(
+                palette.indicators == DiffIndicators.classic
+                    ? marker
+                    : palette.indicators == DiffIndicators.bars &&
+                          kind != DiffLineKind.context
+                    ? '┃'
+                    : ' ',
+                textAlign: TextAlign.center,
+                style: style.copyWith(color: markerColor),
               ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _UnifiedLine extends StatelessWidget {
-  const _UnifiedLine({
-    required this.line,
-    required this.spans,
-    required this.gutterWidth,
-    required this.palette,
-    required this.labels,
-  });
-
-  final DiffLine line;
-  final List<InlineSpan> spans;
-  final double gutterWidth;
-  final _Palette palette;
-  final DiffLabels labels;
-
-  @override
-  Widget build(BuildContext context) => ColoredBox(
-    color: palette.lineBackground(line.kind),
-    child: IntrinsicHeight(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _Gutter(
-            numbers: [line.oldNumber, line.newNumber],
-            kind: line.kind,
-            width: gutterWidth,
-            palette: palette,
-            labels: labels,
-          ),
-          Expanded(
-            child: _Code(
-              line: line,
-              spans: spans,
-              palette: palette,
-              labels: labels,
             ),
-          ),
-        ],
-      ),
-    ),
-  );
-}
-
-class _SplitLine extends StatelessWidget {
-  const _SplitLine({
-    required this.left,
-    required this.right,
-    required this.leftSpans,
-    required this.rightSpans,
-    required this.gutterWidth,
-    required this.palette,
-    required this.labels,
-  });
-
-  final DiffLine? left;
-  final DiffLine? right;
-  final List<InlineSpan>? leftSpans;
-  final List<InlineSpan>? rightSpans;
-  final double gutterWidth;
-  final _Palette palette;
-  final DiffLabels labels;
-
-  Widget _side(DiffLine? line, List<InlineSpan>? spans, {required bool old}) {
-    if (line == null) return ColoredBox(color: palette.emptySide);
-    // In the split view a context line is plain on both sides.
-    return ColoredBox(
-      color: palette.lineBackground(line.kind),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _Gutter(
-            numbers: [old ? line.oldNumber : line.newNumber],
-            kind: line.kind,
-            width: gutterWidth,
-            palette: palette,
-            labels: labels,
-          ),
-          Expanded(
-            child: _Code(
-              line: line,
-              spans: spans!,
-              palette: palette,
-              labels: labels,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) => IntrinsicHeight(
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Expanded(child: _side(left, leftSpans, old: true)),
-        SizedBox(width: 1, child: ColoredBox(color: palette.divider)),
-        Expanded(child: _side(right, rightSpans, old: false)),
-      ],
-    ),
-  );
-}
-
-class _Code extends StatelessWidget {
-  const _Code({
-    required this.line,
-    required this.spans,
-    required this.palette,
-    required this.labels,
-  });
-
-  final DiffLine line;
-  final List<InlineSpan> spans;
-  final _Palette palette;
-  final DiffLabels labels;
-
-  @override
-  Widget build(BuildContext context) {
-    final text = Text.rich(TextSpan(style: palette.code, children: spans));
-    return Padding(
-      padding: const EdgeInsets.only(right: 12),
-      child: line.noNewlineAtEnd
-          ? Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Flexible(child: text),
-                SelectionContainer.disabled(
-                  child: _NoNewlineMarker(
-                    palette: palette,
-                    message: labels.noNewlineAtEnd,
-                  ),
-                ),
-              ],
-            )
-          : text,
-    );
-  }
-}
-
-/// Shown after a last line that has no line break, like GitHub does.
-class _NoNewlineMarker extends StatelessWidget {
-  const _NoNewlineMarker({required this.palette, required this.message});
-
-  final _Palette palette;
-  final String message;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(left: 6),
-    child: Tooltip(
-      message: message,
-      child: SizedBox(
-        height: palette.lineHeight,
-        child: Icon(
-          Icons.do_not_disturb_on_outlined,
-          size: palette.lineHeight * 0.6,
-          color: palette.removed,
+          ],
         ),
       ),
     ),

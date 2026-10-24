@@ -44,6 +44,7 @@ export 'src/regex/engine.dart'
         UnsupportedPatternCallback;
 export 'src/regex/onig_translator.dart' show UnsupportedPatternException;
 export 'src/render.dart';
+export 'src/row_height_index.dart';
 export 'src/theme/theme.dart'
     show
         TokenFontStyle,

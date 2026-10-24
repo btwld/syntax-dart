@@ -16,6 +16,14 @@
 - Code reads left to right in right-to-left apps.
 - `PatchView` highlights large files between frames, so a big diff
   doesn't block them. Lines show plain until their colors are ready.
+- `PatchView` virtualizes row layout with `IndexedCodeViewport`, takes
+  caller-owned `collapsed` and `expanded` sets with `onToggleFile` and
+  `onExpandGap` callbacks, sizes gutters by the widest digit, and supports
+  synchronized horizontal scrolling (`HorizontalCode`, `wrap: false`),
+  sticky file headers, custom header and hunk builders, and display
+  options (`inlineDiffMode`, `showBackgrounds`, `showChangeIndicators`,
+  `indicators`, `showLineNumbers`, `hunkSeparatorStyle`).
+- `SyntaxChrome` adapts Material controls to the active `SyntaxTheme`.
 - `HighlightedCode` re-tokenizes only the lines that change.
 - `HighlightedCode` lays out a large file in blocks of lines, and only the
   blocks on screen when its height is bounded, so a 7,500-line file shows
