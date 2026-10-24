@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:syntax_core/langs/dart.dart';
-import 'package:syntax_core/themes/github_dark.dart';
+import 'package:syntax_darts/langs/dart.dart';
+import 'package:syntax_darts/themes/github_dark.dart';
 import 'package:syntax_flutter/src/code_rows.dart';
 import 'package:syntax_flutter/syntax_flutter.dart';
 

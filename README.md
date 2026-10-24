@@ -13,12 +13,12 @@ theme.
 
 | Package | What it is |
 |---|---|
-| [`packages/syntax_core`](packages/syntax_core) | Pure Dart, zero dependencies. Contains the tokenizer, themes, HTML/ANSI rendering, diff tools (patch parsing, line diffs, word-level changes), and the renderer-neutral pieces other renderers build on. It runs on the VM, AOT, the web and inside Flutter. |
+| [`packages/syntax_darts`](packages/syntax_darts) | Pure Dart, zero dependencies. Contains the tokenizer, themes, HTML/ANSI rendering, diff tools (patch parsing, line diffs, word-level changes), and the renderer-neutral pieces other renderers build on. It runs on the VM, AOT, the web and inside Flutter. |
 | [`packages/syntax_flutter`](packages/syntax_flutter) | Contains `HighlightedCode` (read-only highlighted code), `PatchView` (a highlighted diff or patch, unified or split) and `HighlighterScope`. |
 | [`packages/syntax_flutter/example`](packages/syntax_flutter/example) | A read-only code, diff and patch preview with a picker for every bundled language and theme. |
 | [`packages/syntax_noir`](packages/syntax_noir) | Terminal widgets on [noir](https://github.com/btwld/noir): a `CodeHighlighter` for noir's `CodeView` and a `PatchView`. Needs Dart 3.10, so it sits outside the workspace. |
 
-Install [`syntax_core`](https://pub.dev/packages/syntax_core),
+Install [`syntax_darts`](https://pub.dev/packages/syntax_darts),
 [`syntax_flutter`](https://pub.dev/packages/syntax_flutter), and
 [`syntax_noir`](https://pub.dev/packages/syntax_noir) from pub.dev (0.0.1).
 Renderers paint what the core lays out.
@@ -64,7 +64,7 @@ grammar.json ──► RuleFactory ──► Grammar.tokenizeLine(line, state) �
 
 Shiki, with its Oniguruma WASM engine, is the oracle.
 
-- **Bundled grammars:** `packages/syntax_core/test/conformance_test.dart` checks
+- **Bundled grammars:** `packages/syntax_darts/test/conformance_test.dart` checks
   18 bundled grammars on 21 samples. Every token's scopes match Shiki
   exactly, as does every character's color and font style under three
   themes: 84 of 84 checks pass.
@@ -111,11 +111,11 @@ default, as in VS Code; set `Highlighter.maxLineLength` to change it.
 Reproduce with the same input for each:
 
 ```bash
-dart run packages/syntax_core/benchmark/tokenize.dart path/to/file.dart
+dart run packages/syntax_darts/benchmark/tokenize.dart path/to/file.dart
 ```
 
 ```bash
-dart compile js -O4 packages/syntax_core/benchmark/web_bench.dart -o /tmp/syntax_bench.js && node /tmp/syntax_bench.js path/to/file.dart
+dart compile js -O4 packages/syntax_darts/benchmark/web_bench.dart -o /tmp/syntax_bench.js && node /tmp/syntax_bench.js path/to/file.dart
 ```
 
 ```bash
@@ -125,7 +125,7 @@ cd tool && npm run bench -- path/to/file.dart
 The long-line numbers come from:
 
 ```bash
-dart run packages/syntax_core/benchmark/long_line.dart
+dart run packages/syntax_darts/benchmark/long_line.dart
 ```
 
 ## Development
@@ -138,7 +138,7 @@ The workspace is `syntax` and `syntax_flutter`, so it resolves with the
 Flutter SDK.
 
 ```bash
-cd packages/syntax_core && dart test
+cd packages/syntax_darts && dart test
 ```
 
 ```bash
@@ -168,11 +168,11 @@ cd tool && npm ci && npm run generate && npm run samples && npm run golden
 These tools are for checking regex and tokenizer changes against every
 Shiki grammar:
 
-- `packages/syntax_core/tool/coverage.dart` translates and compiles every
+- `packages/syntax_darts/tool/coverage.dart` translates and compiles every
   pattern in a directory of grammars.
-- `packages/syntax_core/tool/stress.dart`, with `tool/stress.mjs`, compares
+- `packages/syntax_darts/tool/stress.dart`, with `tool/stress.mjs`, compares
   tokens with Shiki for every grammar that has an upstream sample.
-- `packages/syntax_core/tool/git_compare.dart` checks `parsePatch` and
+- `packages/syntax_darts/tool/git_compare.dart` checks `parsePatch` and
   `diffTexts` against `git diff` on random edits.
 
 ## Not done yet
@@ -185,4 +185,4 @@ Shiki grammar:
 ## License
 
 BSD 3-Clause, see [LICENSE](LICENSE). The bundled grammars and themes keep
-their own licenses, listed in [packages/syntax_core/NOTICE](packages/syntax_core/NOTICE).
+their own licenses, listed in [packages/syntax_darts/NOTICE](packages/syntax_darts/NOTICE).

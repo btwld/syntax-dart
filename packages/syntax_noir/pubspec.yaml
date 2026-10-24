@@ -19,7 +19,7 @@ platforms:
   windows:
 dependencies:
   noir: ^0.0.4
-  syntax_core: ^0.0.1
+  syntax_darts: ^0.0.1
 dev_dependencies:
   lints: ^6.0.0
   # Exact, while it is an alpha.

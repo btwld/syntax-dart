@@ -18,7 +18,7 @@ resolution: workspace
 dependencies:
   flutter:
     sdk: flutter
-  syntax_core: ^0.0.1
+  syntax_darts: ^0.0.1
 dev_dependencies:
   flutter_test:
     sdk: flutter

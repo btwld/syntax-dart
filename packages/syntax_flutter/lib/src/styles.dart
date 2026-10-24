@@ -1,5 +1,5 @@
 import 'package:flutter/painting.dart';
-import 'package:syntax_core/syntax.dart';
+import 'package:syntax_darts/syntax.dart';
 
 /// A monospace style that resolves on every platform.
 const TextStyle defaultCodeTextStyle = TextStyle(

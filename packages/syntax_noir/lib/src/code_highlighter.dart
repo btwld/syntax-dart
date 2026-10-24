@@ -1,5 +1,5 @@
 import 'package:noir/noir.dart';
-import 'package:syntax_core/syntax.dart' as syntax;
+import 'package:syntax_darts/syntax.dart' as syntax;
 
 import 'colors.dart';
 

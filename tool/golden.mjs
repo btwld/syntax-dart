@@ -1,6 +1,6 @@
 // Records what Shiki (vscode-textmate + Oniguruma WASM) produces for every
 // sample: raw scopes per token, and colors per token for a few themes.
-// packages/syntax_core/test/conformance_test.dart compares syntax against these.
+// packages/syntax_darts/test/conformance_test.dart compares syntax against these.
 
 import fs from 'node:fs'
 import path from 'node:path'
