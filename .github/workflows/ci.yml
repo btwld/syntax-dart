@@ -72,6 +72,7 @@ jobs:
           test/translator_test.dart
           test/highlighter_test.dart
           test/document_test.dart
+          test/diff_budget_test.dart
 
       - name: Test syntax_flutter
         working-directory: packages/syntax_flutter
