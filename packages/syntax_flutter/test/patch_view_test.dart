@@ -605,6 +605,35 @@ new mode 100755
     expect(hasRun(added(), 'final'), isTrue);
   });
 
+  testWidgets('a long parsed patch colors its rows between frames', (
+    tester,
+  ) async {
+    // The old side is tokenized after the new one, so the second removed
+    // line waits for 4,000 added lines.
+    final patch = [
+      '--- a/a.dart',
+      '+++ b/a.dart',
+      '@@ -1,2 +1,4000 @@',
+      '-final removedFirst = 1;',
+      '-final removedSecond = 2;',
+      for (var i = 0; i < 4000; i++) '+final v$i = $i;',
+    ].join('\n');
+    await pump(tester, PatchView.fromPatch(patch, theme: githubDarkTheme));
+    InlineSpan removed() => tester
+        .widgetList<Text>(find.byType(Text))
+        .map((t) => t.textSpan)
+        .whereType<TextSpan>()
+        .firstWhere((s) => s.toPlainText().contains('removedSecond'));
+    // Not tokenized yet: one plain run with the whole line.
+    expect(hasRun(removed(), 'final'), isFalse);
+    expect(removed().toPlainText(), contains('final removedSecond = 2;'));
+
+    for (var i = 0; i < 1000 && !hasRun(removed(), 'final'); i++) {
+      await tester.pump();
+    }
+    expect(hasRun(removed(), 'final'), isTrue);
+  });
+
   testWidgets(
     'IndexedCodeViewport preserves visible anchor when a row shrinks',
     (tester) async {
