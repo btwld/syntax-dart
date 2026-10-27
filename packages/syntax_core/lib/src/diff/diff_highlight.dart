@@ -26,16 +26,20 @@ final class HighlightedDiff {
     TokenizedDocument? newDocument,
     _LineText? oldPlain,
     _LineText? newPlain,
+    List<_Side> sides = const [],
   }) : _oldDocument = oldDocument,
        _newDocument = newDocument,
        _oldPlain = oldPlain,
-       _newPlain = newPlain;
+       _newPlain = newPlain,
+       _sides = sides;
 
   /// Highlights [diff]. The language comes from [language] if given,
   /// otherwise from the file extension. Unknown languages stay plain.
   ///
-  /// With a [budget], full texts are tokenized for at most that long, and
-  /// [tokenize] continues. Lines not tokenized yet are plain.
+  /// With a [budget], the new file and then the old one are tokenized for
+  /// at most that long, whether from full texts or a patch's hunks, after
+  /// at least one line of each. [tokenize] continues. Lines not tokenized
+  /// yet are plain.
   factory HighlightedDiff.of(
     FileDiff diff, {
     required Highlighter highlighter,
@@ -57,47 +61,30 @@ final class HighlightedDiff {
     final oldLines = diff.oldLines;
     final newLines = diff.newLines;
     if (oldLines != null && newLines != null) {
+      final oldDocument = TokenizedDocument(grammar);
+      final newDocument = TokenizedDocument(grammar);
       final highlighted = HighlightedDiff._(
         theme,
         const {},
         const {},
-        oldDocument: TokenizedDocument(grammar),
-        newDocument: TokenizedDocument(grammar),
+        oldDocument: oldDocument,
+        newDocument: newDocument,
+        sides: [_DocumentSide(newDocument), _DocumentSide(oldDocument)],
       );
       final clock = Stopwatch()..start();
-      highlighted._newDocument!.update(newLines.join('\n'), budget: budget);
-      highlighted._oldDocument!.update(
-        oldLines.join('\n'),
-        budget: _left(budget, clock),
-      );
+      newDocument.update(newLines.join('\n'), budget: budget);
+      oldDocument.update(oldLines.join('\n'), budget: _left(budget, clock));
       return highlighted;
     }
 
     final old = <int, List<ThemedToken>>{};
     final newer = <int, List<ThemedToken>>{};
-    void tokenize(
-      Iterable<(int, String)> numbered,
-      Map<int, List<ThemedToken>> out,
-    ) {
-      StateStack? state;
-      for (final (number, text) in numbered) {
-        final tokens = grammar.tokenizeLine(text, state);
-        state = tokens.endState;
-        out[number] = themeTokens(text, tokens.tokens, theme);
-      }
-    }
-
-    for (final hunk in diff.hunks) {
-      tokenize([
-        for (final l in hunk.lines)
-          if (_onSide(l, old: true)) (l.oldNumber!, l.text),
-      ], old);
-      tokenize([
-        for (final l in hunk.lines)
-          if (_onSide(l, old: false)) (l.newNumber!, l.text),
-      ], newer);
-    }
-    return HighlightedDiff._(theme, old, newer);
+    final newSide = _HunkSide(grammar, theme, diff.hunks, newer, old: false);
+    final oldSide = _HunkSide(grammar, theme, diff.hunks, old, old: true);
+    final clock = Stopwatch()..start();
+    newSide.tokenize(budget: budget);
+    oldSide.tokenize(budget: _left(budget, clock));
+    return HighlightedDiff._(theme, old, newer, sides: [newSide, oldSide]);
   }
 
   /// Whether [line] is in the old file, or the new one.
@@ -127,16 +114,15 @@ final class HighlightedDiff {
   }
 
   /// Whether every line has its colors.
-  bool get isComplete =>
-      (_newDocument?.isComplete ?? true) && (_oldDocument?.isComplete ?? true);
+  bool get isComplete => _sides.every((side) => side.isComplete);
 
   /// Continues highlighting that [HighlightedDiff.of] left unfinished, the
   /// new file first, for at most [budget]. Returns [isComplete].
   bool tokenize({Duration? budget}) {
     final clock = Stopwatch()..start();
-    for (final document in [?_newDocument, ?_oldDocument]) {
-      if (document.isComplete) continue;
-      if (!document.tokenize(budget: _left(budget, clock))) break;
+    for (final side in _sides) {
+      if (side.isComplete) continue;
+      if (!side.tokenize(budget: _left(budget, clock))) break;
     }
     return isComplete;
   }
@@ -169,6 +155,9 @@ final class HighlightedDiff {
   /// Line texts, for diffs without a grammar.
   final _LineText? _oldPlain;
   final _LineText? _newPlain;
+
+  /// What is left to tokenize, the new file first; empty when plain.
+  final List<_Side> _sides;
 
   late final TokenStyle _plain = TokenStyle(foreground: _theme.foreground);
 
@@ -486,3 +475,89 @@ final class DiffColors {
 
 /// The text of a line by its number, or `null` if the diff doesn't have it.
 typedef _LineText = String? Function(int number);
+
+/// One file of a [HighlightedDiff], tokenized a slice at a time with the
+/// contract of [TokenizedDocument.tokenize]: with a budget, it stops once
+/// that much time is spent, after at least one line.
+abstract interface class _Side {
+  bool get isComplete;
+  bool tokenize({Duration? budget});
+}
+
+/// A file with its full text.
+final class _DocumentSide implements _Side {
+  _DocumentSide(this._document);
+
+  final TokenizedDocument _document;
+
+  @override
+  bool get isComplete => _document.isComplete;
+
+  @override
+  bool tokenize({Duration? budget}) => _document.tokenize(budget: budget);
+}
+
+/// One side of a parsed patch, which only has its hunks. Each hunk is
+/// tokenized from a fresh state, and the state carries from line to line
+/// within it, also from one slice to the next.
+final class _HunkSide implements _Side {
+  _HunkSide(
+    this._grammar,
+    this._theme,
+    this._hunks,
+    this._tokens, {
+    required bool old,
+  }) : _old = old;
+
+  final Grammar _grammar;
+  final SyntaxTheme _theme;
+  final List<DiffHunk> _hunks;
+
+  /// Tokens per line number, filled as lines are tokenized.
+  final Map<int, List<ThemedToken>> _tokens;
+  final bool _old;
+
+  /// The next line to look at: line [_line] of hunk [_hunk].
+  int _hunk = 0;
+  int _line = 0;
+
+  /// The state after the hunk's last tokenized line, or `null` at its start.
+  StateStack? _state;
+
+  @override
+  bool get isComplete => _hunk >= _hunks.length;
+
+  @override
+  bool tokenize({Duration? budget}) {
+    final clock = budget == null ? null : (Stopwatch()..start());
+    var tokenized = 0;
+    while (_hunk < _hunks.length) {
+      final lines = _hunks[_hunk].lines;
+      if (_line >= lines.length) {
+        _hunk++;
+        _line = 0;
+        _state = null;
+        continue;
+      }
+      final line = lines[_line];
+      if (!HighlightedDiff._onSide(line, old: _old)) {
+        _line++;
+        continue;
+      }
+      if (clock != null && tokenized > 0 && clock.elapsed >= budget!) {
+        return false;
+      }
+      final result = _grammar.tokenizeLine(line.text, _state);
+      _tokens[_old ? line.oldNumber! : line.newNumber!] = themeTokens(
+        line.text,
+        result.tokens,
+        _theme,
+      );
+      // Kept current, so a line that throws is retried, not skipped.
+      _state = result.endState;
+      _line++;
+      tokenized++;
+    }
+    return true;
+  }
+}
