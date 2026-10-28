@@ -1,3 +1,8 @@
+## 0.0.9
+
+- `HorizontalCode` waits for scroll dimensions before synchronizing a retained
+  row that changed while offscreen. It synchronizes normally when laid out.
+
 ## 0.0.8
 
 - Preserve unchanged row elements across source and layout updates. Updating

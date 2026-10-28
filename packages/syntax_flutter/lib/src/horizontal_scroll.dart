@@ -74,7 +74,11 @@ class _HorizontalCodeState extends State<HorizontalCode> {
   }
 
   void synchronize() {
-    if (!_controller.hasClients || _group == null) return;
+    if (!_controller.hasClients ||
+        !_controller.position.hasContentDimensions ||
+        _group == null) {
+      return;
+    }
     final offset = _group!.offset.clamp(
       0.0,
       _controller.position.maxScrollExtent,
