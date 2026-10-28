@@ -423,7 +423,8 @@ class _RowList extends SliverList {
   void updateRenderObject(BuildContext context, _IndexedRowList renderObject) {
     renderObject
       ..offsetFor = offsetFor
-      ..firstRow = firstRow;
+      ..firstRow = firstRow
+      ..refreshOffsets();
   }
 
   /// Height of the rows after the list's row [local].
@@ -452,6 +453,12 @@ class _IndexedRowList extends RenderSliverList {
   int _firstRow;
   bool _reanchor = false;
   double Function(int) offsetFor;
+
+  /// Measurements can change the prefix even without moving the first row.
+  void refreshOffsets() {
+    _reanchor = true;
+    markNeedsLayout();
+  }
 
   set firstRow(int value) {
     if (value == _firstRow) return;
