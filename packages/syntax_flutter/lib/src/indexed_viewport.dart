@@ -129,6 +129,9 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
     _reportedRange = null;
     _rebase = true;
     _generation++;
+    // A source/layout change retires old local child offsets. Ordinary scroll
+    // rebasing does not reset the generation and continues to retain rows.
+    _restarts++;
   }
 
   void _range() {
