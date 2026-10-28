@@ -1,6 +1,6 @@
 # Publish one package to pub.dev from a version tag.
 # Tag format (required): <package>-v<semver>
-#   syntax_core-v0.0.1
+#   syntax_core-v0.0.2
 #   syntax_flutter-v0.0.3
 #   syntax_noir-v0.0.1
 #
@@ -43,7 +43,7 @@ jobs:
               exit 1
               ;;
           esac
-          version="${tag#${package}-v}"
+          version="${tag#"${package}"-v}"
           dir="packages/${package}"
           if [[ ! -d "$dir" ]]; then
             echo "Missing package directory: $dir"
@@ -82,22 +82,19 @@ jobs:
       - name: Set up Dart (OIDC for pub.dev)
         uses: dart-lang/setup-dart@v1
 
-      - name: Set up Flutter (syntax_flutter only)
-        if: steps.tag.outputs.package == 'syntax_flutter'
+      # Every package needs Flutter: in this workspace, resolving any member
+      # resolves them all, syntax_flutter included, and a standalone Dart SDK
+      # cannot. Pinned to the version CI uses (ci.yml).
+      - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
+          flutter-version: 3.47.5
           channel: stable
           cache: true
 
       - name: Resolve dependencies
         working-directory: ${{ steps.tag.outputs.dir }}
-        run: |
-          set -euo pipefail
-          if [[ "${{ steps.tag.outputs.package }}" == "syntax_flutter" ]]; then
-            flutter pub get
-          else
-            dart pub get
-          fi
+        run: flutter pub get
 
       - name: Publish
         working-directory: ${{ steps.tag.outputs.dir }}
