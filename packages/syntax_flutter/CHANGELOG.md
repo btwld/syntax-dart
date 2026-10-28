@@ -1,3 +1,9 @@
+## 0.0.8
+
+- Preserve unchanged row elements across source and layout updates. Updating
+  streamed content no longer remounts already displayed paragraphs; measured
+  offsets still refresh when the layout changes.
+
 ## 0.0.7
 
 - Keep only the explicitly requested viewport rows alive during native text

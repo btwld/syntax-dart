@@ -54,6 +54,96 @@ double uniform(int index) => 24;
 const viewportHeight = 300.0;
 
 void main() {
+  testWidgets('appending source retains unchanged row elements', (
+    tester,
+  ) async {
+    final revision = ValueNotifier(0);
+    final scroll = ScrollController();
+    final probe = _Probe();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Align(
+          alignment: Alignment.topLeft,
+          child: SizedBox(
+            height: 300,
+            child: ValueListenableBuilder<int>(
+              valueListenable: revision,
+              builder: (_, value, _) => IndexedCodeViewport(
+                controller: scroll,
+                count: 1000 + value,
+                layoutKey: value,
+                identity: (i) => i,
+                indexOf: (id) => id as int,
+                builder: (_, i) =>
+                    _ProbeRow(index: i, height: 24, probe: probe),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final first = tester.element(find.text('Line 0'));
+    for (var i = 1; i <= 3; i++) {
+      revision.value = i;
+      await tester.pumpAndSettle();
+      expect(tester.element(find.text('Line 0')), same(first));
+    }
+    await tester.pumpWidget(const SizedBox());
+    revision.dispose();
+    scroll.dispose();
+  });
+
+  testWidgets(
+    'a repeated reveal reaches the heading of a tall row after a layout reset',
+    (tester) async {
+      final revision = ValueNotifier(0);
+      final scroll = ScrollController();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Align(
+            alignment: Alignment.topLeft,
+            child: SizedBox(
+              height: 360,
+              child: ValueListenableBuilder<int>(
+                valueListenable: revision,
+                builder: (_, value, _) => IndexedCodeViewport(
+                  controller: scroll,
+                  count: 100,
+                  layoutKey: value,
+                  identity: (i) => i,
+                  indexOf: (id) => id as int,
+                  revealRow: value == 0 ? null : 20,
+                  revealRequest: value,
+                  builder: (_, i) => SizedBox(
+                    height: i == 20 ? 800 : 24,
+                    child: Align(
+                      alignment: Alignment.topLeft,
+                      child: Text('Heading $i'),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      scroll.jumpTo(1100);
+      await tester.pumpAndSettle();
+      revision.value++;
+      await tester.pumpAndSettle();
+      expect(find.text('Heading 20').hitTestable(), findsOneWidget);
+      expect(
+        tester.getTopLeft(find.text('Heading 20')).dy,
+        inInclusiveRange(0, 24),
+      );
+      await tester.pumpWidget(const SizedBox());
+      revision.dispose();
+      scroll.dispose();
+    },
+  );
+
   for (final fixed in [false, true]) {
     testWidgets('native selection retains only requested rows (fixed=$fixed)', (
       tester,
