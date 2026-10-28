@@ -1,3 +1,12 @@
+## 0.0.5
+
+- `IndexedCodeViewport` keeps the first visible row, and the rows after it,
+  in place when the layout changes: a new `layoutKey`, `count` or
+  `estimatedHeight`. Since 0.0.4, a row the list kept through such a change
+  was not measured again, so its height fell back to the estimate and the
+  rows below it landed off by the difference, as a file's header did when
+  its rows were loaded below it.
+
 ## 0.0.4
 
 - Requires `syntax_core` 0.0.2, which `PatchView` now relies on to color
