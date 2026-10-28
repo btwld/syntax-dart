@@ -6,7 +6,8 @@ import 'package:syntax_core/syntax.dart';
 
 /// Scrollable list that measures only the rows it builds.
 /// Large unmounted ranges occupy estimated sliver space, so jumping to a
-/// distant row never requires building all preceding widgets.
+/// distant row never requires building all preceding widgets. Rows already
+/// built keep their elements and states while the list scrolls.
 class IndexedCodeViewport extends StatefulWidget {
   /// Uses core prefix sums and renderer-provided row measurements.
   const IndexedCodeViewport({
@@ -74,7 +75,28 @@ class IndexedCodeViewport extends StatefulWidget {
 
 class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
   late RowHeightIndex _heights;
-  int _first = 0, _last = 0, _visible = 0;
+  int _visible = 0;
+
+  /// The row the list of rows starts at. It moves only when the reader jumps
+  /// away, scrolls above it, or the layout changes, so scrolling keeps the
+  /// rows the list has built.
+  int _base = 0;
+  bool _rebase = true;
+
+  /// Counts forced restarts, so a restart at the same first row is still a
+  /// new list.
+  int _restarts = 0;
+
+  /// Rows laid out since the heights were last reset.
+  final Set<int> _laidOut = {};
+
+  /// Rows laid out before that came back with a different height, waiting
+  /// for the measurements to apply.
+  final Set<int> _relaidOut = {};
+  double _rangeOffset = 0;
+
+  /// How far beyond the viewport rows are built, on each side.
+  static const double _cache = 300;
   double _extent = 600;
   double? _width;
   Object? _anchor;
@@ -92,20 +114,32 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
       estimatedHeight: widget.estimatedHeight,
     );
     _measurements.clear();
+    _laidOut.clear();
+    _relaidOut.clear();
     _reportedRange = null;
+    _rebase = true;
   }
 
   void _range() {
     if (widget.count == 0) {
-      _first = _last = 0;
+      _visible = _base = 0;
       return;
     }
-    _visible = _heights.rowAt(_offset);
-    _first = _heights.rowAt(math.max(0, _offset - 300));
-    _last = (_heights.rowAt(_offset + _extent + 300) + 1).clamp(
-      _first,
-      widget.count,
-    );
+    final offset = _offset;
+    _visible = _heights.rowAt(offset);
+    final first = _heights.rowAt(math.max(0, offset - _cache));
+    // A jump past everything built starts a new list at the target instead
+    // of building every row in between.
+    final jumped = (offset - _rangeOffset).abs() > _extent + 2 * _cache;
+    if (_rebase || jumped || _base >= widget.count) {
+      _base = first;
+    } else if (first < _base) {
+      // Above the list's first row, a new list starts a screen higher, so
+      // scrolling up rebuilds once a screen rather than once a row.
+      _base = _heights.rowAt(math.max(0, offset - _cache - _extent));
+    }
+    _rebase = false;
+    _rangeOffset = offset;
     _anchor = widget.identity(_visible);
     _within = _offset - _heights.offsetFor(_visible);
     _reportRange();
@@ -129,22 +163,22 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
   }
 
   void _scroll() {
-    final previous = (_first, _last);
+    final base = _base;
     _range();
-    if (!widget.fixedHeight && (_first, _last) != previous && mounted) {
-      setState(() {});
-    }
+    if (!widget.fixedHeight && _base != base && mounted) setState(() {});
     widget.onFirstRow?.call(_visible);
   }
 
   void _measure(int index, double height) {
     if (!mounted || index >= widget.count || height <= 0) return;
+    final seen = !_laidOut.add(index);
     if ((_heights.offsetFor(index + 1) - _heights.offsetFor(index) - height)
             .abs() <
         .1) {
       return;
     }
     _measurements[index] = height;
+    if (seen) _relaidOut.add(index);
     if (_queued) return;
     _queued = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -153,16 +187,31 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
       final anchor = _heights.rowAt(_offset);
       final within = _offset - _heights.offsetFor(anchor);
       var correction = 0.0;
+      var restart = false;
       for (final entry in _measurements.entries) {
         final delta = _heights.measure(entry.key, entry.value);
-        if (entry.key < anchor) correction += delta;
+        if (entry.key < anchor) {
+          correction += delta;
+          restart = restart || _relaidOut.contains(entry.key);
+        }
       }
+      _relaidOut.clear();
       final anchorHeight =
           _heights.offsetFor(anchor + 1) - _heights.offsetFor(anchor);
       if (_measurements.containsKey(anchor) && within >= anchorHeight) {
         correction += math.max(0, anchorHeight - _extent) - within;
       }
       _measurements.clear();
+      // The correction assumes rows above the anchor pushed it down by
+      // their change, as a row laid out for the first time does: the list
+      // builds those forward from its first row. A row laid out before that
+      // comes back with a new height may have been put back above rows the
+      // list already had, so it grew upward instead; then the list starts
+      // again, laying every row out where the heights now put it.
+      if (restart) {
+        _rebase = true;
+        _restarts++;
+      }
       setState(_range);
       if (correction != 0 && widget.controller.hasClients) {
         widget.controller.jumpTo(
@@ -251,7 +300,7 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
         physics: widget.physics,
         // Supported by the package's minimum Flutter SDK.
         // ignore: deprecated_member_use
-        cacheExtent: 300,
+        cacheExtent: _cache,
         slivers: [
           SliverPadding(
             padding: widget.padding,
@@ -272,33 +321,29 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
                 : SliverMainAxisGroup(
                     slivers: [
                       SliverToBoxAdapter(
-                        child: SizedBox(height: _heights.offsetFor(_first)),
+                        child: SizedBox(height: _heights.offsetFor(_base)),
                       ),
-                      SliverList(
-                        // The local sliver indexes restart at zero when the window
-                        // moves. Older Flutter versions otherwise apply scroll
-                        // corrections from the previous window's child offsets.
-                        key: ValueKey(_first),
+                      // A new list, and so new rows, only when its first row
+                      // moves. Within one list the rows never change index,
+                      // so none is remapped with a stale layout offset.
+                      _RowList(
+                        key: ValueKey((_base, _restarts)),
+                        remainingAfter: (local) =>
+                            _heights.offsetFor(widget.count) -
+                            _heights.offsetFor(
+                              math.min(widget.count, _base + local + 1),
+                            ),
                         delegate: SliverChildBuilderDelegate(
                           (context, local) {
-                            final index = _first + local;
+                            final index = _base + local;
                             return _MeasuredRow(
                               key: ValueKey(widget.identity(index)),
                               onSize: (size) => _measure(index, size.height),
                               child: widget.builder(context, index),
                             );
                           },
-                          childCount: _last - _first,
+                          childCount: widget.count - _base,
                           addAutomaticKeepAlives: false,
-                        ),
-                      ),
-                      SliverToBoxAdapter(
-                        child: SizedBox(
-                          height: math.max(
-                            0,
-                            _heights.offsetFor(widget.count) -
-                                _heights.offsetFor(_last),
-                          ),
                         ),
                       ),
                     ],
@@ -313,6 +358,29 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
     widget.controller.removeListener(_scroll);
     super.dispose();
   }
+}
+
+/// The rows from the list's first row to the end. Only the rows near the
+/// viewport are built; the extent of the rest comes from the measured and
+/// estimated heights, so the scroll extent stays exact.
+class _RowList extends SliverList {
+  const _RowList({
+    super.key,
+    required super.delegate,
+    required this.remainingAfter,
+  });
+
+  /// Height of the rows after the list's row [local].
+  final double Function(int local) remainingAfter;
+
+  @override
+  double? estimateMaxScrollOffset(
+    SliverConstraints? constraints,
+    int firstIndex,
+    int lastIndex,
+    double leadingScrollOffset,
+    double trailingScrollOffset,
+  ) => trailingScrollOffset + remainingAfter(lastIndex);
 }
 
 class _MeasuredRow extends SingleChildRenderObjectWidget {
