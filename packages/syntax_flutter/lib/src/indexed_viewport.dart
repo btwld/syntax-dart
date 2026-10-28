@@ -86,6 +86,13 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
   /// Counts forced restarts, so a restart at the same first row is still a
   /// new list.
   int _restarts = 0;
+
+  /// Rows laid out since the heights were last reset.
+  final Set<int> _laidOut = {};
+
+  /// Rows laid out before that came back with a different height, waiting
+  /// for the measurements to apply.
+  final Set<int> _relaidOut = {};
   double _rangeOffset = 0;
 
   /// How far beyond the viewport rows are built, on each side.
@@ -107,6 +114,8 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
       estimatedHeight: widget.estimatedHeight,
     );
     _measurements.clear();
+    _laidOut.clear();
+    _relaidOut.clear();
     _reportedRange = null;
     _rebase = true;
   }
@@ -162,12 +171,14 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
 
   void _measure(int index, double height) {
     if (!mounted || index >= widget.count || height <= 0) return;
+    final seen = !_laidOut.add(index);
     if ((_heights.offsetFor(index + 1) - _heights.offsetFor(index) - height)
             .abs() <
         .1) {
       return;
     }
     _measurements[index] = height;
+    if (seen) _relaidOut.add(index);
     if (_queued) return;
     _queued = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -176,10 +187,15 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
       final anchor = _heights.rowAt(_offset);
       final within = _offset - _heights.offsetFor(anchor);
       var correction = 0.0;
+      var restart = false;
       for (final entry in _measurements.entries) {
         final delta = _heights.measure(entry.key, entry.value);
-        if (entry.key < anchor) correction += delta;
+        if (entry.key < anchor) {
+          correction += delta;
+          restart = restart || _relaidOut.contains(entry.key);
+        }
       }
+      _relaidOut.clear();
       final anchorHeight =
           _heights.offsetFor(anchor + 1) - _heights.offsetFor(anchor);
       if (_measurements.containsKey(anchor) && within >= anchorHeight) {
@@ -187,10 +203,12 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
       }
       _measurements.clear();
       // The correction assumes rows above the anchor pushed it down by
-      // their change. A row the list put back above rows it already had
-      // grew upward instead, so the list starts again, laying every row out
-      // where the heights now put it.
-      if (correction != 0) {
+      // their change, as a row laid out for the first time does: the list
+      // builds those forward from its first row. A row laid out before that
+      // comes back with a new height may have been put back above rows the
+      // list already had, so it grew upward instead; then the list starts
+      // again, laying every row out where the heights now put it.
+      if (restart) {
         _rebase = true;
         _restarts++;
       }

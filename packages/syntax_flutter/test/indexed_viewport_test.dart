@@ -306,4 +306,41 @@ void main() {
     expect(y(50), 50 * 24 - 40 * 24);
     expect(tester.getSize(find.byKey(const ValueKey('row-50'))).height, 124);
   });
+
+  testWidgets('scrolling up after a far jump measures new rows without '
+      'starting the list again for each', (tester) async {
+    // The reviewer's probe: rows first measured on the way up, after a jump,
+    // grow forward from the list's first row, so they need the usual
+    // correction but no new list.
+    final (scroll, probe, _) = await pump(tester, count: 3000, height: mixed);
+    scroll.jumpTo(offsetOf(2500, mixed));
+    await tester.pumpAndSettle();
+    probe.inits.clear();
+    final lists = <Element>{};
+    void noteList() {
+      lists.add(
+        tester.element(
+          find.byWidgetPredicate(
+            (widget) => widget.runtimeType.toString() == '_RowList',
+          ),
+        ),
+      );
+    }
+
+    noteList();
+    for (var i = 0; i < 100; i++) {
+      scroll.jumpTo(scroll.offset - 40);
+      await tester.pump();
+      noteList();
+    }
+    await tester.pumpAndSettle();
+    // 4,000 px up passes about 150 rows. A new list a screen higher, about
+    // every 300 px, builds about 50 rows each: 13 lists here, counting the
+    // first, with 678 rows created (810 on Flutter 3.35, which builds no
+    // rows in the cache above the viewport). Starting a new list for every
+    // correction made 31 lists and 1,419 rows (1,765 on 3.35).
+    expect(probe.inits.length, lessThanOrEqualTo(1000));
+    expect(lists.length, lessThanOrEqualTo(16));
+    expect(tester.takeException(), isNull);
+  });
 }
