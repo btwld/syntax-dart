@@ -237,4 +237,69 @@ void main() {
     await tester.pumpAndSettle();
     expect(first, 101);
   });
+
+  testWidgets('a row that changes height while scrolled away leaves the rows '
+      'above it where their heights put them', (tester) async {
+    // The reviewer's probe: the caller changes a row's height without a new
+    // layout key while the row is out of view, then the reader scrolls back.
+    final scroll = ScrollController();
+    addTearDown(scroll.dispose);
+    var tall = false;
+    late StateSetter update;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Align(
+          alignment: Alignment.topLeft,
+          child: SizedBox(
+            width: 600,
+            height: viewportHeight,
+            child: StatefulBuilder(
+              builder: (context, setState) {
+                update = setState;
+                return IndexedCodeViewport(
+                  controller: scroll,
+                  count: 400,
+                  layoutKey: 400,
+                  identity: (index) => index,
+                  indexOf: (identity) => identity as int,
+                  builder: (context, index) => SizedBox(
+                    key: ValueKey('row-$index'),
+                    height: index == 50 && tall ? 124 : 24,
+                    child: Text('Line $index'),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    // Scrolled down past row 50, which the list keeps no element for.
+    for (var offset = 0.0; offset <= 3000; offset += 100) {
+      scroll.jumpTo(offset);
+      await tester.pumpAndSettle();
+    }
+    update(() => tall = true);
+    await tester.pumpAndSettle();
+    for (var offset = 3000.0; offset > 1000; offset -= 40) {
+      scroll.jumpTo(offset);
+      await tester.pumpAndSettle();
+    }
+    final top = tester.getTopLeft(find.byType(IndexedCodeViewport)).dy;
+    double y(int row) =>
+        tester.getTopLeft(find.byKey(ValueKey('row-$row'))).dy - top;
+
+    scroll.jumpTo(0);
+    await tester.pumpAndSettle();
+    expect(scroll.offset, 0);
+    expect(y(0), 0);
+
+    scroll.jumpTo(40 * 24);
+    await tester.pumpAndSettle();
+    expect(scroll.offset, 40 * 24);
+    expect(y(40), 0);
+    expect(y(50), 50 * 24 - 40 * 24);
+    expect(tester.getSize(find.byKey(const ValueKey('row-50'))).height, 124);
+  });
 }

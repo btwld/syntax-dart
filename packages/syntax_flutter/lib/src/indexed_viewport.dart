@@ -82,6 +82,10 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
   /// rows the list has built.
   int _base = 0;
   bool _rebase = true;
+
+  /// Counts forced restarts, so a restart at the same first row is still a
+  /// new list.
+  int _restarts = 0;
   double _rangeOffset = 0;
 
   /// How far beyond the viewport rows are built, on each side.
@@ -182,6 +186,14 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
         correction += math.max(0, anchorHeight - _extent) - within;
       }
       _measurements.clear();
+      // The correction assumes rows above the anchor pushed it down by
+      // their change. A row the list put back above rows it already had
+      // grew upward instead, so the list starts again, laying every row out
+      // where the heights now put it.
+      if (correction != 0) {
+        _rebase = true;
+        _restarts++;
+      }
       setState(_range);
       if (correction != 0 && widget.controller.hasClients) {
         widget.controller.jumpTo(
@@ -297,7 +309,7 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
                       // moves. Within one list the rows never change index,
                       // so none is remapped with a stale layout offset.
                       _RowList(
-                        key: ValueKey(_base),
+                        key: ValueKey((_base, _restarts)),
                         remainingAfter: (local) =>
                             _heights.offsetFor(widget.count) -
                             _heights.offsetFor(
