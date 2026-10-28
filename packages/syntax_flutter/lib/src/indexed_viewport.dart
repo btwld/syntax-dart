@@ -324,6 +324,7 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
                     delegate: SliverChildBuilderDelegate(
                       (context, index) => _RetainedRow(
                         key: ValueKey(widget.identity(index)),
+                        index: index,
                         retained: widget.retainedRows.contains(
                           widget.identity(index),
                         ),
@@ -332,7 +333,9 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
                       childCount: widget.count,
                       findChildIndexCallback: (key) =>
                           widget.indexOf((key as ValueKey<Object>).value),
-                      addAutomaticKeepAlives: true,
+                      addAutomaticKeepAlives: false,
+                      addRepaintBoundaries: false,
+                      addSemanticIndexes: false,
                     ),
                   )
                 : SliverMainAxisGroup(
@@ -356,6 +359,7 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
                             final index = _base + local;
                             return _RetainedRow(
                               key: ValueKey(widget.identity(index)),
+                              index: index,
                               retained: widget.retainedRows.contains(
                                 widget.identity(index),
                               ),
@@ -380,7 +384,9 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
                                 ? null
                                 : index - _base;
                           },
-                          addAutomaticKeepAlives: true,
+                          addAutomaticKeepAlives: false,
+                          addRepaintBoundaries: false,
+                          addSemanticIndexes: false,
                         ),
                       ),
                     ],
@@ -480,32 +486,28 @@ class _IndexedRowList extends RenderSliverList {
   }
 }
 
-class _RetainedRow extends StatefulWidget {
-  const _RetainedRow({super.key, required this.retained, required this.child});
+class _RetainedRow extends StatelessWidget {
+  const _RetainedRow({
+    super.key,
+    required this.index,
+    required this.retained,
+    required this.child,
+  });
 
+  final int index;
   final bool retained;
   final Widget child;
 
   @override
-  State<_RetainedRow> createState() => _RetainedRowState();
-}
-
-class _RetainedRowState extends State<_RetainedRow>
-    with AutomaticKeepAliveClientMixin {
-  @override
-  bool get wantKeepAlive => widget.retained;
-
-  @override
-  void didUpdateWidget(_RetainedRow oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.retained != widget.retained) updateKeepAlive();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    super.build(context);
-    return widget.child;
-  }
+  Widget build(BuildContext context) => KeepAlive(
+    keepAlive: retained,
+    // AutomaticKeepAlive also inserts Flutter's selection registrar, which
+    // would retain every selected row. This viewport owns retention explicitly.
+    child: IndexedSemantics(
+      index: index,
+      child: RepaintBoundary(child: child),
+    ),
+  );
 }
 
 class _MeasuredRow extends SingleChildRenderObjectWidget {
