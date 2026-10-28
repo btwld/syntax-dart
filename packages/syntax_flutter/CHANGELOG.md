@@ -1,3 +1,12 @@
+## 0.0.6
+
+- Upward scrolling after a far jump keeps existing row elements and state.
+  Extending the virtual list remaps row offsets instead of remounting it.
+- `IndexedCodeViewport.retainedRows` keeps explicitly named row identities
+  alive during scrolling, for example a text selection's endpoints. Releasing
+  those identities lets offscreen rows be disposed normally.
+- Export `RowSelectionDelegate` for selection across virtualized code cells.
+
 ## 0.0.5
 
 - `IndexedCodeViewport` keeps the first visible row, and the rows after it,
