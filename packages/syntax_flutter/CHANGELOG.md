@@ -9,6 +9,10 @@
   their measured and estimated heights. When a row built before comes back
   above the anchor with a new height, the list starts again so the rows
   above it stay where their heights put them.
+- Rows are no longer rebuilt just because the viewport scrolled, and a row's
+  `State` now survives scrolling. A `builder` whose rows depend on state
+  outside the widget tree must rebuild the viewport's parent (or change its
+  `layoutKey`) when that state changes.
 
 ## 0.0.3
 
