@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:syntax_flutter/syntax_flutter.dart';
@@ -342,5 +344,220 @@ void main() {
     expect(probe.inits.length, lessThanOrEqualTo(1000));
     expect(lists.length, lessThanOrEqualTo(16));
     expect(tester.takeException(), isNull);
+  });
+
+  group('a layout change keeps the rows on screen where they were', () {
+    // As in a review whose "Load diff" adds a file's rows. The patch view's
+    // estimate changes once it has measured a header, while the first rows
+    // are on screen; the reader then scrolls into the list and the layout
+    // changes again. Rows' real heights differ from the estimate, so the
+    // rows kept through the first change must be measured again, or every
+    // row after them lands off by what their estimates miss.
+    late List<String> ids;
+    late Object layoutKey;
+    late double estimate;
+    late double width;
+    late bool fixed;
+    late Map<String, double> grown;
+    late StateSetter update;
+    double heightOf(String id) =>
+        grown[id] ??
+        (id.startsWith('n')
+            ? 21
+            : int.parse(id.substring(1)) % 7 == 1
+            ? 64
+            : 21);
+
+    Future<ScrollController> pumpRows(WidgetTester tester) async {
+      ids = [for (var i = 0; i < 400; i++) 'r$i'];
+      layoutKey = 0;
+      estimate = 24;
+      width = 600;
+      fixed = false;
+      grown = {};
+      final scroll = ScrollController();
+      addTearDown(scroll.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Align(
+            alignment: Alignment.topLeft,
+            child: StatefulBuilder(
+              builder: (context, setState) {
+                update = setState;
+                return SizedBox(
+                  width: width,
+                  height: viewportHeight,
+                  child: IndexedCodeViewport(
+                    controller: scroll,
+                    count: ids.length,
+                    layoutKey: layoutKey,
+                    estimatedHeight: estimate,
+                    fixedHeight: fixed,
+                    identity: (index) => ids[index],
+                    indexOf: (identity) {
+                      final index = ids.indexOf(identity as String);
+                      return index < 0 ? null : index;
+                    },
+                    builder: (context, index) => SizedBox(
+                      height: heightOf(ids[index]),
+                      child: Text(ids[index]),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      update(() => estimate = 30);
+      await tester.pumpAndSettle();
+      // Into the list, not so far that it starts a new one.
+      scroll.jumpTo(500);
+      await tester.pumpAndSettle();
+      return scroll;
+    }
+
+    /// The top of every row on screen, by id.
+    Map<String, double> onScreen(WidgetTester tester) => {
+      for (final element in find.byType(Text).evaluate())
+        if (tester.getTopLeft(find.byWidget(element.widget)).dy case final top
+            when top > -60 && top < viewportHeight)
+          (element.widget as Text).data!: top,
+    };
+
+    /// Lets the change settle, then checks that the first visible row and
+    /// every row after it still on screen are where they were before it.
+    Future<void> expectStill(
+      WidgetTester tester,
+      Map<String, double> before,
+    ) async {
+      // Frame by frame, recording how far a row strays on the way.
+      var worst = 0.0;
+      for (
+        var frame = 0;
+        frame < 20 && tester.binding.hasScheduledFrame;
+        frame++
+      ) {
+        await tester.pump();
+        final now = onScreen(tester);
+        for (final MapEntry(key: id, value: top) in before.entries) {
+          if (now[id] case final moved?) {
+            worst = math.max(worst, (moved - top).abs());
+          }
+        }
+      }
+      await tester.pumpAndSettle();
+      debugPrint('largest move on the way: ${worst.toStringAsFixed(1)} px');
+      final settled = onScreen(tester);
+      final first = before.entries
+          .where((entry) => entry.value >= 0)
+          .reduce((a, b) => a.value <= b.value ? a : b);
+      expect(settled[first.key], closeTo(first.value, .5), reason: first.key);
+      for (final MapEntry(key: id, value: top) in before.entries) {
+        expect(settled[id], closeTo(top, .5), reason: id);
+      }
+      expect(tester.takeException(), isNull);
+    }
+
+    testWidgets('a new layout key', (tester) async {
+      await pumpRows(tester);
+      final before = onScreen(tester);
+      expect(before.length, greaterThan(5));
+      update(() => layoutKey = 1);
+      await expectStill(tester, before);
+    });
+
+    testWidgets('rows added below the middle of the screen', (tester) async {
+      await pumpRows(tester);
+      final before = onScreen(tester);
+      final ordered = before.keys.toList()
+        ..sort((a, b) => before[a]!.compareTo(before[b]!));
+      final middle = ordered[ordered.length ~/ 2];
+      update(() {
+        ids.insertAll(ids.indexOf(middle) + 1, [
+          for (var i = 0; i < 40; i++) 'n$i',
+        ]);
+      });
+      // Only rows at or above the insertion keep their place.
+      await expectStill(tester, {
+        for (final id in ordered.take(ordered.indexOf(middle) + 1))
+          id: before[id]!,
+      });
+    });
+
+    /// The row the top of the viewport is in: the first visible row.
+    String firstVisible(Map<String, double> before) => before.entries
+        .where((entry) => entry.value <= 0)
+        .reduce((a, b) => a.value >= b.value ? a : b)
+        .key;
+
+    List<String> newRows(int count) => [for (var i = 0; i < count; i++) 'n$i'];
+
+    testWidgets('five rows added above the first visible row', (tester) async {
+      await pumpRows(tester);
+      final before = onScreen(tester);
+      final first = ids.indexOf(firstVisible(before));
+      update(() => ids.insertAll(first - 3, newRows(5)));
+      await expectStill(tester, before);
+    });
+
+    testWidgets('five rows added at the first visible row', (tester) async {
+      await pumpRows(tester);
+      final before = onScreen(tester);
+      final first = ids.indexOf(firstVisible(before));
+      update(() => ids.insertAll(first, newRows(5)));
+      await expectStill(tester, before);
+    });
+
+    testWidgets('five rows removed above the first visible row and five '
+        'below it', (tester) async {
+      await pumpRows(tester);
+      final before = onScreen(tester);
+      final first = ids.indexOf(firstVisible(before));
+      final kept = ids.sublist(first, first + 3);
+      update(() {
+        ids
+          ..removeRange(first + 3, first + 8)
+          ..removeRange(first - 8, first - 3);
+      });
+      // The rows from the first visible one down to the removal stay put.
+      await expectStill(tester, {for (final id in kept) id: before[id]!});
+    });
+
+    testWidgets('a narrower viewport whose rows keep their wrap', (
+      tester,
+    ) async {
+      await pumpRows(tester);
+      final before = onScreen(tester);
+      update(() => width = 400);
+      await expectStill(tester, before);
+    });
+
+    testWidgets('fixed heights turned on, then off again', (tester) async {
+      await pumpRows(tester);
+      final before = onScreen(tester);
+      update(() => fixed = true);
+      await tester.pumpAndSettle();
+      update(() => fixed = false);
+      await expectStill(tester, before);
+    });
+
+    testWidgets('a second change of the estimate', (tester) async {
+      await pumpRows(tester);
+      final before = onScreen(tester);
+      update(() => estimate = 26);
+      await expectStill(tester, before);
+    });
+
+    testWidgets('a row built above the first visible row grows', (
+      tester,
+    ) async {
+      await pumpRows(tester);
+      final before = onScreen(tester);
+      final above = ids[ids.indexOf(firstVisible(before)) - 3];
+      update(() => grown[above] = heightOf(above) + 40);
+      await expectStill(tester, before);
+    });
   });
 }

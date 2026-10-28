@@ -90,6 +90,11 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
   /// Rows laid out since the heights were last reset.
   final Set<int> _laidOut = {};
 
+  /// Counts resets of the heights. A row the list keeps through one is laid
+  /// out again, so its height is measured anew instead of left at the
+  /// estimate.
+  int _generation = 0;
+
   /// Rows laid out before that came back with a different height, waiting
   /// for the measurements to apply.
   final Set<int> _relaidOut = {};
@@ -118,6 +123,7 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
     _relaidOut.clear();
     _reportedRange = null;
     _rebase = true;
+    _generation++;
   }
 
   void _range() {
@@ -338,6 +344,7 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
                             final index = _base + local;
                             return _MeasuredRow(
                               key: ValueKey(widget.identity(index)),
+                              generation: _generation,
                               onSize: (size) => _measure(index, size.height),
                               child: widget.builder(context, index),
                             );
@@ -384,19 +391,40 @@ class _RowList extends SliverList {
 }
 
 class _MeasuredRow extends SingleChildRenderObjectWidget {
-  const _MeasuredRow({super.key, required this.onSize, required super.child});
+  const _MeasuredRow({
+    super.key,
+    required this.generation,
+    required this.onSize,
+    required super.child,
+  });
+
+  /// The viewport's count of height resets; a new one measures the row
+  /// again even when nothing else about it changed.
+  final int generation;
   final ValueChanged<Size> onSize;
   @override
-  RenderObject createRenderObject(BuildContext context) => _MeasureBox(onSize);
+  RenderObject createRenderObject(BuildContext context) =>
+      _MeasureBox(onSize, generation);
   @override
   void updateRenderObject(BuildContext context, _MeasureBox renderObject) {
-    renderObject.onSize = onSize;
+    renderObject
+      ..onSize = onSize
+      ..generation = generation;
   }
 }
 
 class _MeasureBox extends RenderProxyBox {
-  _MeasureBox(this.onSize);
+  _MeasureBox(this.onSize, this._generation);
   ValueChanged<Size> onSize;
+
+  int _generation;
+  set generation(int value) {
+    if (value == _generation) return;
+    _generation = value;
+    // A row kept through a reset reports its height again.
+    markNeedsLayout();
+  }
+
   @override
   void performLayout() {
     super.performLayout();
