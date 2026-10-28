@@ -123,12 +123,21 @@ void main() {
     final (scroll, probe, _) = await pump(tester);
     scroll.jumpTo(2000);
     await tester.pumpAndSettle();
-    // Row 105 is in the cache extent below the viewport now and will be in
-    // the one above it after 800 px.
-    final row = find.byKey(const ValueKey('row-105'), skipOffstage: false);
+    // Row 92 stays in view for the first 200 px, so it is built on every
+    // supported Flutter, whatever each builds in the cache extent.
+    final row = find.byKey(const ValueKey('row-92'));
     final kept = tester.state(row);
     probe.inits.clear();
-    for (var i = 0; i < 20; i++) {
+    for (var i = 0; i < 5; i++) {
+      scroll.jumpTo(scroll.offset + 40);
+      await tester.pump();
+    }
+    expect(
+      tester.state(row),
+      same(kept),
+      reason: 'a row that stayed built keeps its state',
+    );
+    for (var i = 0; i < 15; i++) {
       scroll.jumpTo(scroll.offset + 40);
       await tester.pump();
     }
@@ -136,11 +145,6 @@ void main() {
     // rows; nothing already built is created again.
     expect(probe.inits.length, lessThanOrEqualTo(40));
     expect(probe.inits.toSet().length, probe.inits.length);
-    expect(
-      tester.state(row),
-      same(kept),
-      reason: 'a row that stayed in the cache extent keeps its state',
-    );
   });
 
   testWidgets('scrolling back up re-creates at most the rows it reaches', (
