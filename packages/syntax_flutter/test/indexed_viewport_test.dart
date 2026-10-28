@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:syntax_flutter/syntax_flutter.dart';
 
@@ -54,6 +55,52 @@ double uniform(int index) => 24;
 const viewportHeight = 300.0;
 
 void main() {
+  testWidgets('horizontal synchronization waits for the first layout', (
+    tester,
+  ) async {
+    final ready = ValueNotifier(false);
+    final group = HorizontalCodeGroup()..offset = 10;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Align(
+          alignment: Alignment.topLeft,
+          child: SizedBox(
+            width: 200,
+            height: 24,
+            child: ValueListenableBuilder<bool>(
+              valueListenable: ready,
+              builder: (_, value, _) => _DeferredLayout(
+                ready: value,
+                child: HorizontalCode(
+                  group: group,
+                  child: const Text(
+                    'A long line that extends well beyond the visible viewport',
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    ready.value = true;
+    await tester.pumpAndSettle();
+    final horizontal = tester.state<ScrollableState>(
+      find
+          .descendant(
+            of: find.byType(HorizontalCode),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
+    expect(horizontal.position.hasContentDimensions, isTrue);
+    expect(horizontal.position.pixels, 10);
+    await tester.pumpWidget(const SizedBox());
+    ready.dispose();
+  });
+
   testWidgets('appending source retains unchanged row elements', (
     tester,
   ) async {
@@ -775,4 +822,49 @@ void main() {
       await expectStill(tester, before);
     });
   });
+}
+
+/// Models a mounted retained row whose new child has not been laid out yet.
+class _DeferredLayout extends SingleChildRenderObjectWidget {
+  const _DeferredLayout({required this.ready, required super.child});
+  final bool ready;
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _DeferredLayoutBox(ready);
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _DeferredLayoutBox renderObject,
+  ) {
+    renderObject.ready = ready;
+    renderObject.markNeedsLayout();
+    renderObject.markNeedsSemanticsUpdate();
+  }
+}
+
+class _DeferredLayoutBox extends RenderProxyBox {
+  _DeferredLayoutBox(this.ready);
+  bool ready;
+  @override
+  void performLayout() {
+    if (ready) {
+      super.performLayout();
+    } else {
+      size = constraints.smallest;
+    }
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    if (ready) super.paint(context, offset);
+  }
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) =>
+      ready && super.hitTestChildren(result, position: position);
+
+  @override
+  void visitChildrenForSemantics(RenderObjectVisitor visitor) {
+    if (ready) super.visitChildrenForSemantics(visitor);
+  }
 }
