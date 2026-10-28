@@ -1,3 +1,9 @@
+## 0.0.7
+
+- Keep only the explicitly requested viewport rows alive during native text
+  selection. Flutter's automatic selection retention no longer keeps every
+  intermediate selected row mounted.
+
 ## 0.0.6
 
 - Upward scrolling after a far jump keeps existing row elements and state.

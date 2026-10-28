@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:syntax_flutter/syntax_flutter.dart';
@@ -53,6 +54,57 @@ double uniform(int index) => 24;
 const viewportHeight = 300.0;
 
 void main() {
+  for (final fixed in [false, true]) {
+    testWidgets('native selection retains only requested rows (fixed=$fixed)', (
+      tester,
+    ) async {
+      final scroll = ScrollController();
+      final probe = _Probe();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: SizedBox(
+            height: viewportHeight,
+            child: SelectionArea(
+              child: IndexedCodeViewport(
+                controller: scroll,
+                count: 1000,
+                layoutKey: 0,
+                estimatedHeight: 24,
+                fixedHeight: fixed,
+                retainedRows: const {2},
+                identity: (i) => i,
+                indexOf: (id) => id as int,
+                builder: (context, i) =>
+                    _ProbeRow(index: i, height: 24, probe: probe),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final gesture = await tester.startGesture(
+        tester.getTopLeft(find.text('Line 2')) + const Offset(1, 8),
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pump();
+      await gesture.moveTo(
+        tester.getTopLeft(find.text('Line 7')) + const Offset(50, 8),
+      );
+      await tester.pump();
+      await gesture.up();
+      await tester.pump();
+      for (var offset = 40.0; offset <= 2400; offset += 40) {
+        scroll.jumpTo(offset);
+        await tester.pump();
+      }
+      await tester.pumpAndSettle();
+      expect(probe.alive, contains(2));
+      expect(probe.alive.intersection({3, 4, 5, 6, 7}), isEmpty);
+      expect(probe.alive.length, lessThan(70));
+      await tester.pumpWidget(const SizedBox());
+      scroll.dispose();
+    });
+  }
   for (final (fixed, start, direction) in [
     (false, 0.0, 1),
     (true, 0.0, 1),
