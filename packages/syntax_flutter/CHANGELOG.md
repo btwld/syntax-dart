@@ -6,7 +6,9 @@
   and text layout included. The list now starts at a row that moves only on a
   jump past everything built, a layout change, or scrolling above it (then a
   screen higher at once), and the extent of the rows after it comes from
-  their measured and estimated heights.
+  their measured and estimated heights. When a row built before comes back
+  above the anchor with a new height, the list starts again so the rows
+  above it stay where their heights put them.
 
 ## 0.0.3
 
