@@ -53,6 +53,62 @@ double uniform(int index) => 24;
 const viewportHeight = 300.0;
 
 void main() {
+  for (final (fixed, start, direction) in [
+    (false, 0.0, 1),
+    (true, 0.0, 1),
+    (false, 12000.0, -1),
+  ]) {
+    testWidgets(
+      'retains only requested endpoints and releases them (fixed=$fixed, direction=$direction)',
+      (tester) async {
+        final scroll = ScrollController(initialScrollOffset: start);
+        addTearDown(scroll.dispose);
+        final probe = _Probe();
+        final endpoints = start == 0 ? [5, 8] : [500, 508];
+        var retained = endpoints.toSet().cast<Object>();
+        late StateSetter update;
+        await tester.pumpWidget(
+          MaterialApp(
+            home: SizedBox(
+              height: viewportHeight,
+              child: StatefulBuilder(
+                builder: (context, setState) {
+                  update = setState;
+                  return IndexedCodeViewport(
+                    controller: scroll,
+                    count: 1000,
+                    fixedHeight: fixed,
+                    retainedRows: retained,
+                    layoutKey: 1000,
+                    identity: (index) => index,
+                    indexOf: (identity) => identity as int,
+                    builder: (context, index) =>
+                        _ProbeRow(index: index, height: 24, probe: probe),
+                  );
+                },
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        for (var step = 1; step <= 60; step++) {
+          scroll.jumpTo(start + step * 40 * direction);
+          await tester.pump();
+          expect(probe.alive, containsAll(endpoints));
+          expect(probe.alive.length, lessThan(100));
+        }
+        update(() => retained = {});
+        await tester.pumpAndSettle();
+        scroll.jumpTo(start + 2440 * direction);
+        await tester.pumpAndSettle();
+        for (final endpoint in endpoints) {
+          expect(probe.alive, isNot(contains(endpoint)));
+        }
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
   double offsetOf(int row, double Function(int) height) {
     var offset = 0.0;
     for (var i = 0; i < row; i++) {
@@ -156,15 +212,32 @@ void main() {
     scroll.jumpTo(6000);
     await tester.pumpAndSettle();
     probe.inits.clear();
+    Map<int, State> mountedRows() => {
+      for (final state in tester.stateList<_ProbeRowState>(
+        find.byType(_ProbeRow),
+      ))
+        state.widget.index: state,
+    };
+    var previous = mountedRows();
     for (var i = 0; i < 40; i++) {
       scroll.jumpTo(scroll.offset - 40);
       await tester.pump();
+      final current = mountedRows();
+      expect(current.length, lessThanOrEqualTo(80));
+      for (final entry in previous.entries) {
+        if (current.containsKey(entry.key)) {
+          expect(
+            current[entry.key],
+            same(entry.value),
+            reason: 'row ${entry.key} at step $i',
+          );
+        }
+      }
+      previous = current;
     }
-    // Scrolling up past the list's first row starts a new list a screen
-    // higher, so 1,600 px upwards builds about one 50-row list per 300 px
-    // screen. A window rebuilt whenever its first row changes would create
-    // about 37 rows every frame, over 1,400 here.
-    expect(probe.inits.length, lessThanOrEqualTo(400));
+    // Moved-child placeholders can build extra offscreen rows, but no row
+    // that stays mounted may lose its state when the list extends upward.
+    expect(probe.inits.length, lessThan(200));
     expect(tester.takeException(), isNull);
   });
 

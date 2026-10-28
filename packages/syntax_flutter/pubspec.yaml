@@ -2,7 +2,7 @@ name: syntax_flutter
 description: >-
   Flutter widgets for syntax: read-only highlighted code and diff views,
   driven by TextMate grammars and VS Code themes.
-version: 0.0.5
+version: 0.0.6
 repository: https://github.com/btwld/syntax-dart/tree/main/packages/syntax_flutter
 homepage: https://github.com/btwld/syntax-dart
 issue_tracker: https://github.com/btwld/syntax-dart/issues

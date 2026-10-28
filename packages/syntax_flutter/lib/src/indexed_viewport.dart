@@ -26,6 +26,7 @@ class IndexedCodeViewport extends StatefulWidget {
     this.onFirstRow,
     this.onVisibleRange,
     this.fixedHeight = false,
+    this.retainedRows = const {},
   });
 
   /// Caller-owned vertical scrolling.
@@ -69,6 +70,10 @@ class IndexedCodeViewport extends StatefulWidget {
 
   /// Uses Flutter's direct indexed sliver when every row has estimatedHeight.
   final bool fixedHeight;
+
+  /// Row identities kept alive during ordinary scrolling, such as the two
+  /// endpoints of a text selection. Clear on source changes or explicit jumps.
+  final Set<Object> retainedRows;
   @override
   State<IndexedCodeViewport> createState() => _IndexedCodeViewportState();
 }
@@ -140,8 +145,8 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
     if (_rebase || jumped || _base >= widget.count) {
       _base = first;
     } else if (first < _base) {
-      // Above the list's first row, a new list starts a screen higher, so
-      // scrolling up rebuilds once a screen rather than once a row.
+      // Extend a screen upward. The sliver remaps its retained children and
+      // their local offsets instead of replacing the list and every row.
       _base = _heights.rowAt(math.max(0, offset - _cache - _extent));
     }
     _rebase = false;
@@ -314,14 +319,17 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
                 ? SliverFixedExtentList(
                     itemExtent: widget.estimatedHeight,
                     delegate: SliverChildBuilderDelegate(
-                      (context, index) => KeyedSubtree(
+                      (context, index) => _RetainedRow(
                         key: ValueKey(widget.identity(index)),
+                        retained: widget.retainedRows.contains(
+                          widget.identity(index),
+                        ),
                         child: widget.builder(context, index),
                       ),
                       childCount: widget.count,
                       findChildIndexCallback: (key) =>
                           widget.indexOf((key as ValueKey<Object>).value),
-                      addAutomaticKeepAlives: false,
+                      addAutomaticKeepAlives: true,
                     ),
                   )
                 : SliverMainAxisGroup(
@@ -329,11 +337,12 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
                       SliverToBoxAdapter(
                         child: SizedBox(height: _heights.offsetFor(_base)),
                       ),
-                      // A new list, and so new rows, only when its first row
-                      // moves. Within one list the rows never change index,
-                      // so none is remapped with a stale layout offset.
                       _RowList(
-                        key: ValueKey((_base, _restarts)),
+                        key: ValueKey(_restarts),
+                        firstRow: _base,
+                        offsetFor: (local) =>
+                            _heights.offsetFor(_base + local) -
+                            _heights.offsetFor(_base),
                         remainingAfter: (local) =>
                             _heights.offsetFor(widget.count) -
                             _heights.offsetFor(
@@ -342,15 +351,33 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
                         delegate: SliverChildBuilderDelegate(
                           (context, local) {
                             final index = _base + local;
-                            return _MeasuredRow(
+                            return _RetainedRow(
                               key: ValueKey(widget.identity(index)),
-                              generation: _generation,
-                              onSize: (size) => _measure(index, size.height),
-                              child: widget.builder(context, index),
+                              retained: widget.retainedRows.contains(
+                                widget.identity(index),
+                              ),
+                              child: _MeasuredRow(
+                                generation: _generation,
+                                onSize: (size) => _measure(index, size.height),
+                                child: widget.builder(context, index),
+                              ),
                             );
                           },
                           childCount: widget.count - _base,
-                          addAutomaticKeepAlives: false,
+                          findChildIndexCallback: (key) {
+                            final identity = (key as ValueKey<Object>).value;
+                            final index = widget.indexOf(identity);
+                            // indexOf may return a nearby reveal anchor when a
+                            // row disappeared. Only an exact match can reuse
+                            // the element; fallback anchors may collide.
+                            return index == null ||
+                                    index < _base ||
+                                    index >= widget.count ||
+                                    widget.identity(index) != identity
+                                ? null
+                                : index - _base;
+                          },
+                          addAutomaticKeepAlives: true,
                         ),
                       ),
                     ],
@@ -375,7 +402,26 @@ class _RowList extends SliverList {
     super.key,
     required super.delegate,
     required this.remainingAfter,
+    required this.firstRow,
+    required this.offsetFor,
   });
+
+  final int firstRow;
+  final double Function(int local) offsetFor;
+
+  @override
+  RenderSliverList createRenderObject(BuildContext context) => _IndexedRowList(
+    childManager: context as SliverMultiBoxAdaptorElement,
+    firstRow: firstRow,
+    offsetFor: offsetFor,
+  );
+
+  @override
+  void updateRenderObject(BuildContext context, _IndexedRowList renderObject) {
+    renderObject
+      ..offsetFor = offsetFor
+      ..firstRow = firstRow;
+  }
 
   /// Height of the rows after the list's row [local].
   final double Function(int local) remainingAfter;
@@ -390,9 +436,70 @@ class _RowList extends SliverList {
   ) => trailingScrollOffset + remainingAfter(lastIndex);
 }
 
+/// SliverList remaps children by key but clears their old local offsets when
+/// the base changes. Restore those offsets from the shared height index before
+/// layout, so extending the list upward can keep its existing row elements.
+class _IndexedRowList extends RenderSliverList {
+  _IndexedRowList({
+    required super.childManager,
+    required int firstRow,
+    required this.offsetFor,
+  }) : _firstRow = firstRow;
+
+  int _firstRow;
+  bool _reanchor = false;
+  double Function(int) offsetFor;
+
+  set firstRow(int value) {
+    if (value == _firstRow) return;
+    _firstRow = value;
+    _reanchor = true;
+    markNeedsLayout();
+  }
+
+  @override
+  void performLayout() {
+    if (_reanchor) {
+      for (var child = firstChild; child != null; child = childAfter(child)) {
+        final data = child.parentData! as SliverMultiBoxAdaptorParentData;
+        data.layoutOffset = offsetFor(indexOf(child));
+      }
+      _reanchor = false;
+    }
+    super.performLayout();
+  }
+}
+
+class _RetainedRow extends StatefulWidget {
+  const _RetainedRow({super.key, required this.retained, required this.child});
+
+  final bool retained;
+  final Widget child;
+
+  @override
+  State<_RetainedRow> createState() => _RetainedRowState();
+}
+
+class _RetainedRowState extends State<_RetainedRow>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => widget.retained;
+
+  @override
+  void didUpdateWidget(_RetainedRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.retained != widget.retained) updateKeepAlive();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return widget.child;
+  }
+}
+
 class _MeasuredRow extends SingleChildRenderObjectWidget {
   const _MeasuredRow({
-    super.key,
     required this.generation,
     required this.onSize,
     required super.child,
