@@ -1,5 +1,7 @@
-## Unreleased
+## 0.0.4
 
+- Requires `syntax_core` 0.0.2, which `PatchView` now relies on to color
+  parsed patches between frames.
 - `IndexedCodeViewport` keeps the rows it has built while it scrolls. Its
   list of rows used to be keyed by its first row, which changes on nearly
   every scrolled frame, so every visible row was built again, element, state

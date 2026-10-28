@@ -9,7 +9,7 @@ dependencies:
   flutter:
     sdk: flutter
   google_fonts: ">=8.0.0 <10.0.0"
-  syntax_core: ^0.0.1
+  syntax_core: ^0.0.2
   syntax_flutter:
     path: ../
 dev_dependencies:

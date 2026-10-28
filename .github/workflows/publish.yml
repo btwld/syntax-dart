@@ -1,8 +1,8 @@
 # Publish one package to pub.dev from a version tag.
 # Tag format (required): <package>-v<semver>
 #   syntax_core-v0.0.2
-#   syntax_flutter-v0.0.3
-#   syntax_noir-v0.0.1
+#   syntax_flutter-v0.0.4
+#   syntax_noir-v0.0.2
 #
 # On each package's pub.dev Admin → Automated publishing, enable GitHub Actions:
 #   repository: btwld/syntax-dart

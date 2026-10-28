@@ -2,7 +2,7 @@ name: syntax_noir
 description: >-
   Terminal widgets for syntax on noir: a code highlighter for noir's CodeView
   and a patch view with word-level changes, driven by TextMate grammars.
-version: 0.0.1
+version: 0.0.2
 repository: https://github.com/btwld/syntax-dart/tree/main/packages/syntax_noir
 homepage: https://github.com/btwld/syntax-dart
 issue_tracker: https://github.com/btwld/syntax-dart/issues
@@ -19,7 +19,7 @@ platforms:
   windows:
 dependencies:
   noir: ^0.0.4
-  syntax_core: ^0.0.1
+  syntax_core: ^0.0.2
 dev_dependencies:
   lints: ^6.0.0
   # Exact, while it is an alpha.
