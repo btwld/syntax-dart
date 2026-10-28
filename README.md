@@ -20,7 +20,8 @@ theme.
 
 Install [`syntax_core`](https://pub.dev/packages/syntax_core),
 [`syntax_flutter`](https://pub.dev/packages/syntax_flutter), and
-[`syntax_noir`](https://pub.dev/packages/syntax_noir) from pub.dev (0.0.1).
+[`syntax_noir`](https://pub.dev/packages/syntax_noir) from pub.dev
+(`syntax_core` 0.0.2, `syntax_flutter` 0.0.3, `syntax_noir` 0.0.1).
 Renderers paint what the core lays out.
 
 ## Why another highlighter

@@ -1,4 +1,4 @@
-## Unreleased
+## 0.0.2
 
 - `HighlightedDiff.of` and `HighlightedDiff.tokenize` honor `budget` for
   parsed patches too, not only for diffs with full texts. A large patch is
