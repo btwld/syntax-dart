@@ -131,20 +131,6 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
     _generation++;
   }
 
-  int _retainedBase(int base) {
-    for (final identity in widget.retainedRows) {
-      final index = widget.indexOf(identity);
-      if (index != null &&
-          index >= 0 &&
-          index < base &&
-          index < widget.count &&
-          widget.identity(index) == identity) {
-        base = index;
-      }
-    }
-    return base;
-  }
-
   void _range() {
     if (widget.count == 0) {
       _visible = _base = 0;
@@ -157,15 +143,11 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
     // of building every row in between.
     final jumped = (offset - _rangeOffset).abs() > _extent + 2 * _cache;
     if (_rebase || jumped || _base >= widget.count) {
-      _base = _retainedBase(first);
+      _base = first;
     } else if (first < _base) {
       // Extend a screen upward. The sliver remaps its retained children and
       // their local offsets instead of replacing the list and every row.
-      _base = _retainedBase(
-        _heights.rowAt(math.max(0, offset - _cache - _extent)),
-      );
-    } else {
-      _base = _retainedBase(_base);
+      _base = _heights.rowAt(math.max(0, offset - _cache - _extent));
     }
     _rebase = false;
     _rangeOffset = offset;
@@ -324,6 +306,17 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
       _width = constraints.maxWidth;
       _extent = constraints.maxHeight.isFinite ? constraints.maxHeight : 600;
       _range();
+      final activeCount = widget.count - _base;
+      final retainedBeforeBase = <int>[
+        if (!widget.fixedHeight)
+          for (final identity in widget.retainedRows)
+            if (widget.indexOf(identity) case final index?
+                when index >= 0 &&
+                    index < _base &&
+                    index < widget.count &&
+                    widget.identity(index) == identity)
+              index,
+      ]..sort();
       return CustomScrollView(
         controller: widget.controller,
         physics: widget.physics,
@@ -370,6 +363,7 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
                       _RowList(
                         key: ValueKey(_restarts),
                         firstRow: _base,
+                        activeCount: activeCount,
                         offsetFor: (local) =>
                             _heights.offsetFor(_base + local) -
                             _heights.offsetFor(_base),
@@ -380,7 +374,9 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
                             ),
                         delegate: SliverChildBuilderDelegate(
                           (context, local) {
-                            final index = _base + local;
+                            final index = local < activeCount
+                                ? _base + local
+                                : retainedBeforeBase[local - activeCount];
                             return _RetainedRow(
                               key: ValueKey(widget.identity(index)),
                               index: index,
@@ -394,7 +390,7 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
                               ),
                             );
                           },
-                          childCount: widget.count - _base,
+                          childCount: activeCount + retainedBeforeBase.length,
                           findChildIndexCallback: (key) {
                             if (key is! ValueKey<Object>) return null;
                             final identity = key.value;
@@ -402,12 +398,15 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
                             // indexOf may return a nearby reveal anchor when a
                             // row disappeared. Only an exact match can reuse
                             // the element; fallback anchors may collide.
-                            return index == null ||
-                                    index < _base ||
-                                    index >= widget.count ||
-                                    widget.identity(index) != identity
-                                ? null
-                                : index - _base;
+                            if (index == null ||
+                                index < 0 ||
+                                index >= widget.count ||
+                                widget.identity(index) != identity) {
+                              return null;
+                            }
+                            if (index >= _base) return index - _base;
+                            final parked = retainedBeforeBase.indexOf(index);
+                            return parked < 0 ? null : activeCount + parked;
                           },
                           addAutomaticKeepAlives: false,
                           addRepaintBoundaries: false,
@@ -437,16 +436,19 @@ class _RowList extends SliverList {
     required super.delegate,
     required this.remainingAfter,
     required this.firstRow,
+    required this.activeCount,
     required this.offsetFor,
   });
 
   final int firstRow;
+  final int activeCount;
   final double Function(int local) offsetFor;
 
   @override
   RenderSliverList createRenderObject(BuildContext context) => _IndexedRowList(
     childManager: context as SliverMultiBoxAdaptorElement,
     firstRow: firstRow,
+    activeCount: activeCount,
     offsetFor: offsetFor,
   );
 
@@ -454,6 +456,7 @@ class _RowList extends SliverList {
   void updateRenderObject(BuildContext context, _IndexedRowList renderObject) {
     renderObject
       ..offsetFor = offsetFor
+      ..activeCount = activeCount
       ..firstRow = firstRow
       ..refreshOffsets();
   }
@@ -478,10 +481,13 @@ class _IndexedRowList extends RenderSliverList {
   _IndexedRowList({
     required super.childManager,
     required int firstRow,
+    required int activeCount,
     required this.offsetFor,
-  }) : _firstRow = firstRow;
+  }) : _firstRow = firstRow,
+       _activeCount = activeCount;
 
   int _firstRow;
+  int _activeCount;
   bool _reanchor = false;
   double Function(int) offsetFor;
 
@@ -498,8 +504,46 @@ class _IndexedRowList extends RenderSliverList {
     markNeedsLayout();
   }
 
+  set activeCount(int value) {
+    if (value == _activeCount) return;
+    _activeCount = value;
+    markNeedsLayout();
+  }
+
+  @override
+  bool addInitialChild({int index = 0, double layoutOffset = 0.0}) {
+    if (index >= _activeCount) return false;
+    return super.addInitialChild(index: index, layoutOffset: layoutOffset);
+  }
+
+  @override
+  RenderBox? insertAndLayoutChild(
+    BoxConstraints childConstraints, {
+    required RenderBox? after,
+    bool parentUsesSize = false,
+  }) {
+    final nextIndex = after == null ? 0 : indexOf(after) + 1;
+    if (nextIndex >= _activeCount) return null;
+    return super.insertAndLayoutChild(
+      childConstraints,
+      after: after,
+      parentUsesSize: parentUsesSize,
+    );
+  }
+
   @override
   void performLayout() {
+    var trailingParked = 0;
+    for (
+      var child = lastChild;
+      child != null && indexOf(child) >= _activeCount;
+      child = childBefore(child)
+    ) {
+      trailingParked++;
+    }
+    if (trailingParked > 0) {
+      collectGarbage(0, trailingParked);
+    }
     if (_reanchor) {
       for (var child = firstChild; child != null; child = childAfter(child)) {
         final data = child.parentData! as SliverMultiBoxAdaptorParentData;
