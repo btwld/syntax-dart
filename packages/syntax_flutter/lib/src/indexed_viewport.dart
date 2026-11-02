@@ -131,6 +131,20 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
     _generation++;
   }
 
+  int _retainedBase(int base) {
+    for (final identity in widget.retainedRows) {
+      final index = widget.indexOf(identity);
+      if (index != null &&
+          index >= 0 &&
+          index < base &&
+          index < widget.count &&
+          widget.identity(index) == identity) {
+        base = index;
+      }
+    }
+    return base;
+  }
+
   void _range() {
     if (widget.count == 0) {
       _visible = _base = 0;
@@ -143,11 +157,15 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
     // of building every row in between.
     final jumped = (offset - _rangeOffset).abs() > _extent + 2 * _cache;
     if (_rebase || jumped || _base >= widget.count) {
-      _base = first;
+      _base = _retainedBase(first);
     } else if (first < _base) {
       // Extend a screen upward. The sliver remaps its retained children and
       // their local offsets instead of replacing the list and every row.
-      _base = _heights.rowAt(math.max(0, offset - _cache - _extent));
+      _base = _retainedBase(
+        _heights.rowAt(math.max(0, offset - _cache - _extent)),
+      );
+    } else {
+      _base = _retainedBase(_base);
     }
     _rebase = false;
     _rangeOffset = offset;
@@ -328,8 +346,17 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
                         child: widget.builder(context, index),
                       ),
                       childCount: widget.count,
-                      findChildIndexCallback: (key) =>
-                          widget.indexOf((key as ValueKey<Object>).value),
+                      findChildIndexCallback: (key) {
+                        if (key is! ValueKey<Object>) return null;
+                        final identity = key.value;
+                        final index = widget.indexOf(identity);
+                        return index == null ||
+                                index < 0 ||
+                                index >= widget.count ||
+                                widget.identity(index) != identity
+                            ? null
+                            : index;
+                      },
                       addAutomaticKeepAlives: false,
                       addRepaintBoundaries: false,
                       addSemanticIndexes: false,
@@ -369,7 +396,8 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
                           },
                           childCount: widget.count - _base,
                           findChildIndexCallback: (key) {
-                            final identity = (key as ValueKey<Object>).value;
+                            if (key is! ValueKey<Object>) return null;
+                            final identity = key.value;
                             final index = widget.indexOf(identity);
                             // indexOf may return a nearby reveal anchor when a
                             // row disappeared. Only an exact match can reuse
