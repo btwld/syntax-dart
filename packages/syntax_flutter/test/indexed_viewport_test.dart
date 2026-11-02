@@ -298,6 +298,146 @@ void main() {
     );
   }
 
+  testWidgets(
+    'fixedHeight does not reuse a child when indexOf returns out-of-range or mismatched identity',
+    (tester) async {
+      final scroll = ScrollController();
+      addTearDown(scroll.dispose);
+      final probe = _Probe();
+      var ids = ['gap', 'keep', 'tail'];
+      var layoutKey = 0;
+      late StateSetter update;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: SizedBox(
+            height: viewportHeight,
+            child: StatefulBuilder(
+              builder: (context, setState) {
+                update = setState;
+                return IndexedCodeViewport(
+                  controller: scroll,
+                  count: ids.length,
+                  fixedHeight: true,
+                  layoutKey: layoutKey,
+                  identity: (index) => ids[index],
+                  indexOf: (identity) => switch (identity) {
+                    'gap' => 0,
+                    'tail' => layoutKey == 0 ? 2 : 99,
+                    final String id => ids.contains(id) ? ids.indexOf(id) : -1,
+                    _ => null,
+                  },
+                  builder: (context, index) => _ProbeRow(
+                    key: ValueKey('probe-${ids[index]}'),
+                    index: index,
+                    height: 24,
+                    probe: probe,
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final oldFirst = tester.state(find.byKey(const ValueKey('probe-gap')));
+      final keptState = tester.state(find.byKey(const ValueKey('probe-keep')));
+      update(() {
+        ids = ['expanded', 'keep'];
+        layoutKey = 1;
+      });
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(
+        tester.state(find.byKey(const ValueKey('probe-expanded'))),
+        isNot(same(oldFirst)),
+      );
+      expect(
+        tester.state(find.byKey(const ValueKey('probe-keep'))),
+        same(keptState),
+      );
+    },
+  );
+
+  testWidgets(
+    'retainedRows above the visible range stay mounted across rebase and sparse jumpTo',
+    (tester) async {
+      final scroll = ScrollController();
+      addTearDown(scroll.dispose);
+      final probe = _Probe();
+      var count = 10000;
+      var layoutKey = 0;
+      late StateSetter update;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Align(
+            alignment: Alignment.topLeft,
+            child: SizedBox(
+              width: 600,
+              height: viewportHeight,
+              child: StatefulBuilder(
+                builder: (context, setState) {
+                  update = setState;
+                  return IndexedCodeViewport(
+                    controller: scroll,
+                    count: count,
+                    layoutKey: layoutKey,
+                    retainedRows: const {2},
+                    identity: (index) => index,
+                    indexOf: (identity) => identity as int,
+                    builder: (context, index) => _ProbeRow(
+                      key: ValueKey('row-$index'),
+                      index: index,
+                      height: 24,
+                      probe: probe,
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final retainedState = tester.state(find.byKey(const ValueKey('row-2')));
+
+      // Far jump to row 5000 while row 2 is retained must build only rows near
+      // 5000 (sparse jump) while keeping row 2 mounted.
+      probe.inits.clear();
+      scroll.jumpTo(5000 * 24);
+      await tester.pump();
+      expect(probe.inits, isNotEmpty);
+      expect(probe.inits.reduce((a, b) => a < b ? a : b), greaterThan(4950));
+      expect(probe.inits.length, lessThanOrEqualTo(60));
+      expect(probe.alive, contains(2));
+      expect(
+        tester.state(find.byKey(const ValueKey('row-2'), skipOffstage: false)),
+        same(retainedState),
+      );
+
+      // Rebase via streaming append / layoutKey update while scrolled below row 2.
+      update(() {
+        count = 10020;
+        layoutKey = 1;
+      });
+      await tester.pumpAndSettle();
+      expect(probe.alive, contains(2));
+      expect(
+        tester.state(find.byKey(const ValueKey('row-2'), skipOffstage: false)),
+        same(retainedState),
+      );
+
+      // Jump back to top and verify row 2 re-enters the active list with the
+      // exact same State instance.
+      scroll.jumpTo(0);
+      await tester.pumpAndSettle();
+      expect(probe.alive, contains(2));
+      expect(
+        tester.state(find.byKey(const ValueKey('row-2'))),
+        same(retainedState),
+      );
+    },
+  );
+
   double offsetOf(int row, double Function(int) height) {
     var offset = 0.0;
     for (var i = 0; i < row; i++) {
