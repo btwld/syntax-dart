@@ -369,26 +369,30 @@ void main() {
       late StateSetter update;
       await tester.pumpWidget(
         MaterialApp(
-          home: SizedBox(
-            height: viewportHeight,
-            child: StatefulBuilder(
-              builder: (context, setState) {
-                update = setState;
-                return IndexedCodeViewport(
-                  controller: scroll,
-                  count: count,
-                  layoutKey: layoutKey,
-                  retainedRows: const {2},
-                  identity: (index) => index,
-                  indexOf: (identity) => identity as int,
-                  builder: (context, index) => _ProbeRow(
-                    key: ValueKey('row-$index'),
-                    index: index,
-                    height: 24,
-                    probe: probe,
-                  ),
-                );
-              },
+          home: Align(
+            alignment: Alignment.topLeft,
+            child: SizedBox(
+              width: 600,
+              height: viewportHeight,
+              child: StatefulBuilder(
+                builder: (context, setState) {
+                  update = setState;
+                  return IndexedCodeViewport(
+                    controller: scroll,
+                    count: count,
+                    layoutKey: layoutKey,
+                    retainedRows: const {2},
+                    identity: (index) => index,
+                    indexOf: (identity) => identity as int,
+                    builder: (context, index) => _ProbeRow(
+                      key: ValueKey('row-$index'),
+                      index: index,
+                      height: 24,
+                      probe: probe,
+                    ),
+                  );
+                },
+              ),
             ),
           ),
         ),
