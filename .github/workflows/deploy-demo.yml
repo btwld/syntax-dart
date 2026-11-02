@@ -16,6 +16,7 @@ concurrency:
 
 jobs:
   build:
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -56,6 +57,7 @@ jobs:
           path: packages/syntax_flutter/example/build/web
 
   deploy:
+    timeout-minutes: 10
     needs: build
     runs-on: ubuntu-latest
     permissions:
