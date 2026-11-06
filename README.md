@@ -1,5 +1,11 @@
 # syntax
 
+[![syntax_core on pub.dev](https://img.shields.io/pub/v/syntax_core.svg?label=syntax_core)](https://pub.dev/packages/syntax_core)
+[![syntax_flutter on pub.dev](https://img.shields.io/pub/v/syntax_flutter.svg?label=syntax_flutter)](https://pub.dev/packages/syntax_flutter)
+[![syntax_noir on pub.dev](https://img.shields.io/pub/v/syntax_noir.svg?label=syntax_noir)](https://pub.dev/packages/syntax_noir)
+[![CI](https://github.com/btwld/syntax-dart/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/btwld/syntax-dart/actions/workflows/ci.yml?query=branch%3Amain)
+[![BSD 3-Clause license](https://img.shields.io/github/license/btwld/syntax-dart)](LICENSE)
+
 Syntax highlighting for Dart and Flutter that uses the same TextMate
 grammars and VS Code themes as VS Code, Shiki and GitHub. These packages
 are the highlighting engine and read-only views of code, diffs and
