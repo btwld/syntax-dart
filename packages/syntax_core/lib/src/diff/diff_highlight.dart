@@ -391,7 +391,7 @@ final class DiffColors {
       hunkHeader: tint(0.035),
       emptySide: tint(0.02),
       divider: tint(0.12),
-      muted: tint(0.62),
+      muted: tint(0.68),
       insertedLine:
           theme.editorColor('diffEditor.insertedLineBackground') ??
           _withAlpha(insertedText, _alpha(insertedText) ~/ 2),

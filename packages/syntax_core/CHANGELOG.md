@@ -1,3 +1,10 @@
+## Unreleased
+
+- `DiffColors.muted` is stronger, so `@@` lines and other diff labels reach
+  4.5:1 on `hunkHeader` in the GitHub themes. They read 4.03:1 in GitHub Light.
+  A few other bundled themes stay below 4.5:1; Solarized Light cannot reach it,
+  because its own foreground is 3.98:1 there.
+
 ## 0.0.2
 
 - `HighlightedDiff.of` and `HighlightedDiff.tokenize` honor `budget` for
