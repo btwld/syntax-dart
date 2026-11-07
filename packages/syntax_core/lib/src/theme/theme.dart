@@ -341,8 +341,10 @@ final class _ParsedTheme {
       });
 
     var defaultFontStyle = TokenFontStyle.none;
-    var defaultFg = 0xFF000000;
-    var defaultBg = 0xFFFFFFFF;
+    // Start from the editor colors resolved above: a leading global setting
+    // that names only a foreground must not reset the background to white.
+    var defaultFg = parseHexColor(fg)!;
+    var defaultBg = parseHexColor(bg)!;
     var i = 0;
     for (; i < rules.length && rules[i].scope.isEmpty; i++) {
       final r = rules[i];

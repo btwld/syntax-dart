@@ -1,9 +1,13 @@
 ## Unreleased
 
+- `SyntaxTheme.background` and `foreground` start from the editor colors. A
+  theme whose first token setting names only a foreground, such as Monokai and
+  Solarized Light, used to get a white background, so a dark theme drew its
+  diff chrome on white.
 - `DiffColors.muted` is stronger, so `@@` lines and other diff labels reach
   4.5:1 on `hunkHeader` in the GitHub themes. They read 4.03:1 in GitHub Light.
-  A few other bundled themes stay below 4.5:1; Solarized Light cannot reach it,
-  because its own foreground is 3.98:1 there.
+  Catppuccin Latte, One Dark Pro, Solarized Light, Tokyo Night and Vitesse
+  Light stay below 4.5:1 but improve.
 
 ## 0.0.2
 
