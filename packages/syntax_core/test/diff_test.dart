@@ -11,6 +11,7 @@ import 'package:syntax_core/langs/yaml.dart';
 import 'package:syntax_core/src/diff/myers.dart';
 import 'package:syntax_core/syntax.dart';
 import 'package:syntax_core/themes/github_dark.dart';
+import 'package:syntax_core/themes/github_light.dart';
 import 'package:syntax_core/themes/light_plus.dart';
 import 'package:test/test.dart';
 
@@ -871,6 +872,30 @@ rename to new.txt
       expect(alphaBlend(0x80FFFFFF, 0xFF000000), 0xFF808080);
       expect(alphaBlend(0xFF123456, 0xFF000000), 0xFF123456);
       expect(alphaBlend(0x00FFFFFF, 0xFF102030), 0xFF102030);
+    });
+
+    test('labels are readable on hunk headers in the GitHub themes', () {
+      double luminance(int argb) {
+        double channel(int shift) {
+          final value = (argb >> shift & 0xFF) / 255;
+          return value <= 0.03928
+              ? value / 12.92
+              : pow((value + 0.055) / 1.055, 2.4).toDouble();
+        }
+
+        return 0.2126 * channel(16) + 0.7152 * channel(8) + 0.0722 * channel(0);
+      }
+
+      for (final theme in [githubLightTheme, githubDarkTheme]) {
+        final colors = DiffColors.of(theme);
+        final values = [luminance(colors.muted), luminance(colors.hunkHeader)]
+          ..sort();
+        expect(
+          (values.last + 0.05) / (values.first + 0.05),
+          greaterThanOrEqualTo(4.5),
+          reason: theme.name,
+        );
+      }
     });
 
     test('equal colors compare equal', () {

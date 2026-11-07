@@ -2,7 +2,7 @@ import 'package:syntax_core/syntax.dart';
 import 'package:syntax_core/langs/dart.dart';
 import 'package:syntax_core/langs/json.dart';
 import 'package:syntax_core/langs/markdown.dart';
-import 'package:syntax_core/themes/github_dark.dart';
+import 'package:syntax_core/themes/all.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -423,6 +423,27 @@ void main() {
       expect(bare.lineNumberForeground, 0x66102030);
       expect(bare.selectionBackground, 0x66ADD6FF);
       expect(bare.cursorForeground, 0xFF102030);
+    });
+
+    test('a global foreground keeps the editor background', () {
+      // A leading global setting with a foreground and no background used to
+      // drop the editor colors it falls back on, leaving white.
+      final theme = SyntaxTheme.fromJson({
+        'type': 'dark',
+        'colors': {'editor.background': '#272822'},
+        'tokenColors': [
+          {
+            'settings': {'foreground': '#f8f8f2'},
+          },
+        ],
+      });
+      expect(theme.background, 0xFF272822);
+      expect(theme.foreground, 0xFFF8F8F2);
+      for (final bundled in bundledThemes.values) {
+        if (bundled.editorColor('editor.background') case final editor?) {
+          expect(bundled.background, editor, reason: bundled.name);
+        }
+      }
     });
 
     test('editor colors and equality', () {
