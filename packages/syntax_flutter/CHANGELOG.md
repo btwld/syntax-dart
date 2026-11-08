@@ -1,3 +1,10 @@
+## 0.0.10
+
+- Requires `syntax_core` 0.0.3, whose themes start from the editor colors and
+  whose diff labels are readable on hunk headers.
+- Retained rows stay mounted across layout resets and distant jumps, and a
+  fixed-extent list reuses a child only for the exact index it belongs to.
+
 ## 0.0.9
 
 - `HorizontalCode` waits for scroll dimensions before synchronizing a retained
