@@ -1,3 +1,7 @@
+## 0.0.3
+
+Depends on `syntax_core` 0.0.3.
+
 ## 0.0.2
 
 Depends on `syntax_core` 0.0.2.
