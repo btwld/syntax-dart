@@ -1,4 +1,4 @@
-## Unreleased
+## 0.0.3
 
 - `SyntaxTheme.background` and `foreground` start from the editor colors. A
   theme whose first token setting names only a foreground, such as Monokai and
