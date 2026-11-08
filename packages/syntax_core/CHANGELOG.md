@@ -1,3 +1,10 @@
+## Unreleased
+
+- Add `DiffSide`, directed, revision-bearing `DiffSelection` ranges and
+  `DiffAnnotation<T>` payloads with value equality. Selections retain cross-side
+  endpoints for copying; annotations reject mismatched source files/revisions
+  and invalid coordinates.
+
 ## 0.0.3
 
 - `SyntaxTheme.background` and `foreground` start from the editor colors. A

@@ -120,6 +120,38 @@ To show a diff, `layoutDiff` turns files into the rows a view paints:
 `HighlightedDiff.segmentsFor(line, words)` returns a line's styled pieces,
 with the changed words marked.
 
+### Selection and annotations
+
+Use a file's stable `id` and content `revision` to address inclusive, one-based
+source lines. A selection keeps its direction, including when it crosses sides:
+
+```dart
+final selection = DiffSelection(
+  fileId: diff.id,
+  revision: diff.revision,
+  side: DiffSide.old,
+  anchor: 2,
+  active: 3,
+  activeSide: DiffSide.newer,
+);
+final annotation = DiffAnnotation<String>(
+  id: 'note',
+  fileId: diff.id,
+  revision: diff.revision,
+  side: DiffSide.newer,
+  line: 3,
+  data: 'Check this change',
+  sourceSelection: selection,
+);
+```
+
+`activeSide` defaults to `side`. `start` and `end` are the smaller and larger
+line numbers; across sides they do not describe diff row order. An annotation's
+display line and side are independent of its optional original selection, whose
+file and revision must match. Both types reject nonpositive line numbers and
+compare by value, including direction, revision and annotation data. Before
+using either value, consumers must check its revision against the current file.
+
 ## Writing a renderer
 
 Everything except painting lives here, in neutral types: ARGB `int`
