@@ -275,36 +275,14 @@ final class DiffHighlightCache {
   final InlineDiffMode inlineDiffMode;
 
   /// Optional limit on retained files, evicting the least recently used first.
-  /// Files explicitly listed by [prepare] are spared.
   final int? maxEntries;
 
   /// Optional limit on retained source UTF-16 units. One oversize file is
-  /// allowed alone, and [prepare] can spare listed files. Both syntax and
+  /// allowed alone. Both syntax and
   /// word changes are evicted together.
   final int? maxCodeUnits;
 
   final _retained = LinkedHashMap<FileDiff, int>.identity();
-  final _listed = Set<FileDiff>.identity();
-
-  /// Keeps [files] through eviction, for consumers that retain all currently
-  /// listed files. Listed entries may exceed the limits. Replaced snapshots
-  /// with the same file ID are discarded, while filtered files remain reusable
-  /// until evicted. Views requiring strict limits can leave this unset.
-  void prepare(Iterable<FileDiff> files) {
-    _listed
-      ..clear()
-      ..addAll(files);
-    final replacements = {for (final file in _listed) file.id: file};
-    for (final file in _retained.keys.toList()) {
-      final replacement = replacements[file.id];
-      if (replacement != null && !identical(replacement, file)) {
-        _retained.remove(file);
-        _highlights.remove(file);
-        _words.remove(file);
-      }
-    }
-    _trim();
-  }
 
   /// Number of files with retained highlighting or word changes.
   int get entryCount => _retained.length;
@@ -352,9 +330,7 @@ final class DiffHighlightCache {
     while (_retained.length > 1 &&
         ((maxEntries != null && _retained.length > maxEntries!) ||
             (maxCodeUnits != null && retainedCodeUnits > maxCodeUnits!))) {
-      final candidates = _retained.keys.where(
-        (file) => !_listed.contains(file) && !identical(file, keep),
-      );
+      final candidates = _retained.keys.where((file) => !identical(file, keep));
       if (candidates.isEmpty) break;
       final oldest = candidates.first;
       _retained.remove(oldest);
