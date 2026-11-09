@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:syntax_core/syntax.dart';
 
@@ -9,6 +9,8 @@ import 'highlighter_scope.dart';
 import 'horizontal_scroll.dart';
 import 'indexed_viewport.dart';
 import 'patch_rows.dart';
+import 'selectable_region.dart';
+import 'selection_chrome.dart';
 import 'styles.dart';
 
 /// A syntax-highlighted view of code changes.
@@ -36,6 +38,7 @@ class PatchView extends StatefulWidget {
     this.onExpandGap,
     this.textStyle,
     this.selectable = true,
+    this.selectionChrome,
     this.shrinkWrap = false,
     this.physics,
     this.padding = const EdgeInsets.all(12),
@@ -69,6 +72,7 @@ class PatchView extends StatefulWidget {
     this.onExpandGap,
     this.textStyle,
     this.selectable = true,
+    this.selectionChrome,
     this.shrinkWrap = false,
     this.physics,
     this.padding = const EdgeInsets.all(12),
@@ -106,6 +110,7 @@ class PatchView extends StatefulWidget {
     this.onExpandGap,
     this.textStyle,
     this.selectable = true,
+    this.selectionChrome,
     this.shrinkWrap = false,
     this.physics,
     this.padding = const EdgeInsets.all(12),
@@ -158,6 +163,11 @@ class PatchView extends StatefulWidget {
 
   /// Allows selecting and copying code. Line numbers and markers are excluded.
   final bool selectable;
+
+  /// Selection handles, menus, row actions and missing-newline markers.
+  ///
+  /// Defaults to widgets-only controls that need no app theme or icon font.
+  final SyntaxSelectionChrome? selectionChrome;
 
   /// Sizes the view to its content, for use inside another scroll view.
   final bool shrinkWrap;
@@ -469,9 +479,16 @@ class _PatchViewState extends State<PatchView> {
               ],
             );
     }
-    if (widget.selectable) list = SelectionArea(child: list);
+    if (widget.selectable) {
+      list = SyntaxSelectableRegion(
+        theme: widget.theme,
+        chrome: widget.selectionChrome,
+        child: list,
+      );
+    }
     return SyntaxChrome(
       theme: widget.theme,
+      selectionChrome: widget.selectionChrome,
       child: HorizontalCodeScope(
         group: _horizontal,
         child: DefaultSelectionStyle(

@@ -1,12 +1,14 @@
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter/rendering.dart' show ViewportOffset;
 import 'package:flutter/scheduler.dart';
 import 'package:syntax_core/syntax.dart';
 
 import 'code_rows.dart';
 import 'highlighter_scope.dart';
+import 'selectable_region.dart';
+import 'selection_chrome.dart';
 import 'styles.dart';
 
 /// Read-only, syntax-highlighted code.
@@ -23,8 +25,8 @@ import 'styles.dart';
 /// lines on screen. Inside another scroll view, where the height is
 /// unbounded, every line is laid out; give a large file a height, for
 /// example with [Expanded] or [SizedBox]. Code longer than 200 lines can't
-/// report intrinsic sizes, so it can't sit inside [IntrinsicHeight] or an
-/// [AlertDialog]'s content.
+/// report intrinsic sizes, so it can't sit inside [IntrinsicHeight] or
+/// a dialog's content.
 ///
 /// When only the lines on screen are laid out, a large file is tokenized
 /// a slice at a time between frames, top first, and lines show plain until
@@ -53,6 +55,7 @@ class HighlightedCode extends StatefulWidget {
     this.padding = const EdgeInsets.all(16),
     this.lineNumbers = false,
     this.selectable = true,
+    this.selectionChrome,
     this.softWrap = false,
     this.borderRadius,
   });
@@ -81,6 +84,11 @@ class HighlightedCode extends StatefulWidget {
 
   /// Allows the text to be selected and copied.
   final bool selectable;
+
+  /// Selection handles, context menu and action rendering.
+  ///
+  /// Defaults to widgets-only controls that need no app theme or icon font.
+  final SyntaxSelectionChrome? selectionChrome;
 
   /// Wraps long lines instead of scrolling horizontally. Line numbers are
   /// not shown when wrapping, because wrapped lines would misalign them.
@@ -331,7 +339,9 @@ class _HighlightedCodeState extends State<HighlightedCode> {
           );
     // Above the scroll views, so a drag selection can scroll them.
     if (widget.selectable) {
-      code = SelectionArea(
+      code = SyntaxSelectableRegion(
+        theme: theme,
+        chrome: widget.selectionChrome,
         child: SelectionContainer(delegate: _selection, child: code),
       );
     }
