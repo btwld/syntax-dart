@@ -99,6 +99,49 @@ void main() {
     );
   }
 
+  testWidgets('folding from a hunk-header anchor returns to its file header', (
+    tester,
+  ) async {
+    final file = parsePatch(
+      '--- a/a.txt\n+++ b/a.txt\n'
+      '@@ -0,0 +1,150 @@\n'
+      '${List.generate(150, (i) => '+a ${i + 1}\n').join()}'
+      '@@ -0,0 +301 @@\n+a 301\n',
+    ).single.copyWith(identity: 'a');
+    final controller = PatchController<String>([file, added('b', count: 600)]);
+    final scroll = ScrollController();
+    addTearDown(controller.dispose);
+    addTearDown(scroll.dispose);
+    await tester.pumpWidget(view(controller, scroll));
+    await tester.pumpAndSettle();
+
+    // Jump near the second hunk, then align its header exactly with the
+    // viewport. No reveal request is involved in establishing this anchor.
+    scroll.jumpTo(3100);
+    await tester.pumpAndSettle();
+    final header = find.textContaining('@@ -0,0 +301 @@', findRichText: true);
+    expect(header, findsOneWidget);
+    final top = tester.getTopLeft(find.byType(IndexedCodeViewport)).dy;
+    scroll.jumpTo(scroll.offset + tester.getTopLeft(header).dy - top);
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(header).dy, closeTo(top, 1));
+    expect(scroll.offset, greaterThan(3000));
+
+    controller.setCollapsed('a', true);
+    await tester.pumpAndSettle();
+
+    final fileHeader = find.text('a.txt');
+    expect(fileHeader, findsOneWidget);
+    expect(tester.getTopLeft(fileHeader).dy - top, inInclusiveRange(0, 40));
+    expect(scroll.offset, lessThan(40));
+    expect(
+      find.text('b 150', findRichText: true),
+      findsNothing,
+      reason: 'The previous numeric offset must not expose the later file',
+    );
+    expectPlainTree(tester);
+  });
+
   for (final reorder in [false, true]) {
     testWidgets(
       '${reorder ? 'reordering' : 'folding'} a preceding file preserves manual scrolling after reveal',

@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Anchor collapsed files to their file header when the reader was at a hunk
+  header, rather than retaining an offset into a later file.
 - Preserve the reader's position when folding or reordering files after a
   completed reveal, and honor pending reveals when replacing the controller.
 - Add `PatchController<T>` and `PatchView<T>.controlled` for stable-ID folding,
