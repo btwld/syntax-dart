@@ -35,6 +35,61 @@ PatchView.fromTexts(
 );
 ```
 
+## Controlled patches
+
+Own a `PatchController<T>` when folding, selection, annotations or navigation
+must outlive the mounted view. Dispose it when its owner is finished:
+
+```dart
+final file = diffTexts(before, after, path: 'lib/main.dart')
+    .copyWith(identity: 'main', revision: 7);
+final patch = PatchController<String>([file], mode: DiffMode.split);
+
+PatchView<String>.controlled(
+  controller: patch,
+  theme: githubDarkTheme,
+  selectionChrome: chrome, // Optional host controls; widgets-only by default.
+);
+
+patch.select(DiffSelection(
+  fileId: 'main', revision: 7, side: DiffSide.newer, anchor: 12, active: 9,
+));
+patch.setAnnotations([
+  DiffAnnotation(
+    id: 'note', fileId: 'main', revision: 7, side: DiffSide.newer,
+    line: 9, data: 'Check this', sourceSelection: patch.selection,
+  ),
+]);
+patch.setHunkCollapsed('main', 0, true);
+patch.setCollapsed('main', true);
+final revealed = patch.revealLine('main', DiffSide.newer, 9, revision: 7);
+```
+
+Patch coordinates are **one-based**, inclusive and revision-bound. Selection
+preserves direction and may cross sides; applications decide which selections
+can create comments. The controller stores selection and application payloads;
+custom row composition and selection actions are separate rendering concerns.
+Stale annotations and unavailable annotation lines are ignored. Duplicate IDs
+within one file and stale or unavailable selection endpoints throw
+`ArgumentError`.
+
+`revealLine` returns false for stale revisions, unknown files or unavailable
+source lines, including context omitted from partial patches. A successful
+request opens only the enclosing hunk or context gap and its file. Requests
+can precede mounting, and repeating a request scrolls to the same line again.
+Bounded views forward requests to `IndexedCodeViewport`. With `shrinkWrap`,
+controlled patches lay out every row and reveal through enclosing vertical
+scroll views; reserve that option for small patches.
+
+`setFiles` takes an immutable snapshot of the file list and requires unique
+stable file IDs. File folding follows IDs across reordering. Replacing a
+source revision clears its selection, annotations, pending navigation and
+hunk/context folding. Annotation-only updates preserve layout and scroll.
+The controlled constructor takes mode and folding from the controller;
+caller-owned `collapsed`, `expanded`, `onToggleFile` and `onExpandGap` are
+available on the existing source constructors. Both forms use the same
+highlight executor and selection chrome.
+
 `PatchView` parses or diffs its input when it changes, so for very large
 changes build the `FileDiff`s ahead of time and pass them to
 `PatchView(files: ...)`. The language comes from each file's path unless
