@@ -224,6 +224,97 @@ void main() {
     },
   );
 
+  for (final (wrap, beforeMount, externalHorizontal) in [
+    for (final wrap in [false, true])
+      for (final beforeMount in [false, true]) (wrap, beforeMount, false),
+    (false, false, true),
+  ]) {
+    testWidgets(
+      'virtualized reveal reaches the enclosing viewport '
+      '(wrap=$wrap, beforeMount=$beforeMount, horizontal=$externalHorizontal)',
+      (tester) async {
+        final lines = List.generate(500, (i) => 'line $i ${'long ' * 30}');
+        final controller = CodeViewController(
+          sourceId: 'a',
+          code: lines.join('\n'),
+        );
+        final outer = ScrollController();
+        final sideways = ScrollController(initialScrollOffset: 30);
+        addTearDown(controller.dispose);
+        addTearDown(outer.dispose);
+        addTearDown(sideways.dispose);
+        Widget code = SizedBox(
+          height: 300,
+          child: _view(controller, wrap: wrap),
+        );
+        if (externalHorizontal) {
+          code = SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            controller: sideways,
+            child: SizedBox(width: 1000, child: code),
+          );
+        }
+        if (beforeMount) controller.revealLine(300);
+        const outerKey = Key('outer');
+        await tester.pumpWidget(
+          _app(
+            SingleChildScrollView(
+              key: outerKey,
+              controller: outer,
+              child: Column(
+                children: [
+                  const SizedBox(height: 1200),
+                  code,
+                  const SizedBox(height: 600),
+                ],
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        if (!beforeMount) {
+          controller.revealLine(300);
+          await tester.pumpAndSettle();
+        }
+        void expectVisible() {
+          final viewport = tester.getRect(find.byKey(outerKey));
+          final target = tester.getRect(_row(lines[300]));
+          expect(target.top, greaterThanOrEqualTo(viewport.top));
+          expect(target.bottom, lessThanOrEqualTo(viewport.bottom));
+          final codeViewport = tester.getRect(find.byType(IndexedCodeViewport));
+          expect(target.top, greaterThanOrEqualTo(codeViewport.top));
+          expect(target.bottom, lessThanOrEqualTo(codeViewport.bottom));
+          final horizontalPositions =
+              tester
+                  .stateList<ScrollableState>(
+                    find.byWidgetPredicate(
+                      (widget) =>
+                          widget is Scrollable &&
+                          widget.axisDirection == AxisDirection.right,
+                    ),
+                  )
+                  .map((state) => state.position.pixels)
+                  .toList()
+                ..sort();
+          expect(
+            horizontalPositions,
+            wrap ? <double>[] : (externalHorizontal ? [0.0, 30.0] : [0.0]),
+          );
+        }
+
+        expectVisible();
+        // The row is already mounted for a repeated request, but its outer
+        // viewport still needs to be revealed again.
+        outer.jumpTo(0);
+        await tester.pumpAndSettle();
+        controller.revealLine(300);
+        await tester.pumpAndSettle();
+        expectVisible();
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
   testWidgets('nested vertical reveal leaves horizontal scroll unchanged', (
     tester,
   ) async {

@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Reveal enclosing vertical scroll views after a virtualized source-line jump.
+
 - Reveal source lines inside shared two-dimensional viewports without changing
   horizontal scroll positions.
 
