@@ -1008,12 +1008,12 @@ class _PatchViewState<T> extends State<PatchView<T>>
     if (key is! (String, String, int) || rows is! DiffLayout) return null;
     final file = _files.indexWhere((file) => file.id == key.$1);
     if (file < 0) return null;
+    if (widget.controller?.isCollapsed(_files[file].id) == true) {
+      return rows.rowForFile(file);
+    }
     if (key.$2 == 'old' || key.$2 == 'new') {
       final line = rows.rowForLine(file, key.$3, oldSide: key.$2 == 'old');
       if (line != null || widget.controller == null) return line;
-      if (widget.controller!.isCollapsed(_files[file].id)) {
-        return rows.rowForFile(file);
-      }
       for (final hunk in _files[file].hunks) {
         final start = key.$2 == 'old' ? hunk.oldStart : hunk.newStart;
         final count = key.$2 == 'old' ? hunk.oldCount : hunk.newCount;
