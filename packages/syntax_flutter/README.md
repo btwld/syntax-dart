@@ -59,6 +59,40 @@ content.
 - `softWrap`;
 - `borderRadius`.
 
+For source navigation, own a controller and dispose it with your view:
+
+```dart
+final source = CodeViewController(sourceId: 'lib/main.dart', code: code);
+source.selectLines(12, 9); // Inclusive, directed, zero-based source lines.
+source.revealLine(9); // Can be requested before mounting.
+
+HighlightedCode.controlled(
+  controller: source,
+  language: 'dart',
+  theme: githubDarkTheme,
+  lineNumbers: true,
+  softWrap: true,
+  lineBackgroundBuilder: (line) => line == 9 ? const Color(0x223399ff) : null,
+  gutterBuilder: (context, line) => line == 9 ? const Text('!') : null,
+);
+
+source.setCode(updatedCode, revision: 1); // Clears selection and reveal.
+```
+
+Gutter clicks and drags select whole lines; Shift extends from the anchor.
+Control+C and Command+C copy the selected source with its original line
+breaks. Native character selection takes precedence over line selection.
+An empty source has one line, and a trailing newline adds an empty final
+line. Invalid selection or reveal indices throw `RangeError`.
+
+Both constructors accept `lineBackgroundBuilder` and `gutterBuilder`.
+Backgrounds cover each source line's wrapped continuations. A gutter builder
+reserves 24 logical pixels before the line number, even for `null` markers;
+markers stay fixed during horizontal scrolling and are excluded from copying.
+Line slots and controlled views use individual virtualized source rows,
+so line numbers remain aligned when wrapping. Give large sources a bounded
+height to keep layout limited to visible rows.
+
 `SyntaxThemeColors` exposes the theme's editor colors: `backgroundColor`,
 `lineNumberColor`, `selectionColor` and `cursorColor`.
 

@@ -13,6 +13,7 @@ export 'package:syntax_core/syntax.dart';
 
 export 'src/chrome.dart';
 export 'src/code_rows.dart' show RowSelectionDelegate;
+export 'src/code_view_controller.dart';
 export 'src/highlighted_code.dart';
 export 'src/highlighter_scope.dart';
 export 'src/horizontal_scroll.dart';

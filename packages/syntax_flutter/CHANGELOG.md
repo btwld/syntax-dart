@@ -1,3 +1,10 @@
+## Unreleased
+
+- Add `CodeViewController` and `HighlightedCode.controlled` for revisioned
+  source, directed line selection and queued distant reveal requests.
+- Add per-line backgrounds and gutter slots, aligned with wrapped source
+  lines while retaining virtualization and exact source copying.
+
 ## 0.0.10
 
 - Requires `syntax_core` 0.0.3, whose themes start from the editor colors and

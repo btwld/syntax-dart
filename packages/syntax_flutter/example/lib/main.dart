@@ -29,6 +29,16 @@ class _SyntaxDemoState extends State<SyntaxDemo> {
   final Set<DiffGapId> _expandedDiff = {};
   final Set<int> _collapsedPatch = {};
   final Set<DiffGapId> _expandedPatch = {};
+  late final _source = CodeViewController(
+    sourceId: 'sample',
+    code: _sampleText,
+  );
+
+  @override
+  void dispose() {
+    _source.dispose();
+    super.dispose();
+  }
 
   SyntaxTheme get _theme => bundledThemes[_themeName]!;
 
@@ -55,6 +65,7 @@ class _SyntaxDemoState extends State<SyntaxDemo> {
   void _selectLanguage(String language) {
     setState(() {
       _language = language;
+      _source.setCode(_sampleText, revision: _source.revision + 1);
       _collapsedDiff.clear();
       _expandedDiff.clear();
     });
@@ -116,6 +127,14 @@ class _SyntaxDemoState extends State<SyntaxDemo> {
                       },
                       theme: theme,
                       actions: [
+                        if (_view == _View.preview && _source.lineCount > 1)
+                          TextButton(
+                            onPressed: () {
+                              _source.selectLines(1, 1);
+                              _source.revealLine(1);
+                            },
+                            child: const Text('Reveal line 2'),
+                          ),
                         if (_view != _View.preview)
                           _ModeToggle(
                             mode: _mode,
@@ -139,12 +158,27 @@ class _SyntaxDemoState extends State<SyntaxDemo> {
   }
 
   Widget _contentPane(SyntaxTheme theme, TextStyle code) => switch (_view) {
-    _View.preview => HighlightedCode(
-      _sampleText,
+    _View.preview => HighlightedCode.controlled(
+      controller: _source,
       language: _language,
       theme: theme,
       textStyle: code,
       lineNumbers: true,
+      gutterBuilder: (context, line) => line == 1
+          ? Semantics(
+              label: 'Example source marker',
+              child: Center(
+                child: Container(
+                  width: 6,
+                  height: 6,
+                  decoration: BoxDecoration(
+                    color: theme.cursorColor,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+            )
+          : null,
     ),
     _View.diff => PatchView.fromTexts(
       oldText: _sampleText,

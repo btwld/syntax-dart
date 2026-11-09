@@ -356,6 +356,9 @@ const linesPerBlock = 32;
 /// [lines]. Select all copies every line, built or not. Copies keep the
 /// code's line breaks, `\r\n` included.
 final class CodeSelectionDelegate extends RowSelectionDelegate {
+  /// Source lines per selectable paragraph; defaults to the block renderer.
+  int blockSize = linesPerBlock;
+
   /// The code's lines as they are, split on `\n`, so a line before a CRLF
   /// break ends with its `\r`. Blocks show them without it.
   List<String> lines = const [];
@@ -376,6 +379,10 @@ final class CodeSelectionDelegate extends RowSelectionDelegate {
 
   /// Whether [block] is built and holds part of the selection.
   bool isSelected(int block) => _selected.contains(block);
+
+  /// Endpoints retained by an indexed viewport during native text selection.
+  Set<int> get selectedEndpoints =>
+      _selected.isEmpty ? const {} : {_selected.first, _selected.last};
 
   /// Starts tracking the delegate of [block].
   void addBlock(int block, RowSelectionDelegate delegate) {
@@ -413,8 +420,8 @@ final class CodeSelectionDelegate extends RowSelectionDelegate {
 
   /// The line and column of [offset] into [block]'s text.
   (int, int) _position(int block, int offset) {
-    var line = block * linesPerBlock;
-    final last = math.min(line + linesPerBlock, lines.length) - 1;
+    var line = block * blockSize;
+    final last = math.min(line + blockSize, lines.length) - 1;
     while (line < last && offset > _shownLength(line)) {
       offset -= _shownLength(line) + 1;
       line++;
