@@ -1,5 +1,9 @@
 ## Unreleased
 
+- Index hunk source-line ranges once per file so native and gutter copies
+  resolve recorded separators by binary search instead of rescanning layout
+  blocks for every copied line. Synthesized context keeps lazy source lookup.
+
 - Resolve copied line endings only between selected source rows. Reuse hunk
   terminators and lazily read expanded context instead of indexing every
   terminator for a small native selection in a large file.

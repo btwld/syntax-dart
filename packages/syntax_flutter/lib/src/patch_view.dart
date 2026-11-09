@@ -17,7 +17,7 @@ import 'patch_rows.dart';
 import 'selectable_region.dart';
 import 'selection_chrome.dart';
 import 'styles.dart';
-import 'source_line_endings.dart';
+import 'patch_line_endings.dart';
 
 part 'patch_composition.dart';
 part 'patch_selection.dart';
@@ -330,8 +330,7 @@ class _PatchViewState<T> extends State<PatchView<T>>
   ({DiffLayout layout, int start, int end})? _crossBounds;
   DiffSelection? _copiedSelection;
   String? _copiedText;
-  final _sourceEndings = <(FileDiff, DiffSide), SourceLineEndings>{};
-  final _endingLayouts = <FileDiff, DiffLayout>{};
+  final _lineEndings = <FileDiff, PatchLineEndings>{};
   DiffLineContext? _dragAnchor;
   Offset? _pointer;
   late final Ticker _autoScroll = createTicker(_scrollTick);
@@ -391,8 +390,7 @@ class _PatchViewState<T> extends State<PatchView<T>>
     final key = (widget._files, widget._patch, widget._texts);
     if (key == _sourceKey) return;
     _sourceKey = key;
-    _sourceEndings.clear();
-    _endingLayouts.clear();
+    _lineEndings.clear();
     _crossKey = null;
     _crossBounds = null;
     _copiedSelection = null;
