@@ -14,6 +14,13 @@ import 'code_rows.dart';
 
 typedef TextCell = ({int row, DiffSide? side});
 
+typedef _RowEdge = ({
+  TextCell cell,
+  RowSelectionDelegate delegate,
+  Offset local,
+  SelectionEdgeUpdateEvent event,
+});
+
 /// Native character selection over a virtual document. Only endpoints must
 /// remain mounted; intermediate code comes from the immutable source rows.
 final class DiffTextSelection extends RowSelectionDelegate {
@@ -28,6 +35,68 @@ final class DiffTextSelection extends RowSelectionDelegate {
         : (a.side?.index ?? -1).compareTo(b.side?.index ?? -1);
   });
   (TextCell, int)? _startBoundary, _endBoundary;
+  _RowEdge? _edge;
+
+  void _captureEdge(SelectionEdgeUpdateEvent event) {
+    _edge = null;
+    if (event.granularity != TextGranularity.character || _selected.isEmpty) {
+      return;
+    }
+    // A retained endpoint can be parked outside the sliver's active children,
+    // where its transform is singular. Use the other endpoint in that case.
+    for (final cell in [_selected.first, _selected.last]) {
+      final delegate = _cells[cell]!;
+      final inverse = Matrix4.tryInvert(delegate.getTransformTo(null));
+      if (inverse == null) continue;
+      final local = MatrixUtils.transformPoint(inverse, event.globalPosition);
+      if (local.isFinite) {
+        _edge = (cell: cell, delegate: delegate, local: local, event: event);
+        return;
+      }
+    }
+  }
+
+  void _restoreEdge(TextCell cell, RowSelectionDelegate delegate) {
+    final edge = _edge;
+    if (edge == null || !identical(_cells[edge.cell], edge.delegate)) return;
+    final isEnd = edge.event.type == SelectionEventType.endEdgeUpdate;
+    final other = isEnd ? _startBoundary : _endBoundary;
+    if (other == null || other.$1.row == cell.row) return;
+    final global = MatrixUtils.transformPoint(
+      edge.delegate.getTransformTo(null),
+      edge.local,
+    );
+    final inverse = Matrix4.tryInvert(delegate.getTransformTo(null));
+    if (inverse == null) return;
+    final local = MatrixUtils.transformPoint(inverse, global);
+    if (!local.isFinite ||
+        local.dy < 0 ||
+        local.dy >= delegate.containerSize.height) {
+      return;
+    }
+    // Scrollable's selection walk can miss a newly registered child outside
+    // its old endpoints on older Flutter versions. Initialize this cell from
+    // the opposite source boundary, then let native selection resolve the
+    // moving edge's character offset. Row-local storage keeps that edge fixed
+    // in the document if scrolling finishes before the child registers.
+    final opposite = MatrixUtils.transformPoint(
+      delegate.getTransformTo(null),
+      Offset(
+        0,
+        other.$1.row < cell.row ? -1 : delegate.containerSize.height + 1,
+      ),
+    );
+    delegate.dispatchSelectionEvent(
+      isEnd
+          ? SelectionEdgeUpdateEvent.forStart(globalPosition: opposite)
+          : SelectionEdgeUpdateEvent.forEnd(globalPosition: opposite),
+    );
+    delegate.dispatchSelectionEvent(
+      isEnd
+          ? SelectionEdgeUpdateEvent.forEnd(globalPosition: global)
+          : SelectionEdgeUpdateEvent.forStart(globalPosition: global),
+    );
+  }
 
   List<(TextCell, int)> _positions() {
     final positions = <(TextCell, int)>[
@@ -128,6 +197,7 @@ final class DiffTextSelection extends RowSelectionDelegate {
     // Only a new user selection may unlock code cells after this reset.
     _gutter = true;
     _all = false;
+    _edge = null;
     _startBoundary = _endBoundary = null;
     super.dispatchSelectionEvent(const ClearSelectionEvent());
     _selected.clear();
@@ -175,6 +245,7 @@ final class DiffTextSelection extends RowSelectionDelegate {
         !_cells.containsKey(cell)) {
       return;
     }
+    _restoreEdge(cell, delegate);
     final positions = _positions();
     if (_all ||
         (positions.length >= 2 &&
@@ -214,6 +285,11 @@ final class DiffTextSelection extends RowSelectionDelegate {
     }
     if (_gutter && event is! ClearSelectionEvent) {
       return SelectionResult.none;
+    }
+    if (event is SelectionEdgeUpdateEvent) {
+      _captureEdge(event);
+    } else {
+      _edge = null;
     }
     _all = event is SelectAllSelectionEvent;
     if (event is SelectionEdgeUpdateEvent) {
