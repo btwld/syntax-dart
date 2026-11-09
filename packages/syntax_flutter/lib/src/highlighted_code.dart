@@ -2,7 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart'
-    show ClearSelectionEvent, ViewportOffset;
+    show ClearSelectionEvent, RenderAbstractViewport, ViewportOffset;
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:syntax_core/syntax.dart';

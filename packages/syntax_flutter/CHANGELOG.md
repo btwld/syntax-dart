@@ -1,5 +1,8 @@
 ## Unreleased
 
+- Reveal source lines inside shared two-dimensional viewports without changing
+  horizontal scroll positions.
+
 - Keep collapsed native clicks from copying separators, and preserve horizontal
   offsets when revealing through intervening horizontal viewports.
 

@@ -116,15 +116,23 @@ class _CodeLinesState extends State<_CodeLines>
   void _revealVertically(BuildContext row) {
     final target = row.findRenderObject()!;
     var object = target;
-    // Cross every intervening scrollable, including horizontal viewports,
-    // so each vertical position resolves its own enclosing render viewport.
-    // Only vertical positions move; horizontal offsets are preserved.
+    // Cross distinct horizontal viewports without scrolling them, but stay
+    // inside a shared 2D viewport until its vertical position is processed.
     var scrollable = Scrollable.maybeOf(row);
     while (scrollable != null) {
       if (scrollable.position.axis == Axis.vertical) {
         scrollable.position.ensureVisible(object, targetRenderObject: target);
       }
-      object = scrollable.context.findRenderObject()!;
+      final viewport = RenderAbstractViewport.maybeOf(object);
+      final vertical = Scrollable.maybeOf(
+        scrollable.context,
+        axis: Axis.vertical,
+      );
+      final sharedViewport =
+          viewport is RenderTwoDimensionalViewport &&
+          identical(viewport.horizontalOffset, scrollable.position) &&
+          identical(viewport.verticalOffset, vertical?.position);
+      if (!sharedViewport) object = scrollable.context.findRenderObject()!;
       scrollable = Scrollable.maybeOf(scrollable.context);
     }
   }
