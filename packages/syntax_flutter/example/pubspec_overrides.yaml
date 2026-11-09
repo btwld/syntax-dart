@@ -1,2 +1,4 @@
-# Example resolves syntax_core from pub.dev / syntax_flutter from path.
-dependency_overrides: {}
+# Preview unreleased core APIs from the same checkout as syntax_flutter.
+dependency_overrides:
+  syntax_core:
+    path: ../../syntax_core
