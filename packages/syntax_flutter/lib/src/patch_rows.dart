@@ -772,6 +772,9 @@ class PatchCodeCell extends StatelessWidget {
   Widget build(BuildContext context) {
     Widget text = Text.rich(
       TextSpan(style: palette.code, children: spans),
+      // Text's root style must match its spans: older Flutter versions use it
+      // for caret metrics and otherwise hide the end handle outside the row.
+      style: palette.code,
       softWrap: palette.wrap,
     );
     if (!palette.wrap) text = HorizontalCode(child: text);

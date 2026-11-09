@@ -130,6 +130,44 @@ void main() {
     );
   }
 
+  for (final mode in DiffMode.values) {
+    testWidgets('$mode tall patch handles stay at their caret and magnify', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        neutralApp(
+          PatchView.fromTexts(
+            oldText: '',
+            newText: 'alpha beta\ngamma delta',
+            path: 'a.txt',
+            theme: _theme,
+            highlighter: Highlighter(),
+            mode: mode,
+            textStyle: const TextStyle(fontSize: 18, height: 2),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await _showHandles(tester);
+      final state = tester.state<SelectableRegionState>(
+        find.byType(SelectableRegion),
+      );
+      final caret =
+          tester.getTopLeft(find.byType(SelectableRegion)) +
+          state.selectionEndpoints.last.point;
+      final handle = tester.getRect(_handles().last);
+      expect(handle.topCenter, caret);
+      final gesture = await tester.startGesture(handle.center);
+      await gesture.moveBy(const Offset(-30, 0));
+      await tester.pump();
+      expect(find.byType(RawMagnifier), findsOneWidget);
+      expectPlainTree(tester);
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(find.byType(RawMagnifier), findsNothing);
+    });
+  }
+
   testWidgets('plain magnifier follows the caret in an offset root overlay', (
     tester,
   ) async {
