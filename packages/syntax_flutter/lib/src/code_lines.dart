@@ -251,7 +251,10 @@ class _CodeLinesState extends State<_CodeLines>
     final gutter =
         (view.lineNumbers ? owner._gutterWidth : 0.0) +
         (view.gutterBuilder == null ? 0 : 24);
-    Widget code = owner._block(line, widget.tokenized, widget.offset);
+    // Per-line paragraphs need the same mounted output lifetime as blocks.
+    Widget code = owner._windowOutput.retain(
+      () => owner._block(line, widget.tokenized, widget.offset),
+    );
     if (gutter > 0) {
       code = Stack(
         children: [
