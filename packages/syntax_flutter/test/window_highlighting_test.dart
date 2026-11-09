@@ -6,6 +6,8 @@ import 'package:syntax_core/langs/dart.dart';
 import 'package:syntax_core/themes/github_dark.dart';
 import 'package:syntax_flutter/syntax_flutter.dart';
 
+import 'code_helpers.dart';
+
 final class _Worker {
   final inputs = <HighlightWindowRequest>[];
   final jobs = <Completer<HighlightWindowResult>>[];
@@ -287,6 +289,95 @@ void main() {
                     true,
           );
       expect(colored.length, greaterThanOrEqualTo(2));
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+  testWidgets(
+    'stationary small-font code settles with more than eight mounted windows',
+    (tester) async {
+      final calls = <int, int>{};
+      var scheduledBuilds = 0;
+      final owner = tester.binding.buildOwner!;
+      final previous = owner.onBuildScheduled;
+      owner.onBuildScheduled = () {
+        scheduledBuilds++;
+        previous?.call();
+      };
+      addTearDown(() => owner.onBuildScheduled = previous);
+      Future<HighlightWindowResult> worker(
+        HighlightWindowRequest request, {
+        required Highlighter highlighter,
+        required SyntaxTheme theme,
+        required HighlightCancellation cancellation,
+      }) async {
+        calls.update(
+          request.startLine,
+          (count) => count + 1,
+          ifAbsent: () => 1,
+        );
+        final lines = request.code.split('\n');
+        var offset = 0;
+        final ranges = <StyledRange>[];
+        for (var i = 0; i < request.endLine; i++) {
+          if (i >= request.startLine) {
+            ranges.add(
+              StyledRange(
+                offset,
+                offset + lines[i].length,
+                const TokenStyle(foreground: 0xFF00FF00),
+              ),
+            );
+          }
+          offset += lines[i].length + 1;
+        }
+        return HighlightWindowResult(
+          request: request,
+          grammarRevision: highlighter.revision,
+          theme: theme,
+          ranges: ranges,
+        );
+      }
+
+      final code = List.generate(5000, (i) => 'line $i').join('\n');
+      await tester.pumpWidget(
+        app(
+          HighlightedCode(
+            code,
+            language: 'dart',
+            theme: githubDarkTheme,
+            highlighter: highlighter,
+            executor: worker,
+            selectable: false,
+            textStyle: const TextStyle(fontSize: 0.5, height: 1),
+          ),
+        ),
+      );
+      final firstFrameBuilds = scheduledBuilds;
+      for (var frame = 0; frame < 100; frame++) {
+        await tester.pump();
+      }
+      final mountedLines = shownLines(tester);
+      final windows = mountedLines.keys.map((line) => line ~/ 64 * 64).toSet();
+      expect(windows.length, greaterThan(8));
+      expect(calls.keys.toSet(), containsAll(windows));
+      expect(calls.length, lessThanOrEqualTo(2 * windows.length + 8));
+      expect(calls.values, everyElement(1));
+      expect(
+        scheduledBuilds - firstFrameBuilds,
+        lessThanOrEqualTo(3 * windows.length + 20),
+      );
+      expect(tester.binding.hasScheduledFrame, isFalse);
+      expect(
+        mountedLines.values.every((span) => span.children?.isNotEmpty ?? false),
+        isTrue,
+      );
+      final settledBuilds = scheduledBuilds;
+      final settledCalls = Map<int, int>.of(calls);
+      for (var frame = 0; frame < 30; frame++) {
+        await tester.pump();
+      }
+      expect(calls, settledCalls);
+      expect(scheduledBuilds, settledBuilds);
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );

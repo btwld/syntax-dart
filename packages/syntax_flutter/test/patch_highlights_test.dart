@@ -211,4 +211,143 @@ void main() {
       );
     },
   );
+  for (final replacement in [false, true]) {
+    test(
+      'default word lookup reuses 100000-line ${replacement ? 'replacement' : 'addition'} boundaries',
+      () {
+        final highlights = cache();
+        const count = 100000;
+        final values = [
+          if (replacement)
+            for (var i = 0; i < count; i++)
+              DiffLine(DiffLineKind.removed, 'x=1', oldNumber: 100 + i),
+          for (var i = 0; i < count; i++)
+            DiffLine(DiffLineKind.added, 'x=2', newNumber: 500 + i),
+        ];
+        final lines = _CountingLines(values);
+        final file = FileDiff(
+          oldPath: 'a.txt',
+          newPath: 'a.txt',
+          kind: FileDiffKind.modified,
+          hunks: [
+            DiffHunk(
+              oldStart: 100,
+              oldCount: replacement ? count : 0,
+              newStart: 500,
+              newCount: count,
+              lines: lines,
+            ),
+          ],
+        );
+        List<DiffSegment> render(DiffLine line) => highlights.segments(
+          file,
+          line,
+          highlighter,
+          githubDarkTheme,
+          null,
+          InlineDiffMode.mergedWords,
+        );
+        if (replacement) render(values[99970]);
+        render(values[(replacement ? count : 0) + 99970]);
+        expect(
+          lines.reads,
+          lessThanOrEqualTo(8 * lines.length + 20),
+          reason:
+              'Build indexes once, rather than rescanning change blocks per side',
+        );
+        lines.reads = 0;
+        var rendered = 0;
+        for (var repaint = 0; repaint < 2; repaint++) {
+          for (var i = 99970; i < count; i++) {
+            if (replacement) {
+              expect(
+                render(
+                  values[i],
+                ).where((s) => s.changed).map((s) => s.text).join(),
+                '1',
+              );
+              rendered++;
+            }
+            final segments = render(values[(replacement ? count : 0) + i]);
+            expect(
+              segments.where((s) => s.changed).map((s) => s.text).join(),
+              replacement ? '2' : '',
+            );
+            rendered++;
+          }
+        }
+        expect(
+          lines.reads,
+          lessThanOrEqualTo(2 * rendered),
+          reason:
+              'Only the chosen pair may be read per row, independent of offscreen lines',
+        );
+      },
+    );
+  }
+  test(
+    'indexed pairs match word changes across mixed and unbalanced blocks',
+    () {
+      final highlights = cache();
+      var oldNumber = 100, newNumber = 500;
+      final lines = [
+        for (final (kind, text) in [
+          (DiffLineKind.removed, 'final a=1;'),
+          (DiffLineKind.added, 'final a=2;'),
+          (DiffLineKind.context, 'stable1'),
+          (DiffLineKind.removed, 'only removed'),
+          (DiffLineKind.context, 'stable2'),
+          (DiffLineKind.added, 'only added'),
+          (DiffLineKind.context, 'stable3'),
+          (DiffLineKind.removed, 'final b=1;'),
+          (DiffLineKind.removed, 'final c=1;'),
+          (DiffLineKind.added, 'final b=2;'),
+          (DiffLineKind.context, 'stable4'),
+          (DiffLineKind.removed, 'final d=1;'),
+          (DiffLineKind.added, 'final d=2;'),
+          (DiffLineKind.added, 'extra added'),
+        ])
+          DiffLine(
+            kind,
+            text,
+            oldNumber: kind == DiffLineKind.added ? null : oldNumber++,
+            newNumber: kind == DiffLineKind.removed ? null : newNumber++,
+          ),
+      ];
+      final file = FileDiff(
+        oldPath: 'a.txt',
+        newPath: 'a.txt',
+        kind: FileDiffKind.modified,
+        hunks: [
+          DiffHunk(
+            oldStart: 100,
+            oldCount: oldNumber - 100,
+            newStart: 500,
+            newCount: newNumber - 500,
+            lines: lines,
+          ),
+        ],
+      );
+      for (final mode in InlineDiffMode.values) {
+        final expected = WordChanges.of(file, mode: mode);
+        for (final line in [...lines, ...lines.reversed]) {
+          final actual = highlights.segments(
+            file,
+            line,
+            highlighter,
+            githubDarkTheme,
+            null,
+            mode,
+          );
+          expect(
+            actual.where((s) => s.changed).map((s) => s.text).join(),
+            expected
+                .rangesFor(line)
+                .map((r) => line.text.substring(r.start, r.end))
+                .join(),
+          );
+        }
+      }
+    },
+  );
 }

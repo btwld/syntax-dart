@@ -1,5 +1,9 @@
 ## Unreleased
 
+- Retain mounted code-window output so small-font viewports larger than the
+  scheduler cache settle. Index patch change blocks once per hunk so default
+  inline highlighting no longer scans offscreen changes for each visible row.
+
 - Keep syntax output for mounted patch rows so large stationary layouts settle,
   preserve inline emphasis for equal line pairs in different files, and reuse
   parsed hunk indexes without scanning the hunk side for every row.
