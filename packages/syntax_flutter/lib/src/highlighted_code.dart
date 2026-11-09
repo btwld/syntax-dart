@@ -106,8 +106,8 @@ class HighlightedCode extends StatefulWidget {
 /// [LayoutBuilder], so it keeps intrinsic sizes.
 const _buildAllUpTo = 200;
 
-/// How long a frame spends tokenizing: while it builds, and again after
-/// it, until the code is done.
+/// Budget for the initial document update. Nonvirtual content finishes
+/// synchronously before its rows build.
 const _sliceBudget = Duration(milliseconds: 6);
 
 class _HighlightedCodeState extends State<HighlightedCode> {
@@ -117,7 +117,6 @@ class _HighlightedCodeState extends State<HighlightedCode> {
 
   Object? _documentKey;
   TokenizedDocument? _document;
-  bool _slicing = false;
   bool _windowed = false;
   int _windowSize = 64;
   WindowSource? _windowSource;
@@ -274,34 +273,10 @@ class _HighlightedCodeState extends State<HighlightedCode> {
       _document = null;
       return;
     }
-    // [_list] finishes the rest, now or between frames.
+    // [_list] finishes nonvirtual documents synchronously.
     (_document ??= TokenizedDocument(grammar))
       ..grammar = grammar
       ..update(widget.code, budget: _sliceBudget);
-  }
-
-  /// Tokenizes the rest a slice at a time, right after each frame,
-  /// rebuilding the blocks on screen as their lines get colors.
-  ///
-  /// Post-frame callbacks rather than timers, so nothing is left pending
-  /// when the code goes away, including in widget tests.
-  void _finishLater() {
-    if (_slicing) return;
-    _slicing = true;
-    SchedulerBinding.instance
-      ..addPostFrameCallback(_slice)
-      ..ensureVisualUpdate();
-  }
-
-  void _slice(Duration _) {
-    if (!mounted) return;
-    final done = _document?.tokenize(budget: _sliceBudget) ?? true;
-    setState(() {});
-    if (done) {
-      _slicing = false;
-    } else {
-      SchedulerBinding.instance.addPostFrameCallback(_slice);
-    }
   }
 
   void _syncStyles(BuildContext context) {
@@ -497,7 +472,7 @@ class _HighlightedCodeState extends State<HighlightedCode> {
     // slice at a time would lay them all out again each frame, so they
     // get their colors at once.
     if (_document case final document? when !document.isComplete) {
-      virtualize ? _finishLater() : document.tokenize();
+      document.tokenize();
     }
     final tokenized = _document?.lines ?? const <DocumentLine>[];
     final count = (_lines.length + linesPerBlock - 1) ~/ linesPerBlock;
