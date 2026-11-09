@@ -99,9 +99,10 @@ extension _PatchComposition<T> on _PatchViewState<T> {
         EdgeInsets.zero;
     return ClipRRect(
       borderRadius: clipped,
-      child: CustomPaint(
-        painter: _SectionPainter(decoration, first, last, false),
-        foregroundPainter: _SectionPainter(decoration, first, last, true),
+      child: _SectionPaint(
+        decoration: decoration,
+        first: first,
+        last: last,
         child: Padding(
           padding: EdgeInsets.only(
             left: insets.left,
@@ -275,9 +276,103 @@ extension _PatchComposition<T> on _PatchViewState<T> {
   }
 }
 
+// Own asynchronous decoration image listeners for as long as the row is mounted.
+class _SectionPaint extends StatefulWidget {
+  const _SectionPaint({
+    required this.decoration,
+    required this.first,
+    required this.last,
+    required this.child,
+  });
+  final BoxDecoration decoration;
+  final bool first, last;
+  final Widget child;
+
+  @override
+  State<_SectionPaint> createState() => _SectionPaintState();
+}
+
+class _SectionPaintState extends State<_SectionPaint> {
+  final _repaint = _SectionRepaint();
+  late _SectionPainter _background, _foreground;
+
+  void _createPainters() {
+    _background = _SectionPainter(
+      widget.decoration,
+      widget.first,
+      widget.last,
+      false,
+      _repaint,
+    );
+    _foreground = _SectionPainter(
+      widget.decoration,
+      widget.first,
+      widget.last,
+      true,
+      _repaint,
+    );
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _createPainters();
+  }
+
+  @override
+  void didUpdateWidget(_SectionPaint oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.decoration != widget.decoration ||
+        oldWidget.first != widget.first ||
+        oldWidget.last != widget.last) {
+      _background.dispose();
+      _foreground.dispose();
+      _createPainters();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => CustomPaint(
+    painter: _background,
+    foregroundPainter: _foreground,
+    child: widget.child,
+  );
+
+  @override
+  void dispose() {
+    _background.dispose();
+    _foreground.dispose();
+    _repaint.dispose();
+    super.dispose();
+  }
+}
+
+class _SectionRepaint extends ChangeNotifier {
+  void changed() => notifyListeners();
+}
+
 /// Paint a slice of a section, moving missing edges beyond the row's clip.
 class _SectionPainter extends CustomPainter {
-  _SectionPainter(this.decoration, this.first, this.last, this.foreground);
+  _SectionPainter(
+    this.decoration,
+    this.first,
+    this.last,
+    this.foreground,
+    _SectionRepaint repaint,
+  ) : super(repaint: repaint) {
+    final paintDecoration = foreground
+        ? BoxDecoration(
+            border: decoration.border,
+            borderRadius: decoration.borderRadius,
+          )
+        : decoration.copyWith(
+            border: Border.all(color: const Color(0x00000000), width: 0),
+          );
+    _painter = paintDecoration.createBoxPainter(repaint.changed);
+  }
+  late final BoxPainter _painter;
+
+  void dispose() => _painter.dispose();
   final BoxDecoration decoration;
   final bool first, last, foreground;
 
@@ -300,18 +395,9 @@ class _SectionPainter extends CustomPainter {
         2;
     final top = first ? 0.0 : overlap;
     final bottom = last ? 0.0 : overlap;
-    final paintDecoration = foreground
-        ? BoxDecoration(
-            border: decoration.border,
-            borderRadius: decoration.borderRadius,
-          )
-        : decoration.copyWith(
-            border: Border.all(color: const Color(0x00000000), width: 0),
-          );
-    final painter = paintDecoration.createBoxPainter();
     canvas.save();
     canvas.clipRect(Offset.zero & size);
-    painter.paint(
+    _painter.paint(
       canvas,
       Offset(0, -top),
       ImageConfiguration(
@@ -320,7 +406,6 @@ class _SectionPainter extends CustomPainter {
       ),
     );
     canvas.restore();
-    painter.dispose();
   }
 
   @override

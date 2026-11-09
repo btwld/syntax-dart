@@ -228,7 +228,9 @@ void main() {
       expect(numbers.length, greaterThan(30));
       expect(
         selected,
-        lines.sublist(numbers.first, numbers.last + 1).join('\n'),
+        // The upward drag lands past the end of the preceding row. Its
+        // empty endpoint still selects the separator before the first word.
+        '${upward ? '\n' : ''}${lines.sublist(numbers.first, numbers.last + 1).join('\n')}',
       );
       await copy(tester, selected);
       expect(selection(tester).retainedRows.value.length, 2);

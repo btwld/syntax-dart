@@ -27,6 +27,57 @@ final class DiffTextSelection extends RowSelectionDelegate {
         ? row
         : (a.side?.index ?? -1).compareTo(b.side?.index ?? -1);
   });
+  (TextCell, int)? _startBoundary, _endBoundary;
+
+  List<(TextCell, int)> _positions() {
+    final positions = <(TextCell, int)>[
+      if (_startBoundary case final start? when _accepts(start.$1)) start,
+      if (_endBoundary case final end? when _accepts(end.$1)) end,
+    ];
+    final selected = _selected.where(_accepts).toList();
+    if (selected.isNotEmpty) {
+      final first = selected.first, last = selected.last;
+      final start = _cells[first]?.getSelection();
+      final end = _cells[last]?.getSelection();
+      if (start != null) {
+        positions.add((first, math.min(start.startOffset, start.endOffset)));
+      }
+      if (end != null) {
+        positions.add((last, math.max(end.startOffset, end.endOffset)));
+      }
+    }
+    positions.sort(
+      (a, b) => a.$1.row == b.$1.row
+          ? a.$2.compareTo(b.$2)
+          : a.$1.row.compareTo(b.$1.row),
+    );
+    return positions;
+  }
+
+  void _recordBoundary(
+    TextCell cell,
+    RowSelectionDelegate delegate,
+    SelectionEdgeUpdateEvent event,
+    int offset,
+  ) {
+    if (!_accepts(cell)) return;
+    final local = MatrixUtils.transformPoint(
+      Matrix4.inverted(delegate.getTransformTo(null)),
+      event.globalPosition,
+    );
+    if (!local.isFinite ||
+        local.dy < 0 ||
+        local.dy >= delegate.containerSize.height) {
+      return;
+    }
+    if (event.type == SelectionEventType.startEdgeUpdate) {
+      _startBoundary = (cell, offset);
+    } else {
+      _endBoundary = (cell, offset);
+    }
+    _publishRetained();
+  }
+
   Object? _source;
   int _rowCount = 0;
   bool _split = false;
@@ -77,6 +128,7 @@ final class DiffTextSelection extends RowSelectionDelegate {
     // Only a new user selection may unlock code cells after this reset.
     _gutter = true;
     _all = false;
+    _startBoundary = _endBoundary = null;
     super.dispatchSelectionEvent(const ClearSelectionEvent());
     _selected.clear();
     _publishRetained();
@@ -123,11 +175,11 @@ final class DiffTextSelection extends RowSelectionDelegate {
         !_cells.containsKey(cell)) {
       return;
     }
-    final selected = _selected.where(_accepts).toList();
+    final positions = _positions();
     if (_all ||
-        (selected.length >= 2 &&
-            cell.row > selected.first.row &&
-            cell.row < selected.last.row)) {
+        (positions.length >= 2 &&
+            cell.row > positions.first.$1.row &&
+            cell.row < positions.last.$1.row)) {
       delegate.dispatchSelectionEvent(const SelectAllSelectionEvent());
     }
   }
@@ -144,10 +196,10 @@ final class DiffTextSelection extends RowSelectionDelegate {
       });
       return;
     }
-    final selected = _selected.where(_accepts).toList();
+    final positions = _positions();
     final ids = <Object>{
-      if (selected.isNotEmpty) _identity(selected.first.row),
-      if (selected.isNotEmpty) _identity(selected.last.row),
+      if (positions.isNotEmpty) _identity(positions.first.$1.row),
+      if (positions.isNotEmpty) _identity(positions.last.$1.row),
     };
     if (!setEquals(retainedRows.value, ids)) {
       retainedRows.value = Set.unmodifiable(ids);
@@ -164,7 +216,18 @@ final class DiffTextSelection extends RowSelectionDelegate {
       return SelectionResult.none;
     }
     _all = event is SelectAllSelectionEvent;
-    return super.dispatchSelectionEvent(event);
+    if (event is SelectionEdgeUpdateEvent) {
+      if (event.type == SelectionEventType.startEdgeUpdate) {
+        _startBoundary = null;
+      } else {
+        _endBoundary = null;
+      }
+    } else {
+      _startBoundary = _endBoundary = null;
+    }
+    final result = super.dispatchSelectionEvent(event);
+    _publishRetained();
+    return result;
   }
 
   @override
@@ -185,14 +248,19 @@ final class DiffTextSelection extends RowSelectionDelegate {
 
   @override
   SelectedContent? getSelectedContent() {
-    final selected = _selected.where(_accepts).toList();
-    if (!_all && selected.isEmpty) return null;
-    if (_rowCount == 0) return null;
-    final first = _all ? 0 : selected.first.row;
-    final last = _all ? _rowCount - 1 : selected.last.row;
-    final startRange = _all ? null : _cells[selected.first]?.getSelection();
-    final endRange = _all ? null : _cells[selected.last]?.getSelection();
-    if (!_all && (startRange == null || endRange == null)) return null;
+    final hasBoundaryRange =
+        _startBoundary != null &&
+        _endBoundary != null &&
+        _startBoundary != _endBoundary;
+    if (!_all &&
+        !hasBoundaryRange &&
+        value.status != SelectionStatus.uncollapsed) {
+      return null;
+    }
+    final positions = _positions();
+    if ((!_all && positions.isEmpty) || _rowCount == 0) return null;
+    final first = _all ? 0 : positions.first.$1.row;
+    final last = _all ? _rowCount - 1 : positions.last.$1.row;
     final buffer = StringBuffer();
     String? previousEnding;
     for (var row = first; row <= last; row++) {
@@ -201,15 +269,11 @@ final class DiffTextSelection extends RowSelectionDelegate {
         _split ? activeSide.value ?? DiffSide.newer : null,
       );
       if (text == null) continue;
-      final start = row == first && startRange != null
-          ? math
-                .min(startRange.startOffset, startRange.endOffset)
-                .clamp(0, text.length)
+      final start = row == first && !_all
+          ? positions.first.$2.clamp(0, text.length)
           : 0;
-      final end = row == last && endRange != null
-          ? math
-                .max(endRange.startOffset, endRange.endOffset)
-                .clamp(start, text.length)
+      final end = row == last && !_all
+          ? positions.last.$2.clamp(start, text.length)
           : text.length;
       if (previousEnding != null) buffer.write(previousEnding);
       buffer.write(text.substring(start, end));
@@ -261,6 +325,8 @@ final class _DiffSelectableCellState extends State<DiffSelectableCell> {
   @override
   void initState() {
     super.initState();
+    _delegate.onEdge = (event, offset) =>
+        widget.selection._recordBoundary(widget.cell, _delegate, event, offset);
     widget.selection.register(widget.cell, _delegate);
     _delegate.addListener(_changed);
   }
@@ -316,6 +382,7 @@ final class _DiffSelectableCellState extends State<DiffSelectableCell> {
 final class _CellSelection extends RowSelectionDelegate {
   _CellSelection(this.accepts, this.restore);
 
+  void Function(SelectionEdgeUpdateEvent, int)? onEdge;
   final bool Function() accepts;
   final void Function(RowSelectionDelegate) restore;
 
@@ -326,8 +393,25 @@ final class _CellSelection extends RowSelectionDelegate {
   }
 
   @override
-  SelectionResult dispatchSelectionEvent(SelectionEvent event) =>
-      event is ClearSelectionEvent || accepts()
-      ? super.dispatchSelectionEvent(event)
-      : SelectionResult.none;
+  SelectionResult dispatchSelectionEvent(SelectionEvent event) {
+    if (event is! ClearSelectionEvent && !accepts()) {
+      return SelectionResult.none;
+    }
+    final result = super.dispatchSelectionEvent(event);
+    if (event is SelectionEdgeUpdateEvent &&
+        event.granularity == TextGranularity.character) {
+      final range = getSelection();
+      final offset = range != null
+          ? (event.type == SelectionEventType.startEdgeUpdate
+                ? range.startOffset
+                : range.endOffset)
+          : switch (result) {
+              SelectionResult.previous => 0,
+              SelectionResult.next => contentLength,
+              _ => null,
+            };
+      if (offset != null) onEdge?.call(event, offset);
+    }
+    return result;
+  }
 }

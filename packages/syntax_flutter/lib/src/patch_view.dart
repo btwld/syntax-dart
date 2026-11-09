@@ -325,6 +325,11 @@ class _PatchViewState<T> extends State<PatchView<T>>
       <(String, DiffSide, int), List<DiffAnnotation<T>>>{};
   void _rebuild(VoidCallback callback) => setState(callback);
   DiffSelection? _selection;
+  (FileDiff, DiffSelection)? _crossKey;
+  ({DiffLayout layout, int start, int end})? _crossBounds;
+  DiffSelection? _copiedSelection;
+  String? _copiedText;
+  final _sourceEndings = <(FileDiff, DiffSide), List<String>>{};
   DiffLineContext? _dragAnchor;
   Offset? _pointer;
   late final Ticker _autoScroll = createTicker(_scrollTick);
@@ -384,6 +389,11 @@ class _PatchViewState<T> extends State<PatchView<T>>
     final key = (widget._files, widget._patch, widget._texts);
     if (key == _sourceKey) return;
     _sourceKey = key;
+    _sourceEndings.clear();
+    _crossKey = null;
+    _crossBounds = null;
+    _copiedSelection = null;
+    _copiedText = null;
     // Keep bounded ready output for revisits, but abandon queued work for the
     // previous snapshot immediately. A late executor still settles serially.
     _windows?.clear();
@@ -600,8 +610,11 @@ class _PatchViewState<T> extends State<PatchView<T>>
       rowCount: rows.length,
       split: widget.mode == DiffMode.split,
       textAt: (index, side) => _textAt(rows[index], side)?.text,
-      endingAt: (index, side) =>
-          _textAt(rows[index], side)?.sourceLineEnding ?? '\n',
+      endingAt: (index, side) {
+        final row = rows[index];
+        final line = _textAt(row, side);
+        return line == null ? '\n' : _lineEnding(_files[row.file], line, side);
+      },
       identity: (index) => _identity(rows[index]),
     );
     final leadingCount = widget.leading == null ? 0 : 1;

@@ -1,5 +1,10 @@
 ## Unreleased
 
+- Preserve empty native selection endpoints and source line endings when
+  copying expanded context. Keep section decoration image painters alive for
+  asynchronous resolution, and bound cross-side selection highlighting to
+  indexed coordinates instead of materializing the selected source per cell.
+
 - Add typed `PatchView<T>` composition slots for scrolling introductions,
   file labels and footers, gutters, application-owned annotations and selection
   actions, plus canvas colors, joined section decorations and visible ranges.

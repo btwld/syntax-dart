@@ -18,6 +18,8 @@ bool _rowAddresses(DiffRow row, DiffSide side, int number) {
 extension _PatchSelection<T> on _PatchViewState<T> {
   void _setSelection(DiffSelection? selection) {
     if (_selection == selection || !mounted) return;
+    _copiedSelection = null;
+    _copiedText = null;
     _rebuild(() => _selection = selection);
     widget.onSelectionChanged?.call(selection);
   }
@@ -145,6 +147,47 @@ extension _PatchSelection<T> on _PatchViewState<T> {
     }
   }
 
+  String _lineEnding(FileDiff file, DiffLine line, DiffSide? side) {
+    side ??= line.newNumber == null ? DiffSide.old : DiffSide.newer;
+    final number = side == DiffSide.old ? line.oldNumber : line.newNumber;
+    final source = side == DiffSide.old ? file.oldText : file.newText;
+    if (source == null || number == null) return line.sourceLineEnding;
+    final endings = _sourceEndings[(file, side)] ??= [
+      for (final match in RegExp(r'\r\n|\r|\n').allMatches(source))
+        match.group(0)!,
+    ];
+    return number <= endings.length
+        ? endings[number - 1]
+        : line.sourceLineEnding;
+  }
+
+  ({DiffLayout layout, int start, int end})? _boundsFor(
+    FileDiff file,
+    DiffSelection selection,
+  ) {
+    final key = (file, selection);
+    if (_crossKey == key) return _crossBounds;
+    _crossKey = key;
+    final layout = DiffLayout([file], expandAll: true);
+    final anchor = layout.rowForLine(
+      0,
+      selection.anchor,
+      oldSide: selection.side == DiffSide.old,
+    );
+    final active = layout.rowForLine(
+      0,
+      selection.active,
+      oldSide: selection.activeSide == DiffSide.old,
+    );
+    return _crossBounds = anchor == null || active == null
+        ? null
+        : (
+            layout: layout,
+            start: math.min(anchor, active),
+            end: math.max(anchor, active),
+          );
+  }
+
   List<DiffLine> _selectedLines(DiffSelection selection) {
     final file = _files
         .where(
@@ -159,15 +202,6 @@ extension _PatchSelection<T> on _PatchViewState<T> {
           ? file.oldLines
           : file.newLines;
       if (full != null) {
-        final source = selection.side == DiffSide.old
-            ? file.oldText
-            : file.newText;
-        final endings = source == null
-            ? <String>[]
-            : [
-                for (final match in RegExp(r'\r\n|\r|\n').allMatches(source))
-                  match.group(0)!,
-              ];
         return [
           for (var n = selection.start; n <= selection.end; n++)
             DiffLine(
@@ -175,7 +209,7 @@ extension _PatchSelection<T> on _PatchViewState<T> {
               full[n - 1],
               oldNumber: selection.side == DiffSide.old ? n : null,
               newNumber: selection.side == DiffSide.newer ? n : null,
-              sourceLineEnding: n <= endings.length ? endings[n - 1] : '\n',
+              sourceLineEnding: '\n',
             ),
         ];
       }
@@ -189,40 +223,42 @@ extension _PatchSelection<T> on _PatchViewState<T> {
               line,
       ];
     }
-    // Include expandable context when resolving cross-side source coordinates.
-    // The unified layout gives a single order independent of the display mode.
-    final rows = DiffLayout(
-      [file],
-      expanded: {
-        for (var hunk = 0; hunk <= file.hunks.length; hunk++)
-          (file: 0, hunk: hunk),
-      },
-    );
-    final anchor = rows.rowForLine(
-      0,
-      selection.anchor,
-      oldSide: selection.side == DiffSide.old,
-    );
-    final active = rows.rowForLine(
-      0,
-      selection.active,
-      oldSide: selection.activeSide == DiffSide.old,
-    );
-    if (anchor == null || active == null) return [];
+    final bounds = _boundsFor(file, selection);
+    if (bounds == null) return [];
     return [
-      for (var i = math.min(anchor, active); i <= math.max(anchor, active); i++)
-        if (rows[i] case DiffLineRow(:final line)) line,
+      for (var i = bounds.start; i <= bounds.end; i++)
+        if (bounds.layout[i] case DiffLineRow(:final line)) line,
     ];
   }
 
   String _selectedText(DiffSelection selection) {
+    if (_copiedSelection == selection && _copiedText != null) {
+      return _copiedText!;
+    }
+    final file = _files
+        .where(
+          (file) =>
+              file.id == selection.fileId &&
+              file.revision == selection.revision,
+        )
+        .firstOrNull;
+    if (file == null) return '';
     final lines = _selectedLines(selection);
     final buffer = StringBuffer();
     for (var i = 0; i < lines.length; i++) {
       buffer.write(lines[i].text);
-      if (i < lines.length - 1) buffer.write(lines[i].sourceLineEnding);
+      if (i < lines.length - 1) {
+        buffer.write(
+          _lineEnding(
+            file,
+            lines[i],
+            selection.crossesSides ? null : selection.side,
+          ),
+        );
+      }
     }
-    return buffer.toString();
+    _copiedSelection = selection;
+    return _copiedText = buffer.toString();
   }
 
   bool _lineSelected(FileDiff file, DiffLine line, DiffSide? side) {
@@ -241,7 +277,24 @@ extension _PatchSelection<T> on _PatchViewState<T> {
           number >= selection.start &&
           number <= selection.end;
     }
-    return _selectedLines(selection).contains(line);
+    if (side == DiffSide.old && line.oldNumber == null ||
+        side == DiffSide.newer && line.newNumber == null) {
+      return false;
+    }
+    final bounds = _boundsFor(file, selection);
+    if (bounds == null) return false;
+    // The same indexed coordinate lookup used for endpoints takes no source
+    // row allocation, even when the range spans the entire document.
+    final number = side == DiffSide.old || line.newNumber == null
+        ? line.oldNumber
+        : line.newNumber;
+    if (number == null) return false;
+    final index = bounds.layout.rowForLine(
+      0,
+      number,
+      oldSide: side == DiffSide.old || line.newNumber == null,
+    );
+    return index != null && index >= bounds.start && index <= bounds.end;
   }
 
   void _copy() {
