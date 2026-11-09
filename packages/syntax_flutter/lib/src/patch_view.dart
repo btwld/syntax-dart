@@ -417,7 +417,108 @@ class _PatchViewState<T> extends State<PatchView<T>>
   PatchWindowHighlights? _windowHighlights;
   Object? _windowKey;
   bool _repaintScheduled = false;
-  final _shrinkRevealKey = GlobalKey();
+  final _revealRowKey = GlobalKey();
+  final _stickyViewportKey = GlobalKey();
+  final _pinnedHeaderKey = GlobalKey();
+  final _fileHeaderKeys = <int, GlobalKey>{};
+  int? _pinnedFile;
+  bool _stickyBounded = false;
+  bool _stickyUpdateQueued = false;
+
+  bool get _controlledSticky =>
+      widget.controller != null && widget.stickyHeaders;
+
+  Rect? _rectFor(GlobalKey key) {
+    final box = key.currentContext?.findRenderObject();
+    return box is RenderBox && box.attached && box.hasSize
+        ? box.localToGlobal(Offset.zero) & box.size
+        : null;
+  }
+
+  void _queueStickyUpdate() {
+    if (!_controlledSticky || _stickyUpdateQueued) return;
+    _stickyUpdateQueued = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _stickyUpdateQueued = false;
+      if (mounted) _updatePinnedHeader();
+    });
+  }
+
+  // Layout, rather than a guessed row height, decides when the complete
+  // in-list header and label have left this viewport.
+  bool _updatePinnedHeader() {
+    if (!_controlledSticky || !_stickyBounded) return false;
+    final viewport = _rectFor(_stickyViewportKey);
+    if (viewport == null) return false;
+    var file = _stickyFile;
+    if (widget.shrinkWrap) {
+      file = null;
+      var latest = double.negativeInfinity;
+      for (final entry in _fileHeaderKeys.entries) {
+        final rect = _rectFor(entry.value);
+        if (rect != null && rect.top <= viewport.top && rect.top > latest) {
+          file = entry.key;
+          latest = rect.top;
+        }
+      }
+    }
+    final header = file == null ? null : _fileHeaderKeys[file];
+    final rect = header == null ? null : _rectFor(header);
+    final pinned =
+        file != null &&
+            file < _files.length &&
+            _files[file].path.isNotEmpty &&
+            (rect == null || rect.bottom <= viewport.top)
+        ? file
+        : null;
+    if (_pinnedFile == pinned) return false;
+    setState(() => _pinnedFile = pinned);
+    return true;
+  }
+
+  void _finishStickyReveal(int token) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || token != _revealToken) return;
+      if (!_controlledSticky || !_stickyBounded) {
+        _scheduledRevealToken = null;
+        _completedRevealToken = token;
+        return;
+      }
+      if (widget.controller?.revealRow == null) {
+        _scheduledRevealToken = null;
+        return;
+      }
+      // The indexed jump and shrink-wrapped ensureVisible run first. Wait
+      // for the resulting header to mount before measuring its full height.
+      if (_updatePinnedHeader()) {
+        _finishStickyReveal(token);
+        return;
+      }
+      final target = _rectFor(_revealRowKey);
+      final header = _rectFor(_pinnedHeaderKey);
+      if (target == null || (_pinnedFile != null && header == null)) {
+        _finishStickyReveal(token);
+        return;
+      }
+      if (_pinnedFile != null && header != null && _scroll.hasClients) {
+        final overlap = header.bottom - target.top;
+        final position = _scroll.position;
+        final offset = (position.pixels - overlap).clamp(
+          position.minScrollExtent,
+          position.maxScrollExtent,
+        );
+        if (overlap > .1 && offset != position.pixels) {
+          position.jumpTo(offset);
+          _finishStickyReveal(token);
+          return;
+        }
+      }
+      _scheduledRevealToken = null;
+      _completedRevealToken = token;
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
   PatchController<T>? _revealController;
   int? _controllerRevealRequest;
   int _revealToken = 0;
@@ -445,9 +546,8 @@ class _PatchViewState<T> extends State<PatchView<T>>
     _scheduledRevealToken = token;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || token != _revealToken) return;
-      _scheduledRevealToken = null;
       if (shrinkWrapped) {
-        final row = _shrinkRevealKey.currentContext;
+        final row = _revealRowKey.currentContext;
         if (row == null) return;
         final target = row.findRenderObject()!;
         var object = target;
@@ -472,9 +572,13 @@ class _PatchViewState<T> extends State<PatchView<T>>
           scrollable = Scrollable.maybeOf(scrollable.context);
         }
       }
-      // IndexedCodeViewport dispatches its jump in this frame's post-frame
-      // callbacks too. Further builds may retain the reader's current anchor.
-      _completedRevealToken = token;
+      if (_controlledSticky && _stickyBounded) {
+        _finishStickyReveal(token);
+      } else {
+        // IndexedCodeViewport dispatches its jump in this frame too.
+        _scheduledRevealToken = null;
+        _completedRevealToken = token;
+      }
     });
   }
 
@@ -547,6 +651,8 @@ class _PatchViewState<T> extends State<PatchView<T>>
       _ => const [],
     };
     _stickyFile = widget.leading == null ? 0 : null;
+    _pinnedFile = null;
+    _fileHeaderKeys.clear();
     _localSelection = null;
     _stopDrag();
     _gutterCells.clear();
@@ -641,6 +747,7 @@ class _PatchViewState<T> extends State<PatchView<T>>
   void initState() {
     super.initState();
     _scroll = widget.scrollController ?? ScrollController();
+    _scroll.addListener(_queueStickyUpdate);
     _nativeSelection.onBegin = () => _setSelection(null);
     _syncSource();
     widget.controller?.addListener(_controllerChanged);
@@ -655,8 +762,10 @@ class _PatchViewState<T> extends State<PatchView<T>>
       widget.controller?.addListener(_controllerChanged);
     }
     if (oldWidget.scrollController != widget.scrollController) {
+      _scroll.removeListener(_queueStickyUpdate);
       if (oldWidget.scrollController == null) _scroll.dispose();
       _scroll = widget.scrollController ?? ScrollController();
+      _scroll.addListener(_queueStickyUpdate);
     }
     _syncSource();
     _reportSelection();
@@ -669,6 +778,7 @@ class _PatchViewState<T> extends State<PatchView<T>>
     _nativeSelection.dispose();
     _lineFocus.dispose();
     _windows?.dispose();
+    _scroll.removeListener(_queueStickyUpdate);
     if (widget.scrollController == null) _scroll.dispose();
     super.dispose();
   }
@@ -808,6 +918,9 @@ class _PatchViewState<T> extends State<PatchView<T>>
       Widget row = windows.retain(
         () => _composedRow(context, index, rows, palette, highlighter, labels),
       );
+      if (index == revealRow && (shrinkControlled || _controlledSticky)) {
+        row = KeyedSubtree(key: _revealRowKey, child: row);
+      }
       if (index > 0 && rows[index - 1].file != rows[index].file) {
         row = Padding(padding: const EdgeInsets.only(top: 16), child: row);
       }
@@ -842,14 +955,7 @@ class _PatchViewState<T> extends State<PatchView<T>>
                                 ? 'empty'
                                 : _identity(rows[i - leadingCount]),
                           ),
-                          child: KeyedSubtree(
-                            key:
-                                revealRow != null &&
-                                    i == revealRow + leadingCount
-                                ? _shrinkRevealKey
-                                : null,
-                            child: buildRow(context, i),
-                          ),
+                          child: buildRow(context, i),
                         ),
                     ],
                   )
@@ -908,8 +1014,7 @@ class _PatchViewState<T> extends State<PatchView<T>>
 
     Widget list = viewport();
     if (widget.stickyHeaders && _files.isNotEmpty) {
-      final index = (_stickyFile ?? 0).clamp(0, _files.length - 1);
-      final header = _section(
+      Widget headerFor(int index) => _section(
         _buildRow(
           DiffFileHeaderRow(index, collapsed: _isCollapsed(index)),
           palette,
@@ -919,57 +1024,71 @@ class _PatchViewState<T> extends State<PatchView<T>>
         first: true,
         last: _isCollapsed(index),
       );
-      if (widget.controller != null) {
-        // Give the pinned header its measured space outside the scrollable.
-        // Reveals can then align with the viewport's top without being hidden
-        // behind custom headers, labels or section borders.
-        final content = list;
+      if (_controlledSticky) {
+        final content = KeyedSubtree(key: _stickyViewportKey, child: list);
         list = LayoutBuilder(
-          builder: (context, constraints) => Column(
-            mainAxisSize: widget.shrinkWrap
-                ? MainAxisSize.min
-                : MainAxisSize.max,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (widget.shrinkWrap || _stickyFile != null)
-                header
-              else
-                const SizedBox.shrink(),
-              if (constraints.hasBoundedHeight)
-                Flexible(child: content)
-              else
+          builder: (context, constraints) {
+            _stickyBounded = constraints.hasBoundedHeight;
+            _queueStickyUpdate();
+            if (!_stickyBounded) return content;
+            return Stack(
+              children: [
                 content,
-            ],
-          ),
-        );
-      } else if (widget.shrinkWrap) {
-        list = Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [header, list],
+                if (_pinnedFile case final index?)
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    child: Padding(
+                      padding: EdgeInsets.only(
+                        left: widget.padding.resolve(TextDirection.ltr).left,
+                        right: widget.padding.resolve(TextDirection.ltr).right,
+                      ),
+                      child: ColoredBox(
+                        color: widget.canvasColor ?? palette.background,
+                        child: KeyedSubtree(
+                          key: _pinnedHeaderKey,
+                          child: headerFor(index),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            );
+          },
         );
       } else {
-        list = Stack(
-          children: [
-            Positioned.fill(child: list),
-            if (_stickyFile != null)
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                child: Padding(
-                  padding: EdgeInsets.only(
-                    left: widget.padding.resolve(TextDirection.ltr).left,
-                    right: widget.padding.resolve(TextDirection.ltr).right,
-                  ),
-                  child: ColoredBox(
-                    color: widget.canvasColor ?? palette.background,
-                    child: header,
-                  ),
-                ),
-              ),
-          ],
-        );
+        final index = (_stickyFile ?? 0).clamp(0, _files.length - 1);
+        final header = headerFor(index);
+        list = widget.shrinkWrap
+            ? Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [header, list],
+              )
+            : Stack(
+                children: [
+                  Positioned.fill(child: list),
+                  if (_stickyFile != null)
+                    Positioned(
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      child: Padding(
+                        padding: EdgeInsets.only(
+                          left: widget.padding.resolve(TextDirection.ltr).left,
+                          right: widget.padding
+                              .resolve(TextDirection.ltr)
+                              .right,
+                        ),
+                        child: ColoredBox(
+                          color: widget.canvasColor ?? palette.background,
+                          child: header,
+                        ),
+                      ),
+                    ),
+                ],
+              );
       }
     }
     if (widget.selectable) {
@@ -1035,7 +1154,7 @@ class _PatchViewState<T> extends State<PatchView<T>>
                     : toggle,
               );
         final label = widget.fileLabelBuilder?.call(context, _files[file]);
-        return SelectionContainer.disabled(
+        final content = SelectionContainer.disabled(
           child: label == null
               ? header
               : Column(
@@ -1043,6 +1162,12 @@ class _PatchViewState<T> extends State<PatchView<T>>
                   children: [header, label],
                 ),
         );
+        return _controlledSticky && index != null
+            ? KeyedSubtree(
+                key: _fileHeaderKeys.putIfAbsent(file, GlobalKey.new),
+                child: content,
+              )
+            : content;
       case DiffNoticeRow(:final notice):
         return PatchNoticeBar(text: labels.notice(notice), palette: palette);
       case DiffHunkHeaderRow(:final hunk):
