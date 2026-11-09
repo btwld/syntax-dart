@@ -371,6 +371,35 @@ final class CodeSelectionDelegate extends RowSelectionDelegate {
 
   final _listeners = <int, VoidCallback>{};
 
+  // Flutter can clear a collapsed paragraph at an edge of a multi-paragraph
+  // selection. Preserve its source position before that geometry is discarded.
+  (int, int)? _startBoundary;
+  (int, int)? _endBoundary;
+
+  void _recordBoundary(
+    int block,
+    _CodeRowSelectionDelegate delegate,
+    SelectionEdgeUpdateEvent event,
+    int offset,
+  ) {
+    if (blockSize != 1) return;
+    final local = MatrixUtils.transformPoint(
+      Matrix4.inverted(delegate.getTransformTo(null)),
+      event.globalPosition,
+    );
+    if (!local.isFinite ||
+        local.dy < 0 ||
+        local.dy >= delegate.containerSize.height) {
+      return;
+    }
+    if (event.type == SelectionEventType.startEdgeUpdate) {
+      _startBoundary = _position(block, offset);
+    } else {
+      _endBoundary = _position(block, offset);
+    }
+    onSelectedBlocksChanged?.call();
+  }
+
   /// Everything is selected, including lines that were never built.
   bool _all = false;
 
@@ -381,8 +410,15 @@ final class CodeSelectionDelegate extends RowSelectionDelegate {
   bool isSelected(int block) => _selected.contains(block);
 
   /// Endpoints retained by an indexed viewport during native text selection.
-  Set<int> get selectedEndpoints =>
-      _selected.isEmpty ? const {} : {_selected.first, _selected.last};
+  Set<int> get selectedEndpoints {
+    final endpoints = {
+      if (_selected.isNotEmpty) ...{_selected.first, _selected.last},
+      if (_startBoundary case final start?) start.$1 ~/ blockSize,
+      if (_endBoundary case final end?) end.$1 ~/ blockSize,
+    };
+    if (endpoints.isEmpty) return const {};
+    return {endpoints.reduce(math.min), endpoints.reduce(math.max)};
+  }
 
   /// Starts tracking the delegate of [block].
   void addBlock(int block, RowSelectionDelegate delegate) {
@@ -432,28 +468,46 @@ final class CodeSelectionDelegate extends RowSelectionDelegate {
   @override
   SelectionResult dispatchSelectionEvent(SelectionEvent event) {
     _all = event is SelectAllSelectionEvent;
+    if (event is SelectionEdgeUpdateEvent) {
+      if (event.type == SelectionEventType.startEdgeUpdate) {
+        _startBoundary = null;
+      } else {
+        _endBoundary = null;
+      }
+    } else {
+      _startBoundary = _endBoundary = null;
+    }
     return super.dispatchSelectionEvent(event);
   }
 
   @override
   SelectedContent? getSelectedContent() {
     if (_all) return SelectedContent(plainText: lines.join('\n'));
-    if (_selected.isEmpty) return null;
-    final first = _selected.first;
-    final last = _selected.last;
-    final firstRange = _blocks[first]!.getSelection();
-    final lastRange = _blocks[last]!.getSelection();
-    if (firstRange == null || lastRange == null) {
-      return super.getSelectedContent();
+    final positions = <(int, int)>[?_startBoundary, ?_endBoundary];
+    if (_selected.isNotEmpty) {
+      final first = _selected.first;
+      final last = _selected.last;
+      final firstRange = _blocks[first]!.getSelection();
+      final lastRange = _blocks[last]!.getSelection();
+      if (firstRange == null || lastRange == null) {
+        return super.getSelectedContent();
+      }
+      positions.add(
+        _position(
+          first,
+          math.min(firstRange.startOffset, firstRange.endOffset),
+        ),
+      );
+      positions.add(
+        _position(last, math.max(lastRange.startOffset, lastRange.endOffset)),
+      );
     }
-    final (top, from) = _position(
-      first,
-      math.min(firstRange.startOffset, firstRange.endOffset),
+    if (positions.isEmpty) return null;
+    positions.sort(
+      (a, b) => a.$1 == b.$1 ? a.$2.compareTo(b.$2) : a.$1.compareTo(b.$1),
     );
-    final (bottom, to) = _position(
-      last,
-      math.max(lastRange.startOffset, lastRange.endOffset),
-    );
+    final (top, from) = positions.first;
+    final (bottom, to) = positions.last;
     final buffer = StringBuffer();
     for (var line = top; line <= bottom; line++) {
       final text = lines[line];
@@ -530,7 +584,7 @@ class CodeBlock extends StatefulWidget {
 }
 
 class _CodeBlockState extends State<CodeBlock> {
-  RowSelectionDelegate? _delegate;
+  _CodeRowSelectionDelegate? _delegate;
 
   /// Keeps the selection container, and its delegate's context, when line
   /// numbers or wrapping change what wraps it.
@@ -555,7 +609,10 @@ class _CodeBlockState extends State<CodeBlock> {
   void _register() {
     final selection = widget.selection;
     if (selection == null) return;
-    selection.addBlock(widget.index, _delegate ??= RowSelectionDelegate());
+    final delegate = _delegate ??= _CodeRowSelectionDelegate();
+    delegate.onEdge = (event, offset) =>
+        selection._recordBoundary(widget.index, delegate, event, offset);
+    selection.addBlock(widget.index, delegate);
   }
 
   @override
@@ -612,5 +669,29 @@ class _CodeBlockState extends State<CodeBlock> {
         Expanded(child: code),
       ],
     );
+  }
+}
+
+class _CodeRowSelectionDelegate extends RowSelectionDelegate {
+  void Function(SelectionEdgeUpdateEvent, int)? onEdge;
+
+  @override
+  SelectionResult dispatchSelectionEvent(SelectionEvent event) {
+    final result = super.dispatchSelectionEvent(event);
+    if (event is SelectionEdgeUpdateEvent &&
+        event.granularity == TextGranularity.character) {
+      final range = getSelection();
+      final offset = range != null
+          ? (event.type == SelectionEventType.startEdgeUpdate
+                ? range.startOffset
+                : range.endOffset)
+          : switch (result) {
+              SelectionResult.previous => 0,
+              SelectionResult.next => contentLength,
+              _ => null,
+            };
+      if (offset != null) onEdge?.call(event, offset);
+    }
+    return result;
   }
 }

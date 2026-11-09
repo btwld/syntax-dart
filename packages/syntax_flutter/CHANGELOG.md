@@ -1,5 +1,9 @@
 ## Unreleased
 
+- Preserve native selection separators between source rows, reveal vertically
+  inside enclosing scroll views, and allow gutter selection and autoscroll
+  beside wrapped continuations and nested source views.
+
 - Add `CodeViewController` and `HighlightedCode.controlled` for revisioned
   source, directed line selection and queued distant reveal requests.
 - Add per-line backgrounds and gutter slots, aligned with wrapped source

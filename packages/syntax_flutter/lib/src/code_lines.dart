@@ -105,24 +105,62 @@ class _CodeLinesState extends State<_CodeLines>
     }
   }
 
+  Iterable<ScrollableState> _verticalScrollables(BuildContext row) sync* {
+    var scrollable = Scrollable.maybeOf(row, axis: Axis.vertical);
+    while (scrollable != null) {
+      yield scrollable;
+      scrollable = Scrollable.maybeOf(scrollable.context, axis: Axis.vertical);
+    }
+  }
+
+  void _revealVertically(BuildContext row) {
+    final target = row.findRenderObject()!;
+    var object = target;
+    // Advance past each vertical viewport before asking its enclosing one.
+    // The custom horizontal scrollable has no render viewport of its own.
+    for (final scrollable in _verticalScrollables(row)) {
+      scrollable.position.ensureVisible(object, targetRenderObject: target);
+      object = scrollable.context.findRenderObject()!;
+    }
+  }
+
   void _scrollTick(Duration elapsed) {
     final seconds = (elapsed - _lastTick).inMicroseconds / 1000000;
     _lastTick = elapsed;
-    if (_pointer == null || !_vertical.hasClients) return;
-    final box = context.findRenderObject()! as RenderBox;
-    final y = box.globalToLocal(_pointer!).dy;
-    final edge = y < 24
-        ? y - 24
-        : (y > box.size.height - 24 ? y - box.size.height + 24 : 0.0);
-    if (edge == 0) return;
-    final position = _vertical.position;
-    final target = (position.pixels + edge.clamp(-100, 100) * 15 * seconds)
-        .clamp(position.minScrollExtent, position.maxScrollExtent);
-    if (target != position.pixels) {
-      _vertical.jumpTo(target);
+    if (_pointer == null) return;
+    final row = _rows.values.where((row) => row.mounted).firstOrNull;
+    if (row == null) return;
+    final scrollables = _verticalScrollables(row).toList();
+    for (var i = 0; i < scrollables.length; i++) {
+      final position = scrollables[i].position;
+      if (!position.hasContentDimensions ||
+          position.maxScrollExtent == position.minScrollExtent) {
+        continue;
+      }
+      Rect? bounds;
+      // Intersect enclosing viewports so a partially visible nested view uses
+      // the edge the reader can actually reach.
+      for (final scrollable in scrollables.skip(i)) {
+        final box = scrollable.context.findRenderObject();
+        if (box is! RenderBox || !box.hasSize) continue;
+        final rect = box.localToGlobal(Offset.zero) & box.size;
+        bounds = bounds?.intersect(rect) ?? rect;
+      }
+      if (bounds == null || bounds.isEmpty) continue;
+      final y = _pointer!.dy;
+      final edge = y < bounds.top + 24
+          ? y - bounds.top - 24
+          : (y > bounds.bottom - 24 ? y - bounds.bottom + 24 : 0.0);
+      final direction = position.axisDirection == AxisDirection.up ? -1 : 1;
+      final target =
+          (position.pixels + direction * edge.clamp(-100, 100) * 15 * seconds)
+              .clamp(position.minScrollExtent, position.maxScrollExtent);
+      if (target == position.pixels) continue;
+      position.jumpTo(target);
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _extend();
       });
+      break;
     }
   }
 
@@ -154,7 +192,7 @@ class _CodeLinesState extends State<_CodeLines>
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted || reveal != _reveal) return;
         final row = _rows[line];
-        if (row != null && row.mounted) Scrollable.ensureVisible(row);
+        if (row != null && row.mounted) _revealVertically(row);
       });
     }
   }
@@ -173,45 +211,56 @@ class _CodeLinesState extends State<_CodeLines>
         (view.gutterBuilder == null ? 0 : 24);
     Widget code = owner._block(line, widget.tokenized, widget.offset);
     if (gutter > 0) {
-      code = Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      code = Stack(
         children: [
-          Listener(
-            behavior: HitTestBehavior.opaque,
-            onPointerDown: (event) => _start(line, event),
-            onPointerMove: _move,
-            onPointerUp: (_) => _stop(),
-            onPointerCancel: (_) => _stop(),
-            child: SelectionContainer.disabled(
-              child: SizedBox(
-                width: gutter,
-                height: owner._lineHeight,
-                child: Row(
-                  children: [
-                    if (view.gutterBuilder != null)
-                      SizedBox(width: 24, child: ClipRect(child: marker)),
-                    if (view.lineNumbers)
-                      SizedBox(
-                        width: owner._gutterWidth,
-                        child: Padding(
-                          padding: const EdgeInsets.only(right: 16),
-                          child: ExcludeSemantics(
-                            child: Text(
-                              '${line + 1}',
-                              style: owner._numberStyle,
-                              strutStyle: owner._strut,
-                              textAlign: TextAlign.right,
-                              softWrap: false,
+          Padding(
+            padding: EdgeInsets.only(left: gutter),
+            child: code,
+          ),
+          Positioned(
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: gutter,
+            child: Listener(
+              behavior: HitTestBehavior.opaque,
+              onPointerDown: (event) => _start(line, event),
+              onPointerMove: _move,
+              onPointerUp: (_) => _stop(),
+              onPointerCancel: (_) => _stop(),
+              child: SelectionContainer.disabled(
+                child: Align(
+                  alignment: Alignment.topLeft,
+                  child: SizedBox(
+                    width: gutter,
+                    height: owner._lineHeight,
+                    child: Row(
+                      children: [
+                        if (view.gutterBuilder != null)
+                          SizedBox(width: 24, child: ClipRect(child: marker)),
+                        if (view.lineNumbers)
+                          SizedBox(
+                            width: owner._gutterWidth,
+                            child: Padding(
+                              padding: const EdgeInsets.only(right: 16),
+                              child: ExcludeSemantics(
+                                child: Text(
+                                  '${line + 1}',
+                                  style: owner._numberStyle,
+                                  strutStyle: owner._strut,
+                                  textAlign: TextAlign.right,
+                                  softWrap: false,
+                                ),
+                              ),
                             ),
                           ),
-                        ),
-                      ),
-                  ],
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ),
           ),
-          Expanded(child: code),
         ],
       );
     }
