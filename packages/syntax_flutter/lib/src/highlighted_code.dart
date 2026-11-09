@@ -1,13 +1,24 @@
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart' show ViewportOffset;
+import 'package:flutter/widgets.dart';
+import 'package:flutter/rendering.dart'
+    show ClearSelectionEvent, RenderAbstractViewport, ViewportOffset;
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart';
 import 'package:syntax_core/syntax.dart';
 
 import 'code_rows.dart';
+import 'code_view_controller.dart';
 import 'highlighter_scope.dart';
+import 'highlight_scheduler.dart';
+import 'indexed_viewport.dart';
+import 'selectable_region.dart';
+import 'selection_chrome.dart';
+import 'mounted_window_highlights.dart';
+import 'window_source.dart';
 import 'styles.dart';
+
+part 'code_lines.dart';
 
 /// Read-only, syntax-highlighted code.
 ///
@@ -23,13 +34,13 @@ import 'styles.dart';
 /// lines on screen. Inside another scroll view, where the height is
 /// unbounded, every line is laid out; give a large file a height, for
 /// example with [Expanded] or [SizedBox]. Code longer than 200 lines can't
-/// report intrinsic sizes, so it can't sit inside [IntrinsicHeight] or an
-/// [AlertDialog]'s content.
+/// report intrinsic sizes, so it can't sit inside [IntrinsicHeight] or
+/// a dialog's content.
 ///
-/// When only the lines on screen are laid out, a large file is tokenized
-/// a slice at a time between frames, top first, and lines show plain until
-/// their colors are ready. Otherwise every line is laid out anyway, so the
-/// code is tokenized at once and laid out once.
+/// Large files highlight requested visible windows in cooperative slices.
+/// Grammar state advances before each window without retaining offscreen styled
+/// output. Lines show plain until their colors are ready. Small files use an
+/// incremental document unless [executor] is supplied.
 ///
 /// Copying a selection copies the lines between its ends, including lines
 /// scrolled out of view.
@@ -44,21 +55,66 @@ import 'styles.dart';
 class HighlightedCode extends StatefulWidget {
   /// Shows [code] highlighted as [language] in [theme].
   const HighlightedCode(
-    this.code, {
+    String code, {
     super.key,
     required this.language,
     required this.theme,
     this.highlighter,
+    this.executor,
     this.textStyle,
     this.padding = const EdgeInsets.all(16),
     this.lineNumbers = false,
     this.selectable = true,
+    this.selectionChrome,
     this.softWrap = false,
     this.borderRadius,
-  });
+    this.lineBackgroundBuilder,
+    this.gutterBuilder,
+  }) : _source = code,
+       controller = null;
+
+  /// Shows the source, selection and reveal requests of [controller].
+  ///
+  /// The caller owns the controller and must dispose it. Individual source
+  /// lines are virtualized when the view has a bounded height.
+  const HighlightedCode.controlled({
+    super.key,
+    required CodeViewController this.controller,
+    required this.language,
+    required this.theme,
+    this.highlighter,
+    this.executor,
+    this.textStyle,
+    this.padding = const EdgeInsets.all(16),
+    this.lineNumbers = false,
+    this.selectable = true,
+    this.selectionChrome,
+    this.softWrap = false,
+    this.borderRadius,
+    this.lineBackgroundBuilder,
+    this.gutterBuilder,
+  }) : _source = null;
+
+  final String? _source;
 
   /// The code to show.
-  final String code;
+  String get code => controller?.code ?? _source!;
+
+  /// Caller-owned source controller, or `null` for the source constructor.
+  final CodeViewController? controller;
+
+  /// Background of each zero-based source line, including wrapped continuations.
+  /// A `null` color leaves the theme background visible.
+  /// Controller line selection is painted over this color.
+  final Color? Function(int line)? lineBackgroundBuilder;
+
+  /// Optional content beside each zero-based source line, before its number.
+  ///
+  /// The slot is 24 logical pixels wide whenever a builder is supplied,
+  /// including when it returns `null`. It stays fixed during horizontal
+  /// scrolling and is excluded from copied source. Keep markers within the
+  /// base line height; their height does not change source-line geometry.
+  final Widget? Function(BuildContext context, int line)? gutterBuilder;
 
   /// Language name, alias or scope name, as registered on the highlighter.
   final String language;
@@ -68,6 +124,11 @@ class HighlightedCode extends StatefulWidget {
 
   /// Defaults to the nearest [HighlighterScope].
   final Highlighter? highlighter;
+
+  /// Optional window executor, for example an application-owned worker.
+  /// Calls are serialized and late or stale results are discarded. The default
+  /// cooperatively highlights visible windows for large sources.
+  final HighlightExecutor? executor;
 
   /// Base text style. Defaults to [defaultCodeTextStyle]. Its color is
   /// replaced by the theme's foreground.
@@ -82,8 +143,14 @@ class HighlightedCode extends StatefulWidget {
   /// Allows the text to be selected and copied.
   final bool selectable;
 
-  /// Wraps long lines instead of scrolling horizontally. Line numbers are
-  /// not shown when wrapping, because wrapped lines would misalign them.
+  /// Selection handles, context menu and action rendering.
+  ///
+  /// Defaults to widgets-only controls that need no app theme or icon font.
+  final SyntaxSelectionChrome? selectionChrome;
+
+  /// Wraps long lines instead of scrolling horizontally. With a controller
+  /// or line slots, numbers align with the first visual row of each source
+  /// line. The block renderer otherwise hides numbers when wrapping.
   final bool softWrap;
 
   /// Rounds the background's corners.
@@ -109,6 +176,27 @@ class _HighlightedCodeState extends State<HighlightedCode> {
   Object? _documentKey;
   TokenizedDocument? _document;
   bool _slicing = false;
+  bool _windowed = false;
+  int _windowSize = 64;
+  WindowSource? _windowSource;
+  HighlightWindowScheduler? _windows;
+  final _windowOutput = MountedWindowHighlights();
+  Object? _windowKey;
+  final _windowSpans = <int, (List<StyledRange>, TextSpan)>{};
+  final _recentBlocks = <int>{};
+  int _revision = 0;
+  bool _repaintScheduled = false;
+
+  void _highlightChanged() {
+    if (!mounted || _repaintScheduled) return;
+    _repaintScheduled = true;
+    SchedulerBinding.instance
+      ..addPostFrameCallback((_) {
+        _repaintScheduled = false;
+        if (mounted) setState(() {});
+      })
+      ..ensureVisualUpdate();
+  }
 
   /// Styles and spans for the current theme and text style.
   Object? _stylesKey;
@@ -131,16 +219,35 @@ class _HighlightedCodeState extends State<HighlightedCode> {
   final _horizontal = ScrollController();
   final _selection = CodeSelectionDelegate();
 
-  /// Blocks left as they were when their colors arrived, because part of
-  /// the selection was in them: a paragraph whose spans change shape loses
-  /// its selection. They take their colors once the selection leaves.
+  bool get _perLine =>
+      widget.controller != null ||
+      widget.lineBackgroundBuilder != null ||
+      widget.gutterBuilder != null;
+  int get _blockSize => _perLine ? 1 : linesPerBlock;
+  Object? _sourceIdentity;
+
+  /// Paragraphs held unchanged while any selection is active, including
+  /// neighboring blocks whose recoloring could shift selection indexes.
+  /// They take their colors when the selection clears.
   final _held = <int>{};
 
   @override
   void initState() {
     super.initState();
     _selection.onSelectedBlocksChanged = _releaseHeld;
+    widget.controller?.addListener(_controllerChanged);
     PaintingBinding.instance.systemFonts.addListener(_fontsChanged);
+  }
+
+  void _controllerChanged() => setState(() {});
+
+  @override
+  void didUpdateWidget(HighlightedCode oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller?.removeListener(_controllerChanged);
+      widget.controller?.addListener(_controllerChanged);
+    }
   }
 
   /// A font that loads later, such as one fetched at run time, changes the
@@ -151,12 +258,22 @@ class _HighlightedCodeState extends State<HighlightedCode> {
   var _fonts = 0;
 
   void _releaseHeld() {
-    final released = [
-      for (final block in _held)
-        if (!_selection.isSelected(block)) block,
-    ];
+    if (_perLine) {
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() {});
+      });
+    }
+    // Changing a nearby paragraph during a drag also changes Flutter's
+    // selection indexes, before that paragraph reports its own selection.
+    if (_selection.hasSelection) return;
+    final released = _held.toList();
     if (released.isEmpty) return;
     _held.removeAll(released);
+    if (_windowed) {
+      for (final block in released) {
+        if (!_recentBlocks.contains(block)) _blocks[block] = null;
+      }
+    }
     // Selection changes arrive during event handling and layout, so the
     // rebuild waits for the frame to end.
     SchedulerBinding.instance
@@ -168,15 +285,34 @@ class _HighlightedCodeState extends State<HighlightedCode> {
 
   @override
   void dispose() {
+    widget.controller?.removeListener(_controllerChanged);
     PaintingBinding.instance.systemFonts.removeListener(_fontsChanged);
+    _windows?.dispose();
     _horizontal.dispose();
     _selection.dispose();
     super.dispose();
   }
 
   void _syncCode() {
+    final identity = (
+      widget.controller,
+      widget.controller?.revision,
+      widget.code,
+      _blockSize,
+    );
+    if (identity != _sourceIdentity) {
+      _sourceIdentity = identity;
+      _selection.dispatchSelectionEvent(const ClearSelectionEvent());
+      _selection.blockSize = _blockSize;
+      _held.clear();
+    }
     if (widget.code == _code) return;
     _code = widget.code;
+    _revision++;
+    _windowSource = null;
+    _windowSpans.clear();
+    _windowOutput.clear();
+    _windows?.clear();
     final lines = widget.code.split('\n');
     _lines = [
       for (final line in lines)
@@ -186,7 +322,42 @@ class _HighlightedCodeState extends State<HighlightedCode> {
     _selection.lines = lines;
   }
 
-  void _syncDocument(Highlighter highlighter) {
+  void _syncDocument(Highlighter highlighter, {required bool windowed}) {
+    _windowed = windowed;
+    if (_windowed) {
+      _document = null;
+      _documentKey = null;
+      _windowSource ??= WindowSource(widget.code);
+      final key = (
+        highlighter,
+        highlighter.revision,
+        widget.language,
+        widget.theme,
+        widget.executor,
+      );
+      if (key != _windowKey) {
+        _windowKey = key;
+        _windowOutput.clear();
+        _windowSpans.clear();
+      }
+      _windows ??= HighlightWindowScheduler(
+        highlighter: highlighter,
+        theme: widget.theme,
+        executor: widget.executor ?? highlightWindowInFrames,
+        onChanged: _highlightChanged,
+        onResult: (result) => _windowOutput.remember((
+          result.startLine,
+          result.endLine,
+        ), result.ranges),
+      );
+      _windows!.configure(
+        highlighter: highlighter,
+        theme: widget.theme,
+        executor: widget.executor ?? highlightWindowInFrames,
+      );
+      return;
+    }
+    _windows?.clear();
     // The grammar, not the highlighter, decides the tokens: registering a
     // language can replace it.
     final known = highlighter.language(widget.language) != null;
@@ -236,10 +407,11 @@ class _HighlightedCodeState extends State<HighlightedCode> {
       _strut = StrutStyle.fromTextStyle(_styles.base, forceStrutHeight: true);
       _numberStyle = _styles.base.copyWith(color: widget.theme.lineNumberColor);
       _spans = Expando();
+      _windowSpans.clear();
     }
     final scaler =
         MediaQuery.maybeTextScalerOf(context) ?? TextScaler.noScaling;
-    final metrics = (styles, scaler, _lines, _fonts);
+    final metrics = (styles, scaler, _lines, _fonts, _blockSize);
     if (metrics == _metricsKey) return;
     _metricsKey = metrics;
     _plainSpans = List.filled(_lines.length, null);
@@ -279,13 +451,58 @@ class _HighlightedCodeState extends State<HighlightedCode> {
     final painter = measure(_shown(sample));
     _widths = LineWidths(
       sample.isEmpty ? 0 : painter.width * line.length / sample.length,
-      guessBlock: longest ~/ linesPerBlock,
+      guessBlock: longest ~/ _blockSize,
     );
     painter.dispose();
     digit.dispose();
   }
 
   TextSpan _span(int index, List<DocumentLine> tokenized) {
+    if (_windowed) {
+      final source = _windowSource!;
+      final start = index ~/ _windowSize * _windowSize;
+      final end = math.min(start + _windowSize, _lines.length);
+      final ranges = _windowOutput.rangesFor(
+        (start, end),
+        () => source.ranges(
+          index,
+          'code',
+          _revision,
+          widget.language,
+          _windows!,
+          windowSize: _windowSize,
+        ),
+      );
+      if (ranges != null) {
+        final cached = _windowSpans.remove(index);
+        final span = cached != null && identical(cached.$1, ranges)
+            ? cached.$2
+            : TextSpan(
+                style: _styles.base,
+                children: [
+                  for (final segment in windowSegments(
+                    _lines[index],
+                    source.offsets[index],
+                    ranges,
+                    TokenStyle(foreground: widget.theme.foreground),
+                  ))
+                    TextSpan(
+                      text: _shown(segment.text),
+                      style: _styles[segment.style],
+                    ),
+                ],
+              );
+        _windowSpans[index] = (ranges, span);
+        final spanLimit = math.max(
+          512,
+          _windowOutput.mountedWindows * _windowSize,
+        );
+        while (_windowSpans.length > spanLimit) {
+          _windowSpans.remove(_windowSpans.keys.first);
+        }
+        return span;
+      }
+    }
     if (index < tokenized.length) {
       final line = tokenized[index];
       return _spans[line] ??= TextSpan(
@@ -313,9 +530,7 @@ class _HighlightedCodeState extends State<HighlightedCode> {
 
   @override
   Widget build(BuildContext context) {
-    final highlighter = widget.highlighter ?? HighlighterScope.of(context);
     _syncCode();
-    _syncDocument(highlighter);
     _syncStyles(context);
     final theme = widget.theme;
 
@@ -331,7 +546,9 @@ class _HighlightedCodeState extends State<HighlightedCode> {
           );
     // Above the scroll views, so a drag selection can scroll them.
     if (widget.selectable) {
-      code = SelectionArea(
+      code = SyntaxSelectableRegion(
+        theme: theme,
+        chrome: widget.selectionChrome,
         child: SelectionContainer(delegate: _selection, child: code),
       );
     }
@@ -361,13 +578,20 @@ class _HighlightedCodeState extends State<HighlightedCode> {
       viewportBuilder: (context, offset) => HorizontalExtent(
         offset: offset,
         widths: _widths,
-        gutterWidth: widget.lineNumbers ? _gutterWidth : 0,
+        gutterWidth:
+            (widget.lineNumbers ? _gutterWidth : 0) +
+            (widget.gutterBuilder == null ? 0 : 24),
         child: _list(virtualize: virtualize, offset: offset),
       ),
     );
   }
 
   Widget _list({required bool virtualize, required ViewportOffset? offset}) {
+    _windowSize = virtualize ? 64 : _lines.length;
+    _syncDocument(
+      widget.highlighter ?? HighlighterScope.of(context),
+      windowed: widget.executor != null || virtualize,
+    );
     // Every block is laid out unless virtualized, and recoloring them a
     // slice at a time would lay them all out again each frame, so they
     // get their colors at once.
@@ -375,18 +599,28 @@ class _HighlightedCodeState extends State<HighlightedCode> {
       virtualize ? _finishLater() : document.tokenize();
     }
     final tokenized = _document?.lines ?? const <DocumentLine>[];
-    final count = (_lines.length + linesPerBlock - 1) ~/ linesPerBlock;
+    final count = (_lines.length + _blockSize - 1) ~/ _blockSize;
     final key = (
       _metricsKey,
       offset,
       widget.lineNumbers && !widget.softWrap,
       widget.softWrap,
       widget.selectable,
+      _blockSize,
     );
     if (key != _blocksKey) {
       _blocksKey = key;
       _blocks = List.filled(count, null);
       _held.clear();
+      _recentBlocks.clear();
+    }
+    if (_perLine) {
+      return _CodeLines(
+        owner: this,
+        tokenized: tokenized,
+        offset: offset,
+        virtualize: virtualize,
+      );
     }
     if (virtualize) {
       return ListView.builder(
@@ -397,7 +631,8 @@ class _HighlightedCodeState extends State<HighlightedCode> {
             : (index, dimensions) =>
                   index < count ? _linesIn(index) * _lineHeight : null,
         itemCount: count,
-        itemBuilder: (context, index) => _block(index, tokenized, offset),
+        itemBuilder: (context, index) =>
+            _windowOutput.retain(() => _block(index, tokenized, offset)),
       );
     }
     return SingleChildScrollView(
@@ -407,7 +642,8 @@ class _HighlightedCodeState extends State<HighlightedCode> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            for (var i = 0; i < count; i++) _block(i, tokenized, offset),
+            for (var i = 0; i < count; i++)
+              _windowOutput.retain(() => _block(i, tokenized, offset)),
           ],
         ),
       ),
@@ -415,7 +651,7 @@ class _HighlightedCodeState extends State<HighlightedCode> {
   }
 
   int _linesIn(int block) =>
-      math.min(linesPerBlock, _lines.length - block * linesPerBlock);
+      math.min(_blockSize, _lines.length - block * _blockSize);
 
   static const _lineBreak = TextSpan(text: '\n');
 
@@ -424,7 +660,7 @@ class _HighlightedCodeState extends State<HighlightedCode> {
     List<DocumentLine> tokenized,
     ViewportOffset? offset,
   ) {
-    final first = index * linesPerBlock;
+    final first = index * _blockSize;
     final lines = [
       for (var i = 0; i < _linesIn(index); i++) _span(first + i, tokenized),
     ];
@@ -434,12 +670,12 @@ class _HighlightedCodeState extends State<HighlightedCode> {
         same = identical(cached[i], lines[i]);
       }
       if (same) return block;
-      if (_selection.isSelected(index)) {
+      if (_selection.hasSelection) {
         _held.add(index);
         return block;
       }
     }
-    final numbered = widget.lineNumbers && !widget.softWrap;
+    final numbered = !_perLine && widget.lineNumbers && !widget.softWrap;
     final block = CodeBlock(
       index: index,
       span: TextSpan(
@@ -467,6 +703,27 @@ class _HighlightedCodeState extends State<HighlightedCode> {
       selection: widget.selectable ? _selection : null,
     );
     _blocks[index] = (lines, block);
+    if (_windowed) {
+      _recentBlocks.remove(index);
+      _recentBlocks.add(index);
+      // Controlled views have one paragraph per line rather than per 32 lines.
+      final blockLimit = math.max(
+        16,
+        (_windowOutput.mountedWindows * _windowSize + _blockSize - 1) ~/
+            _blockSize,
+      );
+      while (_recentBlocks.length > blockLimit) {
+        final oldest = _recentBlocks.first;
+        _recentBlocks.remove(oldest);
+        // Every cached paragraph participates in the global selection freeze,
+        // including unselected neighbors that may be revisited before clearing.
+        if (_selection.hasSelection) {
+          _held.add(oldest);
+        } else {
+          _blocks[oldest] = null;
+        }
+      }
+    }
     return block;
   }
 }
