@@ -1,5 +1,9 @@
 ## Unreleased
 
+- Keep syntax output for mounted patch rows so large stationary layouts settle,
+  preserve inline emphasis for equal line pairs in different files, and reuse
+  parsed hunk indexes without scanning the hunk side for every row.
+
 - Add `HighlightExecutor` injection to `HighlightedCode` and all `PatchView`
   constructors. Large sources highlight built windows first with serialized,
   bounded work; content/grammar changes cancel stale work and disposal ignores

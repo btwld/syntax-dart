@@ -457,11 +457,14 @@ class _PatchViewState extends State<PatchView> {
       expanded: widget.expanded,
     );
 
+    final windows = _windowsFor(highlighter);
     Widget buildRow(BuildContext context, int index) {
       if (rows.isEmpty) {
         return PatchNoticeBar(text: labels.noFiles, palette: palette);
       }
-      final row = _buildRow(rows[index], palette, highlighter, labels);
+      final row = windows.retain(
+        () => _buildRow(rows[index], palette, highlighter, labels),
+      );
       return index > 0 && rows[index - 1].file != rows[index].file
           ? Padding(padding: const EdgeInsets.only(top: 16), child: row)
           : row;
