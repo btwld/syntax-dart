@@ -507,7 +507,12 @@ class _PatchViewState<T> extends State<PatchView<T>>
       return;
     }
     final height = _shrinkHeight(row);
-    final within = anchor.within >= height
+    final identity = row < _leadingCount
+        ? 'leading'
+        : _identity(_geometryRows[row - _leadingCount]);
+    final within = identity != anchor.identity
+        ? 0.0
+        : anchor.within >= height
         ? math.max(0.0, height - position.viewportDimension / anchor.scale)
         : anchor.within;
     final destination =
@@ -826,6 +831,12 @@ class _PatchViewState<T> extends State<PatchView<T>>
     // Parent rebuilds often supply a fresh list of the same source objects.
     // Preserve mounted windows rather than cancelling/restarting their work.
     if (key.$1 != null && listEquals(key.$1, _files)) return;
+    // Capture against the old files and measured rows before a replacement or
+    // reorder clears that geometry. The post-layout pipeline resolves this
+    // stable identity in the new layout; an explicit reveal still wins.
+    final reader = widget.shrinkWrap && widget.controller != null
+        ? _captureShrinkAnchor()
+        : null;
     // Release derived source indexes and abandon queued work for the previous
     // snapshot immediately. A late executor still settles serially.
     _windowHighlights?.clear();
@@ -851,7 +862,7 @@ class _PatchViewState<T> extends State<PatchView<T>>
     _shrinkLayoutKey = null;
     _shrinkMeasuredLayoutKey = null;
     _shrinkReportedRange = null;
-    _shrinkAnchor = null;
+    _shrinkAnchor = reader;
     _shrinkMeasurements.clear();
     _shrinkContexts.clear();
     _localSelection = null;
