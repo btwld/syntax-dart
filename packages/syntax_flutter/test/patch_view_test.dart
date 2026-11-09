@@ -465,7 +465,7 @@ new mode 100755
       tester,
       PatchView.fromTexts(oldText: 'a\n', newText: 'b', theme: githubDarkTheme),
     );
-    expect(find.byTooltip('No newline at end of file'), findsOneWidget);
+    expect(find.bySemanticsLabel('No newline at end of file'), findsOneWidget);
   });
 
   testWidgets('headers fit narrow widths', (tester) async {

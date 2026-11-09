@@ -1,9 +1,13 @@
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:flutter/widgets.dart';
 import 'package:syntax_core/syntax.dart';
 
+import 'chrome_action.dart';
+import 'chrome_glyph.dart';
+import 'chrome_scope.dart';
 import 'horizontal_scroll.dart';
+import 'selection_chrome.dart';
 import 'styles.dart';
 
 /// Colors and text styles derived from the theme, shared by every row of a
@@ -218,64 +222,68 @@ class PatchFileHeaderBar extends StatelessWidget {
     final radius = collapsed
         ? BorderRadius.circular(6)
         : const BorderRadius.vertical(top: Radius.circular(6));
-    return Material(
-      color: palette.headerBackground,
-      borderRadius: radius,
-      child: InkWell(
+    return Container(
+      decoration: BoxDecoration(
+        color: palette.headerBackground,
         borderRadius: radius,
-        onTap: onToggle,
-        child: Semantics(
-          button: true,
-          expanded: !collapsed,
+      ),
+      child: buildSyntaxAction(
+        context,
+        SyntaxChromeScope.of(context),
+        SyntaxChromeAction(
+          kind: SyntaxChromeActionKind.toggleFile,
           label: labels.fileHeader(file),
-          excludeSemantics: true,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(6, 7, 12, 7),
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final width = constraints.maxWidth;
-                final counts = !file.isBinary && width >= 180;
-                return Row(
-                  children: [
-                    Icon(
-                      collapsed ? Icons.chevron_right : Icons.expand_more,
-                      size: 18,
-                      color: palette.muted,
-                    ),
-                    const SizedBox(width: 4),
-                    if (label != null && width >= 260) ...[
-                      PatchStatusBadge(label: label, color: color, style: code),
-                      const SizedBox(width: 8),
-                    ],
-                    Expanded(
-                      child: PatchPathText(file: file, palette: palette),
-                    ),
-                    if (counts) ...[
-                      const SizedBox(width: 12),
-                      Text(
-                        '+$additions',
-                        style: code.copyWith(
-                          color: palette.inserted,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        '−$deletions',
-                        style: code.copyWith(
-                          color: palette.removed,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                    if (counts && width >= 400) ...[
-                      const SizedBox(width: 8),
-                      PatchDiffStat(file: file, palette: palette),
-                    ],
+          onInvoke: onToggle,
+          expanded: !collapsed,
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(6, 7, 12, 7),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final width = constraints.maxWidth;
+              final counts = !file.isBinary && width >= 180;
+              return Row(
+                children: [
+                  SyntaxGlyph(
+                    kind: collapsed
+                        ? SyntaxGlyphKind.collapsed
+                        : SyntaxGlyphKind.expanded,
+                    size: 18,
+                    color: palette.muted,
+                  ),
+                  const SizedBox(width: 4),
+                  if (label != null && width >= 260) ...[
+                    PatchStatusBadge(label: label, color: color, style: code),
+                    const SizedBox(width: 8),
                   ],
-                );
-              },
-            ),
+                  Expanded(
+                    child: PatchPathText(file: file, palette: palette),
+                  ),
+                  if (counts) ...[
+                    const SizedBox(width: 12),
+                    Text(
+                      '+$additions',
+                      style: code.copyWith(
+                        color: palette.inserted,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      '−$deletions',
+                      style: code.copyWith(
+                        color: palette.removed,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                  if (counts && width >= 400) ...[
+                    const SizedBox(width: 8),
+                    PatchDiffStat(file: file, palette: palette),
+                  ],
+                ],
+              );
+            },
           ),
         ),
       ),
@@ -488,29 +496,36 @@ class PatchGapBar extends StatelessWidget {
   final VoidCallback? onExpand;
 
   @override
-  Widget build(BuildContext context) => Material(
+  Widget build(BuildContext context) => ColoredBox(
     color: palette.hunkBackground,
-    child: Semantics(
-      button: true,
-      child: InkWell(
-        onTap: onExpand,
-        child: Padding(
-          padding: EdgeInsets.symmetric(
-            horizontal: 12,
-            vertical: style == HunkSeparatorStyle.compact ? 1 : 4,
-          ),
-          child: Row(
-            children: [
-              Icon(Icons.unfold_more, size: 16, color: palette.muted),
-              const SizedBox(width: 8),
-              Flexible(
-                child: Text(
-                  style == HunkSeparatorStyle.minimal ? '⋯' : text,
-                  style: palette.mutedText,
-                ),
+    child: buildSyntaxAction(
+      context,
+      SyntaxChromeScope.of(context),
+      SyntaxChromeAction(
+        kind: SyntaxChromeActionKind.expandGap,
+        label: text,
+        onInvoke: onExpand,
+      ),
+      Padding(
+        padding: EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: style == HunkSeparatorStyle.compact ? 1 : 4,
+        ),
+        child: Row(
+          children: [
+            SyntaxGlyph(
+              kind: SyntaxGlyphKind.gap,
+              size: 16,
+              color: palette.muted,
+            ),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                style == HunkSeparatorStyle.minimal ? '⋯' : text,
+                style: palette.mutedText,
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     ),
@@ -749,7 +764,7 @@ class PatchCodeCell extends StatelessWidget {
   /// Shared palette.
   final PatchPalette palette;
 
-  /// Labels for tooltips.
+  /// Labels for accessibility.
   final DiffLabels labels;
 
   @override
@@ -791,22 +806,30 @@ class PatchNoNewlineMarker extends StatelessWidget {
   /// Shared palette.
   final PatchPalette palette;
 
-  /// Tooltip message.
+  /// Accessible description of the missing line break.
   final String message;
 
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.only(left: 6),
-    child: Tooltip(
-      message: message,
-      child: SizedBox(
-        height: palette.lineHeight,
-        child: Icon(
-          Icons.do_not_disturb_on_outlined,
-          size: palette.lineHeight * 0.6,
-          color: palette.removed,
-        ),
-      ),
+    child: Semantics(
+      container: true,
+      label: message,
+      excludeSemantics: true,
+      child:
+          SyntaxChromeScope.of(
+            context,
+          ).noNewlineMarkerBuilder?.call(context, message) ??
+          SizedBox(
+            height: palette.lineHeight,
+            child: Center(
+              child: SyntaxGlyph(
+                kind: SyntaxGlyphKind.noNewline,
+                size: palette.lineHeight * 0.6,
+                color: palette.removed,
+              ),
+            ),
+          ),
     ),
   );
 }

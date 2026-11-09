@@ -40,8 +40,14 @@ changes build the `FileDiff`s ahead of time and pass them to
 `PatchView(files: ...)`. The language comes from each file's path unless
 `language` is set. Copying a selection takes only the code, without line
 numbers, markers or headers. Its words come from `DiffLabels`;
-extend it to translate them. `PatchView` uses Material widgets and icons,
-so it expects a `MaterialApp`.
+extend it to translate them.
+
+Both views render under a routed `WidgetsApp`, with no Material theme,
+localizations, ancestor or icon font. File headers and context gaps support
+pointer, Enter and Space activation and expose button semantics. Default
+chevrons, expansion glyphs and missing-newline markers are painted; the
+missing-newline marker announces `DiffLabels.noNewlineAtEnd` to assistive
+technology and stays outside copied code.
 
 Code always reads left to right, also in right-to-left apps.
 `HighlightedCode` shows a language the highlighter doesn't know as plain
@@ -55,9 +61,45 @@ content.
 
 - `textStyle` for the font;
 - `padding`;
-- `selectable`, which uses `SelectionArea`;
+- `selectable`, which uses the widgets-layer `SelectableRegion`;
+- `selectionChrome` for selection controls and menus;
 - `softWrap`;
 - `borderRadius`.
+
+To use your host's selection controls or action widgets, pass the same
+`SyntaxSelectionChrome` to either view:
+
+```dart
+final chrome = SyntaxSelectionChrome(
+  selectionControls: mySelectionControls,
+  contextMenuBuilder: mySelectionMenu,
+  actionBuilder: (context, action, child) => MyButton(
+    label: action.label,
+    onPressed: action.onInvoke,
+    child: child,
+  ),
+  noNewlineMarkerBuilder: (context, message) => MyMarker(message: message),
+);
+
+HighlightedCode(source, language: 'dart', theme: githubDarkTheme,
+    selectionChrome: chrome);
+PatchView.fromPatch(gitDiffOutput, theme: githubDarkTheme,
+    selectionChrome: chrome);
+```
+
+`selectionControls` is required on the configuration. Controls that mix in
+`TextSelectionHandleControls` use `contextMenuBuilder`; legacy Flutter controls
+manage their own toolbar. A null menu builder uses the plain Copy/Select all
+menu, localized through `WidgetsLocalizations`. Omit `selectionChrome` to use
+`SyntaxSelectionChrome.plain`, including painted draggable handles. Custom
+`actionBuilder` controls own focus, keyboard activation and semantics;
+`action` supplies `kind`, `label`, `enabled`, `onInvoke` and `expanded`.
+`noNewlineMarkerBuilder` replaces the visual marker while preserving its
+accessible description. Callers can supply their design system's tooltip here.
+
+`SyntaxChrome` applies palette colors with `DefaultTextStyle`, `IconTheme`,
+`DefaultSelectionStyle` and a `ColoredBox`; it does not install an application
+theme or restyle application buttons.
 
 `SyntaxThemeColors` exposes the theme's editor colors: `backgroundColor`,
 `lineNumberColor`, `selectionColor` and `cursorColor`.
@@ -66,7 +108,8 @@ For your own widgets, `TokenTextStyles` converts `TokenStyle` to
 `TextStyle`, and `highlightedTextSpan` builds a span tree.
 
 See [`example/`](example) for a live preview with every bundled language
-and theme.
+and theme. The [plain widgets demo](example/lib/widgets_app.dart) runs with
+`flutter run -t lib/widgets_app.dart` from the example directory.
 
 ## License
 

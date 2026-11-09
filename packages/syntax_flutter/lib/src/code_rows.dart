@@ -348,7 +348,7 @@ const linesPerBlock = 32;
 
 /// Selection over blocks of code.
 ///
-/// A [SelectionArea] over separate paragraphs copies them without line
+/// A [SelectableRegion] over separate paragraphs copies them without line
 /// breaks, and only the rows that were built. Rows that hold part of the
 /// selection stay alive when they scroll away, so the first and last
 /// selected blocks are always here; this delegate copies from the first
