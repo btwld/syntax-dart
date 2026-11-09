@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Preserve the visible row in controlled shrink-wrapped patches when files
+  fold or reorder, including inside an enclosing scroll view.
 - Anchor collapsed files to their file header when the reader was at a hunk
   header, rather than retaining an offset into a later file.
 - Preserve the reader's position when folding or reordering files after a

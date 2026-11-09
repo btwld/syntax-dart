@@ -16,6 +16,7 @@ import 'patch_rows.dart';
 import 'patch_controller.dart';
 import 'selectable_region.dart';
 import 'selection_chrome.dart';
+import 'shrink_wrap_scroll_anchor.dart';
 import 'styles.dart';
 
 /// A syntax-highlighted view of code changes.
@@ -297,6 +298,8 @@ class _PatchViewState<T> extends State<PatchView<T>> {
   Object? _windowKey;
   bool _repaintScheduled = false;
   final _shrinkRevealKey = GlobalKey();
+  final _shrinkAnchor = ShrinkWrapScrollAnchor();
+  List<DiffRow>? _shrinkLayout;
   PatchController<T>? _revealController;
   int? _controllerRevealRequest;
   int _revealToken = 0;
@@ -316,6 +319,31 @@ class _PatchViewState<T> extends State<PatchView<T>> {
     // A completed command must not become navigation again when folding or
     // reordering changes its layout-dependent row index.
     return _completedRevealToken == _revealToken ? null : controller?.revealRow;
+  }
+
+  void _retainShrinkAnchor(List<DiffRow> rows, int? revealRow) {
+    if (identical(_shrinkLayout, rows)) return;
+    final restore = _shrinkAnchor.update(
+      [if (rows.isEmpty) 'empty' else for (final row in rows) _identity(row)],
+      resolve: (identity) {
+        final index = _indexOf(identity, rows);
+        return index == null ? null : _identity(rows[index]);
+      },
+      preserve: revealRow == null,
+    );
+    _shrinkLayout = rows;
+    if (restore == null) return;
+    final token = _revealToken;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted ||
+          !identical(_shrinkLayout, rows) ||
+          token != _revealToken ||
+          !identical(widget.controller, _revealController) ||
+          widget.controller?.revealRequest != _controllerRevealRequest) {
+        return;
+      }
+      restore();
+    });
   }
 
   void _scheduleRevealCompletion({required bool shrinkWrapped}) {
@@ -614,6 +642,12 @@ class _PatchViewState<T> extends State<PatchView<T>> {
     final windows = _windowsFor(highlighter);
     final shrinkControlled = widget.shrinkWrap && widget.controller != null;
     final revealRow = _pendingRevealRow();
+    if (shrinkControlled) {
+      _retainShrinkAnchor(rows, revealRow);
+    } else {
+      _shrinkLayout = null;
+      _shrinkAnchor.clear();
+    }
     if (revealRow != null) {
       _scheduleRevealCompletion(shrinkWrapped: shrinkControlled);
     }
@@ -642,6 +676,7 @@ class _PatchViewState<T> extends State<PatchView<T>> {
                 : rows.length,
             itemBuilder: shrinkControlled
                 ? (context, _) => Column(
+                    key: _shrinkAnchor.key,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       for (var i = 0; i < (rows.isEmpty ? 1 : rows.length); i++)
