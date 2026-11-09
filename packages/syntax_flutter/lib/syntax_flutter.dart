@@ -20,6 +20,7 @@ export 'src/highlight_scheduler.dart'
 export 'src/highlighter_scope.dart';
 export 'src/horizontal_scroll.dart';
 export 'src/indexed_viewport.dart';
+export 'src/patch_controller.dart';
 export 'src/patch_view.dart';
 export 'src/selection_chrome.dart'
     show SyntaxSelectionChrome, SyntaxChromeAction, SyntaxChromeActionKind;

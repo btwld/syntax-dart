@@ -1,5 +1,7 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show listEquals;
+import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:syntax_core/syntax.dart';
@@ -11,6 +13,7 @@ import 'patch_highlights.dart';
 import 'horizontal_scroll.dart';
 import 'indexed_viewport.dart';
 import 'patch_rows.dart';
+import 'patch_controller.dart';
 import 'selectable_region.dart';
 import 'selection_chrome.dart';
 import 'styles.dart';
@@ -24,7 +27,7 @@ import 'styles.dart';
 /// the changed words inside edited lines are highlighted, and colors come
 /// from [theme]'s diff colors. Long lines wrap unless [wrap] is false. Code
 /// reads left to right even in a right-to-left app.
-class PatchView extends StatefulWidget {
+class PatchView<T> extends StatefulWidget {
   /// Shows [files] as they are, with [collapsed] files and [expanded] gaps
   /// owned by the caller.
   const PatchView({
@@ -34,7 +37,7 @@ class PatchView extends StatefulWidget {
     this.highlighter,
     this.executor,
     this.language,
-    this.mode = DiffMode.unified,
+    DiffMode mode = DiffMode.unified,
     this.collapsed = const {},
     this.expanded = const {},
     this.onToggleFile,
@@ -57,7 +60,48 @@ class PatchView extends StatefulWidget {
     this.headerBuilder,
     this.hunkBuilder,
     this.scrollController,
-  }) : _files = files,
+  }) : controller = null,
+       _mode = mode,
+       _files = files,
+       _patch = null,
+       _texts = null;
+
+  /// Shows caller-owned patch state, rebuilding when the controller changes.
+  ///
+  /// The controller owns mode, file/hunk folding, context expansion and reveal.
+  /// Caller-owned folding parameters belong to the source constructors only.
+  /// The owner must dispose the controller after the view stops using it.
+  const PatchView.controlled({
+    super.key,
+    required PatchController<T> this.controller,
+    required this.theme,
+    this.highlighter,
+    this.executor,
+    this.language,
+    this.textStyle,
+    this.selectable = true,
+    this.selectionChrome,
+    this.shrinkWrap = false,
+    this.physics,
+    this.padding = const EdgeInsets.all(12),
+    this.labels = const DiffLabels(),
+    this.inlineDiffMode = InlineDiffMode.mergedWords,
+    this.wrap = true,
+    this.showBackgrounds = true,
+    this.showChangeIndicators = true,
+    this.indicators = DiffIndicators.classic,
+    this.showLineNumbers = true,
+    this.hunkSeparatorStyle = HunkSeparatorStyle.lineInfo,
+    this.stickyHeaders = false,
+    this.headerBuilder,
+    this.hunkBuilder,
+    this.scrollController,
+  }) : _mode = DiffMode.unified,
+       collapsed = const {},
+       expanded = const {},
+       onToggleFile = null,
+       onExpandGap = null,
+       _files = null,
        _patch = null,
        _texts = null;
 
@@ -69,7 +113,7 @@ class PatchView extends StatefulWidget {
     this.highlighter,
     this.executor,
     this.language,
-    this.mode = DiffMode.unified,
+    DiffMode mode = DiffMode.unified,
     this.collapsed = const {},
     this.expanded = const {},
     this.onToggleFile,
@@ -92,7 +136,9 @@ class PatchView extends StatefulWidget {
     this.headerBuilder,
     this.hunkBuilder,
     this.scrollController,
-  }) : _files = null,
+  }) : controller = null,
+       _mode = mode,
+       _files = null,
        _patch = patch,
        _texts = null;
 
@@ -108,7 +154,7 @@ class PatchView extends StatefulWidget {
     this.highlighter,
     this.executor,
     this.language,
-    this.mode = DiffMode.unified,
+    DiffMode mode = DiffMode.unified,
     this.collapsed = const {},
     this.expanded = const {},
     this.onToggleFile,
@@ -131,9 +177,14 @@ class PatchView extends StatefulWidget {
     this.headerBuilder,
     this.hunkBuilder,
     this.scrollController,
-  }) : _files = null,
+  }) : controller = null,
+       _mode = mode,
+       _files = null,
        _patch = null,
        _texts = (oldText, newText, path, contextLines);
+
+  /// Caller-owned state for a controlled view, or null for source constructors.
+  final PatchController<T>? controller;
 
   final List<FileDiff>? _files;
   final String? _patch;
@@ -154,7 +205,8 @@ class PatchView extends StatefulWidget {
   final String? language;
 
   /// Whether changes are shown in one column or side by side.
-  final DiffMode mode;
+  DiffMode get mode => controller?.mode ?? _mode;
+  final DiffMode _mode;
 
   /// Zero-based indices of files whose lines are hidden.
   final Set<int> collapsed;
@@ -226,12 +278,12 @@ class PatchView extends StatefulWidget {
   final ScrollController? scrollController;
 
   @override
-  State<PatchView> createState() => _PatchViewState();
+  State<PatchView<T>> createState() => _PatchViewState<T>();
 }
 
 const _sliceBudget = Duration(milliseconds: 6);
 
-class _PatchViewState extends State<PatchView> {
+class _PatchViewState<T> extends State<PatchView<T>> {
   late ScrollController _scroll;
   int _stickyFile = 0;
   Object? _sourceKey, _highlightKey;
@@ -244,6 +296,42 @@ class _PatchViewState extends State<PatchView> {
   PatchWindowHighlights? _windowHighlights;
   Object? _windowKey;
   bool _repaintScheduled = false;
+  final _shrinkRevealKey = GlobalKey();
+  (Object, int, int?)? _shrinkRevealRequest;
+
+  void _revealShrinkWrapped() {
+    final controller = widget.controller;
+    final request = controller == null
+        ? null
+        : (controller, controller.revealRequest, controller.revealRow);
+    if (request == _shrinkRevealRequest) return;
+    _shrinkRevealRequest = request;
+    if (controller?.revealRow == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || request != _shrinkRevealRequest) return;
+      final row = _shrinkRevealKey.currentContext;
+      if (row == null) return;
+      final target = row.findRenderObject()!;
+      var object = target;
+      var scrollable = Scrollable.maybeOf(row);
+      while (scrollable != null) {
+        if (scrollable.position.axis == Axis.vertical) {
+          scrollable.position.ensureVisible(object, targetRenderObject: target);
+        }
+        final viewport = RenderAbstractViewport.maybeOf(object);
+        final vertical = Scrollable.maybeOf(
+          scrollable.context,
+          axis: Axis.vertical,
+        );
+        final sharedViewport =
+            viewport is RenderTwoDimensionalViewport &&
+            identical(viewport.horizontalOffset, scrollable.position) &&
+            identical(viewport.verticalOffset, vertical?.position);
+        if (!sharedViewport) object = scrollable.context.findRenderObject()!;
+        scrollable = Scrollable.maybeOf(scrollable.context);
+      }
+    });
+  }
 
   void _highlightChanged() {
     if (!mounted || _repaintScheduled) return;
@@ -286,12 +374,20 @@ class _PatchViewState extends State<PatchView> {
   }
 
   void _syncSource() {
-    final key = (widget._files, widget._patch, widget._texts);
+    final key = (
+      widget.controller?.files ?? widget._files,
+      widget._patch,
+      widget._texts,
+    );
     if (key == _sourceKey) return;
     _sourceKey = key;
-    // Keep bounded ready output for revisits, but abandon queued work for the
-    // previous snapshot immediately. A late executor still settles serially.
-    _windows?.clear();
+    // Parent rebuilds often supply a fresh list of the same source objects.
+    // Preserve mounted windows rather than cancelling/restarting their work.
+    if (key.$1 != null && listEquals(key.$1, _files)) return;
+    // Release derived source indexes and abandon queued work for the previous
+    // snapshot immediately. A late executor still settles serially.
+    _windowHighlights?.clear();
+    _highlights = null;
     _files = switch (key) {
       (final files?, _, _) => files,
       (_, final patch?, _) => parsePatch(patch),
@@ -371,16 +467,25 @@ class _PatchViewState extends State<PatchView> {
     );
   }
 
+  void _controllerChanged() {
+    setState(_syncSource);
+  }
+
   @override
   void initState() {
     super.initState();
     _scroll = widget.scrollController ?? ScrollController();
     _syncSource();
+    widget.controller?.addListener(_controllerChanged);
   }
 
   @override
-  void didUpdateWidget(PatchView oldWidget) {
+  void didUpdateWidget(PatchView<T> oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller?.removeListener(_controllerChanged);
+      widget.controller?.addListener(_controllerChanged);
+    }
     if (oldWidget.scrollController != widget.scrollController) {
       if (oldWidget.scrollController == null) _scroll.dispose();
       _scroll = widget.scrollController ?? ScrollController();
@@ -390,6 +495,7 @@ class _PatchViewState extends State<PatchView> {
 
   @override
   void dispose() {
+    widget.controller?.removeListener(_controllerChanged);
     _windows?.dispose();
     if (widget.scrollController == null) _scroll.dispose();
     super.dispose();
@@ -420,7 +526,19 @@ class _PatchViewState extends State<PatchView> {
     final file = _files.indexWhere((file) => file.id == key.$1);
     if (file < 0) return null;
     if (key.$2 == 'old' || key.$2 == 'new') {
-      return rows.rowForLine(file, key.$3, oldSide: key.$2 == 'old');
+      final line = rows.rowForLine(file, key.$3, oldSide: key.$2 == 'old');
+      if (line != null || widget.controller == null) return line;
+      if (widget.controller!.isCollapsed(_files[file].id)) {
+        return rows.rowForFile(file);
+      }
+      for (final hunk in _files[file].hunks) {
+        final start = key.$2 == 'old' ? hunk.oldStart : hunk.newStart;
+        final count = key.$2 == 'old' ? hunk.oldCount : hunk.newCount;
+        if (key.$3 >= start && key.$3 < start + count) {
+          return rows.rowForSection(file, hunk.newStart);
+        }
+      }
+      return null;
     }
     if (key.$2 == 'hunk') {
       return rows.rowForSection(file, key.$3) ?? rows.rowForLine(file, key.$3);
@@ -460,14 +578,22 @@ class _PatchViewState extends State<PatchView> {
     final highlighter = widget.highlighter ?? HighlighterScope.of(context);
     final palette = _paletteFor(context);
     final labels = widget.labels;
-    final rows = layoutDiff(
-      _files,
-      mode: widget.mode,
-      collapsed: widget.collapsed,
-      expanded: widget.expanded,
-    );
+    final rows =
+        widget.controller?.layout ??
+        layoutDiff(
+          _files,
+          mode: widget.mode,
+          collapsed: widget.collapsed,
+          expanded: widget.expanded,
+        );
 
     final windows = _windowsFor(highlighter);
+    final shrinkControlled = widget.shrinkWrap && widget.controller != null;
+    if (shrinkControlled) {
+      _revealShrinkWrapped();
+    } else {
+      _shrinkRevealRequest = null;
+    }
     Widget buildRow(BuildContext context, int index) {
       if (rows.isEmpty) {
         return PatchNoticeBar(text: labels.noFiles, palette: palette);
@@ -486,15 +612,39 @@ class _PatchViewState extends State<PatchView> {
             padding: widget.padding,
             shrinkWrap: true,
             physics: widget.physics,
-            itemCount: rows.isEmpty ? 1 : rows.length,
-            itemBuilder: buildRow,
+            itemCount: shrinkControlled
+                ? 1
+                : rows.isEmpty
+                ? 1
+                : rows.length,
+            itemBuilder: shrinkControlled
+                ? (context, _) => Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (var i = 0; i < (rows.isEmpty ? 1 : rows.length); i++)
+                        KeyedSubtree(
+                          key: ValueKey(
+                            rows.isEmpty ? 'empty' : _identity(rows[i]),
+                          ),
+                          child: KeyedSubtree(
+                            key: i == widget.controller!.revealRow
+                                ? _shrinkRevealKey
+                                : null,
+                            child: buildRow(context, i),
+                          ),
+                        ),
+                    ],
+                  )
+                : buildRow,
           )
         : IndexedCodeViewport(
             controller: _scroll,
             count: rows.isEmpty ? 1 : rows.length,
             builder: buildRow,
+            revealRow: widget.controller?.revealRow,
+            revealRequest: widget.controller?.revealRequest ?? 0,
             layoutKey: (
-              _files,
+              widget.controller?.layout ?? _files,
               widget.mode,
               Object.hashAllUnordered(widget.collapsed),
               Object.hashAllUnordered(widget.expanded),
@@ -523,7 +673,12 @@ class _PatchViewState extends State<PatchView> {
     if (widget.stickyHeaders && _files.isNotEmpty) {
       final index = _stickyFile.clamp(0, _files.length - 1);
       final stickyHeader = _buildRow(
-        DiffFileHeaderRow(index, collapsed: widget.collapsed.contains(index)),
+        DiffFileHeaderRow(
+          index,
+          collapsed:
+              widget.controller?.isCollapsed(_files[index].id) ??
+              widget.collapsed.contains(index),
+        ),
         palette,
         highlighter,
         labels,
@@ -576,7 +731,14 @@ class _PatchViewState extends State<PatchView> {
   ) {
     switch (row) {
       case DiffFileHeaderRow(:final file, :final collapsed):
-        void toggle() => widget.onToggleFile?.call(file);
+        void toggle() {
+          final controller = widget.controller;
+          if (controller != null) {
+            controller.setCollapsed(_files[file].id, !collapsed);
+          } else {
+            widget.onToggleFile?.call(file);
+          }
+        }
         final header = widget.headerBuilder != null
             ? widget.headerBuilder!(context, _files[file], collapsed, toggle)
             : PatchFileHeaderBar(
@@ -584,7 +746,10 @@ class _PatchViewState extends State<PatchView> {
                 collapsed: collapsed,
                 palette: palette,
                 labels: labels,
-                onToggle: widget.onToggleFile == null ? null : toggle,
+                onToggle:
+                    widget.controller == null && widget.onToggleFile == null
+                    ? null
+                    : toggle,
               );
         return SelectionContainer.disabled(child: header);
       case DiffNoticeRow(:final notice):
@@ -604,7 +769,9 @@ class _PatchViewState extends State<PatchView> {
             text: labels.showUnchangedLines(count),
             style: widget.hunkSeparatorStyle,
             palette: palette,
-            onExpand: widget.onExpandGap == null
+            onExpand: widget.controller != null
+                ? () => widget.controller!.expandGap(id)
+                : widget.onExpandGap == null
                 ? null
                 : () => widget.onExpandGap!(id),
           ),

@@ -147,17 +147,18 @@ final class PatchPalette {
 
   /// Height of one line of code.
   double get lineHeight => _digitMetrics.$1;
-  final Map<FileDiff, double> _gutterWidths = Map.identity();
+  // A palette outlives source revisions; measured widths must not retain them.
+  final _gutterWidths = Expando<double>();
 
   /// Width of one line-number column, sized for [file]'s largest line number
   /// using the widest digit (`0`–`9`).
-  double gutterWidth(FileDiff file) => _gutterWidths.putIfAbsent(file, () {
+  double gutterWidth(FileDiff file) => _gutterWidths[file] ??= (() {
     final digits = '${math.max(file.maxLineNumber, 1)}'.length;
     final painter = _measure(_digitMetrics.$2 * digits);
     final width = painter.width + 16;
     painter.dispose();
     return width;
-  });
+  })();
 }
 
 /// A notice row shown when there are no files or a file has no lines.
