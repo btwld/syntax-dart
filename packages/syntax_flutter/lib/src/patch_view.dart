@@ -425,7 +425,9 @@ class _PatchViewState<T> extends State<PatchView<T>>
   bool _stickyBounded = false;
   bool _ownShrinkScroll = false;
   bool _shrinkLayoutQueued = false;
-  bool _shrinkGeometryEstablished = false;
+  // Only this key has actual shrink-row measurements. Rebuilding the index
+  // does not erase history or turn its new estimates into measured geometry.
+  Object? _shrinkMeasuredLayoutKey;
   (int, int)? _shrinkReportedRange;
   Object? _shrinkLayoutKey;
   RowHeightIndex _shrinkHeights = RowHeightIndex(0);
@@ -435,17 +437,19 @@ class _PatchViewState<T> extends State<PatchView<T>>
   _ShrinkAnchor? _shrinkAnchor;
 
   _ShrinkAnchor? _captureShrinkAnchor() {
-    if (!_shrinkGeometryEstablished ||
+    if (_shrinkMeasuredLayoutKey == null ||
+        _shrinkMeasuredLayoutKey != _shrinkLayoutKey ||
         !_scroll.hasClients ||
         _shrinkHeights.length == 0 ||
         _geometryRows.isEmpty) {
       return null;
     }
+    ScrollableState? ancestor;
     var position = _scroll.position;
     var localOffset = _scroll.offset;
     var scale = 1.0;
     if (!_stickyBounded) {
-      final ancestor = Scrollable.maybeOf(context, axis: Axis.vertical);
+      ancestor = Scrollable.maybeOf(context, axis: Axis.vertical);
       final first = _shrinkContexts[0]?.findRenderObject();
       final viewport = RenderAbstractViewport.maybeOf(
         context.findRenderObject()!,
@@ -469,7 +473,7 @@ class _PatchViewState<T> extends State<PatchView<T>>
     return (
       identity: source < 0 ? 'leading' : _identity(_geometryRows[source]),
       within: localOffset - _shrinkOffset(row),
-      position: position,
+      owner: ancestor ?? _scroll,
       pixels: position.pixels,
       localOffset: localOffset,
       scale: scale,
@@ -489,12 +493,23 @@ class _PatchViewState<T> extends State<PatchView<T>>
             _ => null,
           };
     if (row == null) return;
+    // Scrollable may replace its position when physics changes in this build.
+    // Resolve from the owner after layout, never from a detached snapshot.
+    final position = switch (anchor.owner) {
+      ScrollController controller when controller.hasClients =>
+        controller.position,
+      ScrollableState scrollable when scrollable.mounted => scrollable.position,
+      _ => null,
+    };
+    if (position == null ||
+        !position.hasPixels ||
+        position.pixels != anchor.pixels) {
+      return;
+    }
     final height = _shrinkHeight(row);
     final within = anchor.within >= height
-        ? math.max(0.0, height - _scroll.position.viewportDimension)
+        ? math.max(0.0, height - position.viewportDimension / anchor.scale)
         : anchor.within;
-    final position = anchor.position;
-    if (!position.hasPixels || position.pixels != anchor.pixels) return;
     final destination =
         anchor.pixels +
         (_shrinkOffset(row) + within - anchor.localOffset) * anchor.scale;
@@ -580,7 +595,7 @@ class _PatchViewState<T> extends State<PatchView<T>>
       _shrinkHeights.measure(entry.key, entry.value);
     }
     _shrinkMeasurements.clear();
-    _shrinkGeometryEstablished = true;
+    _shrinkMeasuredLayoutKey = _shrinkLayoutKey;
     _restoreShrinkAnchor();
     _runShrinkReveal();
     _updatePinned(
@@ -834,7 +849,7 @@ class _PatchViewState<T> extends State<PatchView<T>>
     _geometryRows = const [];
     _indexedLayout = null;
     _shrinkLayoutKey = null;
-    _shrinkGeometryEstablished = false;
+    _shrinkMeasuredLayoutKey = null;
     _shrinkReportedRange = null;
     _shrinkAnchor = null;
     _shrinkMeasurements.clear();
@@ -1118,7 +1133,6 @@ class _PatchViewState<T> extends State<PatchView<T>>
       if (_shrinkLayoutKey != layoutKey) {
         _shrinkAnchor ??= reader;
         _shrinkLayoutKey = layoutKey;
-        _shrinkGeometryEstablished = false;
         _shrinkReportedRange = null;
         _shrinkHeights = RowHeightIndex(
           (rows.isEmpty ? 1 : rows.length) + leadingCount,
@@ -1548,7 +1562,7 @@ class _ShrinkReveal {
 typedef _ShrinkAnchor = ({
   Object identity,
   double within,
-  ScrollPosition position,
+  Object owner,
   double pixels,
   double localOffset,
   double scale,

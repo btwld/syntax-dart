@@ -183,7 +183,19 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
   (int, int)? _lastReveal;
   _IndexedReveal? _activeReveal;
   bool _layoutQueued = false;
-  bool _geometryEstablished = false;
+  // Keep the provenance of the last measured layout across index resets. A
+  // changed layout key can still describe the same source through row identity.
+  ({Object key, Object? reader})? _measuredLayout;
+
+  bool get _hasPriorGeometry {
+    final measured = _measuredLayout;
+    if (measured == null) return false;
+    if (measured.key == widget.layoutKey) return true;
+    final reader = measured.reader;
+    final row = reader == null ? null : widget.indexOf(reader);
+    return row != null && row >= 0 && row < widget.count;
+  }
+
   (int, int)? _reportedRange;
   final Map<int, double> _measurements = {};
   double get _offset => widget.controller.hasClients
@@ -191,7 +203,6 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
       : widget.controller.initialScrollOffset;
   void _reset() {
     _restoringAnchor = null;
-    _geometryEstablished = false;
     _heights = RowHeightIndex(
       widget.count,
       estimatedHeight: widget.estimatedHeight,
@@ -242,7 +253,9 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
 
   void _finishLayout() {
     final changed = _flushMeasurements();
-    _geometryEstablished = true;
+    if (widget.count > 0 && (widget.fixedHeight || _laidOut.isNotEmpty)) {
+      _measuredLayout = (key: widget.layoutKey, reader: _anchor);
+    }
     final restoring = _restoringAnchor;
     var moved = false;
     if (restoring != null && !_hasPendingReveal) {
@@ -362,7 +375,9 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
     }
     // Restoration uses an absolute row offset below, after all measurements.
     // First-layout estimates have never described the reader's position.
-    if (restoring != null || !_geometryEstablished) correction = 0;
+    if (restoring != null || (!_hasPriorGeometry && reveal == null)) {
+      correction = 0;
+    }
     // The correction assumes rows above the anchor pushed it down by
     // their change, as a row laid out for the first time does: the list
     // builds those forward from its first row. A row laid out before that
@@ -463,7 +478,7 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
         oldWidget.count != widget.count ||
         oldWidget.fixedHeight != widget.fixedHeight ||
         oldWidget.estimatedHeight != widget.estimatedHeight) {
-      final established = _geometryEstablished;
+      final established = _hasPriorGeometry;
       final anchor = _anchor;
       final within = _within;
       final index = anchor == null ? null : widget.indexOf(anchor);
@@ -486,14 +501,16 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
       if (_width != null && _width != constraints.maxWidth) {
-        final established = _geometryEstablished;
+        final established = _hasPriorGeometry;
         final anchor = _restoringAnchor?.row ?? _visible;
         final within = _restoringAnchor?.within ?? _within;
         final height = widget.count == 0
             ? null
             : _heights.offsetFor(anchor + 1) - _heights.offsetFor(anchor);
         _reset();
-        if (height != null) _heights.measure(anchor, height);
+        if (!widget.fixedHeight && height != null) {
+          _heights.measure(anchor, height);
+        }
         if (established && !_hasPendingReveal) _restoreAnchor(anchor, within);
       }
       _width = constraints.maxWidth;

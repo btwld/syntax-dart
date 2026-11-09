@@ -31,6 +31,13 @@ import 'patch_composition_test.dart' show app;
 //   layout_reveal_parity_test.dart: retained-code and patch font/width cases,
 //   source-replacement cancellation. indexed_viewport_test.dart covers insertion,
 //   removal, remeasurement and fixed-height mode changes. Gaps are below.
+// * A width reset combined with count/layout-key changes preserves an already
+//   captured logical anchor in both measured-height and fixed-height modes.
+// * A positioned reveal retains its logical target through width resets before
+//   completion; initial-offset suppression cannot discard its correction.
+// * Restoration resolves the owning scrollable's currently attached position.
+//   Replacing ScrollPhysics during font/layout changes must never jump a detached
+//   ScrollPosition. The follow-up probes below enforce these three rules.
 // * Initial scroll offsets belong to the caller. Never restore an anchor from
 //   purely estimated geometry. Measurement precedes restoration, active reveal
 //   precedes visible-range notification, and unrelated callbacks cannot retire
@@ -50,6 +57,185 @@ FileDiff _file() => diffTexts(
 );
 
 void main() {
+  group('follow-up 1', () {
+    for (final fixed in [false, true]) {
+      for (final countChange in [false, true]) {
+        testWidgets(
+          'combined width and ${countChange ? 'count' : 'layout-key'} preserves anchor fixed=$fixed',
+          (tester) async {
+            final scroll = ScrollController();
+            addTearDown(scroll.dispose);
+            final ids = List.generate(300, (i) => 'row-$i');
+            var width = 600.0;
+            var revision = 0;
+            late StateSetter update;
+            await tester.pumpWidget(
+              app(
+                StatefulBuilder(
+                  builder: (_, setState) {
+                    update = setState;
+                    return Align(
+                      alignment: Alignment.topLeft,
+                      child: SizedBox(
+                        width: width,
+                        child: IndexedCodeViewport(
+                          controller: scroll,
+                          count: ids.length,
+                          fixedHeight: fixed,
+                          layoutKey: revision,
+                          estimatedHeight: 24,
+                          identity: (i) => ids[i],
+                          indexOf: (id) {
+                            final i = ids.indexOf(id as String);
+                            return i < 0 ? null : i;
+                          },
+                          onLayout: (_) {},
+                          onVisibleRange: (_, _) {},
+                          builder: (_, i) =>
+                              SizedBox(height: 24, child: Text(ids[i])),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            );
+            await tester.pumpAndSettle();
+            scroll.jumpTo(1200);
+            await tester.pumpAndSettle();
+            final before = tester.getTopLeft(find.text('row-50')).dy;
+            expect(before, 0);
+            update(() {
+              width = 280;
+              ids.insertAll(0, List.generate(10, (i) => 'inserted-$i'));
+              if (!countChange) {
+                ids.removeRange(300, 310);
+                revision++;
+              }
+            });
+            await tester.pumpAndSettle();
+            expect(
+              tester.getTopLeft(find.text('row-50')).dy,
+              closeTo(before, .1),
+            );
+            expect(scroll.offset, 1440);
+            expectPlainTree(tester);
+          },
+        );
+      }
+    }
+
+    testWidgets('width reset preserves a positioned reveal before completion', (
+      tester,
+    ) async {
+      final scroll = ScrollController();
+      addTearDown(scroll.dispose);
+      var width = 600.0;
+      int? target;
+      var completions = 0;
+      late StateSetter update;
+      await tester.pumpWidget(
+        app(
+          StatefulBuilder(
+            builder: (_, setState) {
+              update = setState;
+              return Align(
+                alignment: Alignment.topLeft,
+                child: SizedBox(
+                  width: width,
+                  child: IndexedCodeViewport(
+                    controller: scroll,
+                    count: 300,
+                    layoutKey: 'source',
+                    identity: (i) => i,
+                    indexOf: (id) => id as int,
+                    estimatedHeight: 24,
+                    revealRow: target,
+                    revealRequest: 1,
+                    onRevealComplete: (_) => completions++,
+                    onLayout: (_) {},
+                    onVisibleRange: (_, _) {},
+                    builder: (_, i) => SizedBox(
+                      height: width == 600 ? 24 : 48,
+                      child: Text('row-$i'),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      update(() => target = 150);
+      await tester.pump(); // Initial indexed jump; target layout not settled.
+      expect(scroll.offset, 3600);
+      expect(completions, 0);
+      update(() => width = 280);
+      await tester.pumpAndSettle();
+      expect(find.text('row-150'), findsOneWidget);
+      expect(tester.getTopLeft(find.text('row-150')).dy, closeTo(0, .1));
+      expect(completions, 1);
+      expectPlainTree(tester);
+    });
+
+    testWidgets(
+      'physics replacement restores the attached shrink position after font doubling',
+      (tester) async {
+        final file = diffTexts(
+          '',
+          List.generate(300, (i) => 'line ${i + 1}').join('\n'),
+          path: 'position.txt',
+        );
+        final controller = PatchController<void>([file]);
+        final scroll = ScrollController();
+        addTearDown(controller.dispose);
+        addTearDown(scroll.dispose);
+        var font = 12.0;
+        ScrollPhysics physics = const ClampingScrollPhysics();
+        late StateSetter update;
+        await tester.pumpWidget(
+          app(
+            StatefulBuilder(
+              builder: (_, setState) {
+                update = setState;
+                return PatchView<void>.controlled(
+                  controller: controller,
+                  scrollController: scroll,
+                  theme: githubDarkTheme,
+                  highlighter: Highlighter(),
+                  shrinkWrap: true,
+                  padding: EdgeInsets.zero,
+                  physics: physics,
+                  headerBuilder: (_, _, _, _) => const SizedBox(height: 120),
+                  hunkBuilder: (_, _, _) => const SizedBox(height: 6),
+                  textStyle: TextStyle(fontSize: font, height: 1.5),
+                );
+              },
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        scroll.jumpTo(1200);
+        await tester.pumpAndSettle();
+        final oldPosition = scroll.position;
+        final target = find.text('line 60', findRichText: true);
+        final before = tester.getTopLeft(target).dy;
+        expect(before, -12);
+        update(() {
+          font = 24;
+          physics = const BouncingScrollPhysics();
+        });
+        await tester.pumpAndSettle();
+        expect(scroll.position, isNot(same(oldPosition)));
+        expect(scroll.positions, isNot(contains(oldPosition)));
+        expect(scroll.offset, 2262);
+        expect(tester.getTopLeft(target).dy, closeTo(before, .1));
+        expectPlainTree(tester);
+      },
+    );
+  });
+
   for (final range in [false, true]) {
     for (final layout in [false, true]) {
       testWidgets('fixed-height anchor range=$range layout=$layout', (
