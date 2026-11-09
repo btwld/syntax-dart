@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -324,6 +326,125 @@ void main() {
     );
     expect(copied, source);
   });
+
+  testWidgets(
+    'native row selection survives highlight completion during a drag',
+    (tester) async {
+      final lines = List.generate(2000, (i) => 'line $i');
+      final c = CodeViewController(sourceId: 'a', code: lines.join('\r\n'));
+      addTearDown(c.dispose);
+      final ready = Completer<void>();
+      Future<HighlightWindowResult> worker(
+        HighlightWindowRequest request, {
+        required Highlighter highlighter,
+        required SyntaxTheme theme,
+        required HighlightCancellation cancellation,
+      }) async {
+        await ready.future;
+        return HighlightWindowResult(
+          request: request,
+          grammarRevision: highlighter.revision,
+          theme: theme,
+          ranges: [
+            StyledRange(
+              0,
+              request.code.length,
+              const TokenStyle(foreground: 0xff00ff00),
+            ),
+          ],
+        );
+      }
+
+      await tester.pumpWidget(
+        app(
+          HighlightedCode.controlled(
+            controller: c,
+            language: 'text',
+            theme: githubDarkTheme,
+            highlighter: Highlighter(),
+            executor: worker,
+            lineNumbers: true,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      Offset at(int line, int column) {
+        final p = tester.renderObject<RenderParagraph>(text(lines[line]));
+        return p.localToGlobal(
+          p.getOffsetForCaret(TextPosition(offset: column), Rect.zero) +
+              const Offset(0, 10),
+        );
+      }
+
+      final gesture = await tester.startGesture(
+        at(2, 2),
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pump();
+      await gesture.moveTo(at(3, 3));
+      await tester.pump();
+      // Complete after selection starts, so plain paragraphs must stay frozen
+      // while new windows mount and the selected endpoints leave the screen.
+      ready.complete();
+      await tester.pumpAndSettle();
+      final scroll = tester
+          .widget<IndexedCodeViewport>(find.byType(IndexedCodeViewport))
+          .controller;
+      await gesture.moveTo(const Offset(400, 595));
+      for (var i = 0; i < 1000 && scroll.offset < 1200; i++) {
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      expect(scroll.offset, greaterThanOrEqualTo(1200));
+      final visible =
+          tester
+              .widgetList<CodeBlock>(find.byType(CodeBlock))
+              .map((b) => b.index)
+              .toList()
+            ..sort();
+      final end = visible[visible.length ~/ 2];
+      await gesture.moveTo(at(end, 4));
+      await tester.pump();
+      await gesture.up();
+      await tester.pumpAndSettle();
+      final expected = [
+        lines[2].substring(2),
+        ...lines.sublist(3, end),
+        lines[end].substring(0, 4),
+      ].join('\r\n');
+      String? copied;
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (call) async {
+          if (call.method == 'Clipboard.setData') {
+            copied = (call.arguments as Map)['text'] as String;
+          }
+          return null;
+        },
+      );
+      addTearDown(() {
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          null,
+        );
+      });
+      for (final offset in [
+        scroll.offset,
+        scroll.position.maxScrollExtent,
+        0.0,
+      ]) {
+        scroll.jumpTo(offset);
+        await tester.pumpAndSettle();
+        copied = null;
+        Actions.invoke(
+          tester.element(find.byType(CodeBlock).first),
+          CopySelectionTextIntent.copy,
+        );
+        await tester.pump();
+        expect(copied, expected);
+      }
+      expect(find.byType(CodeBlock).evaluate().length, lessThan(150));
+    },
+  );
 
   testWidgets(
     'native drag across virtual rows copies offscreen lines exactly',

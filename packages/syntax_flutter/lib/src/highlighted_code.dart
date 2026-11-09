@@ -706,10 +706,11 @@ class _HighlightedCodeState extends State<HighlightedCode> {
     if (_windowed) {
       _recentBlocks.remove(index);
       _recentBlocks.add(index);
+      // Controlled views have one paragraph per line rather than per 32 lines.
       final blockLimit = math.max(
         16,
-        (_windowOutput.mountedWindows * _windowSize + linesPerBlock - 1) ~/
-            linesPerBlock,
+        (_windowOutput.mountedWindows * _windowSize + _blockSize - 1) ~/
+            _blockSize,
       );
       while (_recentBlocks.length > blockLimit) {
         final oldest = _recentBlocks.first;
