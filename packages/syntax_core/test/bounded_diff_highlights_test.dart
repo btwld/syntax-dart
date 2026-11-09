@@ -103,4 +103,24 @@ void main() {
     expect(highlights.entryCount, 2);
     expect(highlights.highlighted(a), same(first));
   });
+  test('full source texts are charged once and fit the exact input budget', () {
+    const before = 'a🙂\r\nb';
+    const after = 'a🙂\r\nc';
+    final a = diffTexts(before, after, id: 'a');
+    final b = diffTexts(before, after, id: 'b');
+    const unitsPerFile = before.length + after.length;
+    final highlights = cache(units: unitsPerFile * 2);
+    final first = highlights.highlighted(a);
+    final words = highlights.words(a);
+    expect(highlights.retainedCodeUnits, unitsPerFile);
+    highlights.highlighted(b);
+    expect(highlights.entryCount, 2);
+    expect(highlights.retainedCodeUnits, unitsPerFile * 2);
+    expect(highlights.highlighted(a), same(first));
+    expect(highlights.words(a), same(words));
+    highlights.highlighted(diffTexts(before, after, id: 'c'));
+    expect(highlights.entryCount, 2);
+    expect(highlights.retainedCodeUnits, unitsPerFile * 2);
+    expect(highlights.highlighted(a), same(first));
+  });
 }

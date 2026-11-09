@@ -1,9 +1,9 @@
-import 'dart:collection';
-
 import 'package:flutter/widgets.dart';
 import 'package:syntax_core/syntax.dart';
 
 import 'highlight_scheduler.dart';
+import 'mounted_window_highlights.dart';
+import 'patch_change_index.dart';
 import 'window_source.dart';
 
 /// View-owned, bounded source indexes and visible-line word comparisons.
@@ -16,40 +16,11 @@ class PatchWindowHighlights {
   final _sources = <Object, WindowSource>{};
   final _words = <_WordPair, WordChanges>{};
   int _wordUnits = 0;
-  final _ready = <Object, List<StyledRange>>{};
-  final _unpinnedReady = <Object>{};
-  final _pins = <Object, int>{};
-  Set<Object>? _building;
+  final _output = MountedWindowHighlights();
+  var _changeIndexes = Expando<PatchChangeIndex>();
 
-  /// Retains output requested by a mounted row, including unbounded layouts.
-  /// Only unmounted windows participate in the eight-window output LRU.
-  Widget retain(Widget Function() builder) =>
-      _RetainedHighlights(cache: this, builder: builder);
-
-  void _updatePins(Set<Object> before, Set<Object> after) {
-    for (final key in before.difference(after)) {
-      final remaining = _pins[key]! - 1;
-      if (remaining == 0) {
-        _pins.remove(key);
-        if (_ready.containsKey(key)) _unpinnedReady.add(key);
-      } else {
-        _pins[key] = remaining;
-      }
-    }
-    for (final key in after.difference(before)) {
-      _pins.update(key, (count) => count + 1, ifAbsent: () => 1);
-      _unpinnedReady.remove(key);
-    }
-    _trimReady();
-  }
-
-  void _trimReady() {
-    while (_unpinnedReady.length > 8) {
-      final oldest = _unpinnedReady.first;
-      _unpinnedReady.remove(oldest);
-      _ready.remove(oldest);
-    }
-  }
+  /// Retains output requested by mounted rows, including unbounded layouts.
+  Widget retain(Widget Function() builder) => _output.retain(builder);
 
   final _identities = Expando<int>();
   int _nextIdentity = 0;
@@ -73,17 +44,7 @@ class PatchWindowHighlights {
       request.startLine,
       request.endLine,
     );
-    _remember(key, result.ranges);
-  }
-
-  void _remember(Object key, List<StyledRange> ranges) {
-    _ready.remove(key);
-    _ready[key] = ranges;
-    if (!_pins.containsKey(key)) {
-      _unpinnedReady.remove(key);
-      _unpinnedReady.add(key);
-    }
-    _trimReady();
+    _output.remember(key, result.ranges);
   }
 
   /// Drops derived indexes and word changes when the source changes.
@@ -91,8 +52,8 @@ class PatchWindowHighlights {
     _sources.clear();
     _words.clear();
     _wordUnits = 0;
-    _ready.clear();
-    _unpinnedReady.clear();
+    _output.clear();
+    _changeIndexes = Expando();
     scheduler.clear();
   }
 
@@ -111,11 +72,7 @@ class PatchWindowHighlights {
     DiffHunk? hunk;
     var hunkIndex = -1;
     if (full == null) {
-      hunkIndex = file.hunks.indexWhere((h) {
-        final start = old ? h.oldStart : h.newStart;
-        final count = old ? h.oldCount : h.newCount;
-        return number != null && number >= start && number < start + count;
-      });
+      hunkIndex = _hunkIndex(file, line);
       if (hunkIndex >= 0) hunk = file.hunks[hunkIndex];
     }
     final snapshot = _identities[file] ??= _nextIdentity++;
@@ -165,11 +122,16 @@ class PatchWindowHighlights {
         start,
         end,
       );
-      _building?.add(readyKey);
-      ranges =
-          _ready[readyKey] ??
-          source.ranges(index, id, file.revision, effectiveLanguage, scheduler);
-      if (ranges != null) _remember(readyKey, ranges);
+      ranges = _output.rangesFor(
+        readyKey,
+        () => source.ranges(
+          index,
+          id,
+          file.revision,
+          effectiveLanguage,
+          scheduler,
+        ),
+      );
     }
     return windowSegments(
       line.text,
@@ -180,39 +142,28 @@ class PatchWindowHighlights {
     );
   }
 
+  int _hunkIndex(FileDiff file, DiffLine line) {
+    final old = line.kind == DiffLineKind.removed;
+    final number = old ? line.oldNumber : line.newNumber;
+    return file.hunks.indexWhere((hunk) {
+      final start = old ? hunk.oldStart : hunk.newStart;
+      final count = old ? hunk.oldCount : hunk.newCount;
+      return number != null && number >= start && number < start + count;
+    });
+  }
+
   List<CharRange> _changes(FileDiff file, DiffLine line, InlineDiffMode mode) {
     if (mode == InlineDiffMode.none || line.kind == DiffLineKind.context) {
       return const [];
     }
-    // Compare only the visible line's pair, instead of computing word changes
-    // for every offscreen hunk before the first frame can paint.
-    final hunk = file.hunks.where((h) => h.lines.contains(line)).firstOrNull;
-    if (hunk == null) return const [];
-    final lines = hunk.lines;
-    final index = lines.indexOf(line);
-    var start = index;
-    while (start > 0 && lines[start - 1].kind != DiffLineKind.context) {
-      if (lines[start].kind == DiffLineKind.removed &&
-          lines[start - 1].kind == DiffLineKind.added) {
-        break;
-      }
-      start--;
-    }
-    var added = start;
-    while (added < lines.length && lines[added].kind == DiffLineKind.removed) {
-      added++;
-    }
-    var end = added;
-    while (end < lines.length && lines[end].kind == DiffLineKind.added) {
-      end++;
-    }
-    final pair = line.kind == DiffLineKind.removed
-        ? index - start
-        : index - added;
-    if (pair < 0 || pair >= added - start || pair >= end - added) {
-      return const [];
-    }
-    final before = lines[start + pair], after = lines[added + pair];
+    final index = _hunkIndex(file, line);
+    if (index < 0) return const [];
+    final hunk = file.hunks[index];
+    final pair = (_changeIndexes[hunk] ??= PatchChangeIndex(
+      hunk.lines,
+    )).pairFor(line);
+    if (pair == null) return const [];
+    final (before, after) = pair;
     if (before.text.length > 10000 || after.text.length > 10000) {
       return const [];
     }
@@ -266,48 +217,4 @@ final class _WordPair {
   @override
   int get hashCode =>
       Object.hash(identityHashCode(before), identityHashCode(after), mode);
-}
-
-class _RetainedHighlights extends StatefulWidget {
-  const _RetainedHighlights({required this.cache, required this.builder});
-
-  final PatchWindowHighlights cache;
-  final Widget Function() builder;
-
-  @override
-  State<_RetainedHighlights> createState() => _RetainedHighlightsState();
-}
-
-class _RetainedHighlightsState extends State<_RetainedHighlights> {
-  Set<Object> _keys = {};
-
-  @override
-  void didUpdateWidget(_RetainedHighlights oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (!identical(oldWidget.cache, widget.cache)) {
-      oldWidget.cache._updatePins(_keys, const {});
-      _keys = {};
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final cache = widget.cache;
-    final keys = <Object>{};
-    final previous = cache._building;
-    cache._building = keys;
-    try {
-      return widget.builder();
-    } finally {
-      cache._building = previous;
-      cache._updatePins(_keys, keys);
-      _keys = keys;
-    }
-  }
-
-  @override
-  void dispose() {
-    widget.cache._updatePins(_keys, const {});
-    super.dispose();
-  }
 }

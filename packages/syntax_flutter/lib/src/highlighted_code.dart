@@ -14,6 +14,7 @@ import 'highlight_scheduler.dart';
 import 'indexed_viewport.dart';
 import 'selectable_region.dart';
 import 'selection_chrome.dart';
+import 'mounted_window_highlights.dart';
 import 'window_source.dart';
 import 'styles.dart';
 
@@ -178,6 +179,8 @@ class _HighlightedCodeState extends State<HighlightedCode> {
   int _windowSize = 64;
   WindowSource? _windowSource;
   HighlightWindowScheduler? _windows;
+  final _windowOutput = MountedWindowHighlights();
+  Object? _windowKey;
   final _windowSpans = <int, (List<StyledRange>, TextSpan)>{};
   final _recentBlocks = <int>{};
   int _revision = 0;
@@ -222,9 +225,9 @@ class _HighlightedCodeState extends State<HighlightedCode> {
   int get _blockSize => _perLine ? 1 : linesPerBlock;
   Object? _sourceIdentity;
 
-  /// Blocks left as they were when their colors arrived, because part of
-  /// the selection was in them: a paragraph whose spans change shape loses
-  /// its selection. They take their colors once the selection leaves.
+  /// Paragraphs held unchanged while any selection is active, including
+  /// neighboring blocks whose recoloring could shift selection indexes.
+  /// They take their colors when the selection clears.
   final _held = <int>{};
 
   @override
@@ -307,6 +310,7 @@ class _HighlightedCodeState extends State<HighlightedCode> {
     _revision++;
     _windowSource = null;
     _windowSpans.clear();
+    _windowOutput.clear();
     _windows?.clear();
     final lines = widget.code.split('\n');
     _lines = [
@@ -323,11 +327,27 @@ class _HighlightedCodeState extends State<HighlightedCode> {
       _document = null;
       _documentKey = null;
       _windowSource ??= WindowSource(widget.code);
+      final key = (
+        highlighter,
+        highlighter.revision,
+        widget.language,
+        widget.theme,
+        widget.executor,
+      );
+      if (key != _windowKey) {
+        _windowKey = key;
+        _windowOutput.clear();
+        _windowSpans.clear();
+      }
       _windows ??= HighlightWindowScheduler(
         highlighter: highlighter,
         theme: widget.theme,
         executor: widget.executor ?? highlightWindowInFrames,
         onChanged: _highlightChanged,
+        onResult: (result) => _windowOutput.remember((
+          result.startLine,
+          result.endLine,
+        ), result.ranges),
       );
       _windows!.configure(
         highlighter: highlighter,
@@ -439,13 +459,18 @@ class _HighlightedCodeState extends State<HighlightedCode> {
   TextSpan _span(int index, List<DocumentLine> tokenized) {
     if (_windowed) {
       final source = _windowSource!;
-      final ranges = source.ranges(
-        index,
-        'code',
-        _revision,
-        widget.language,
-        _windows!,
-        windowSize: _windowSize,
+      final start = index ~/ _windowSize * _windowSize;
+      final end = math.min(start + _windowSize, _lines.length);
+      final ranges = _windowOutput.rangesFor(
+        (start, end),
+        () => source.ranges(
+          index,
+          'code',
+          _revision,
+          widget.language,
+          _windows!,
+          windowSize: _windowSize,
+        ),
       );
       if (ranges != null) {
         final cached = _windowSpans.remove(index);
@@ -467,7 +492,11 @@ class _HighlightedCodeState extends State<HighlightedCode> {
                 ],
               );
         _windowSpans[index] = (ranges, span);
-        while (_windowSpans.length > 512) {
+        final spanLimit = math.max(
+          512,
+          _windowOutput.mountedWindows * _windowSize,
+        );
+        while (_windowSpans.length > spanLimit) {
           _windowSpans.remove(_windowSpans.keys.first);
         }
         return span;
@@ -601,7 +630,8 @@ class _HighlightedCodeState extends State<HighlightedCode> {
             : (index, dimensions) =>
                   index < count ? _linesIn(index) * _lineHeight : null,
         itemCount: count,
-        itemBuilder: (context, index) => _block(index, tokenized, offset),
+        itemBuilder: (context, index) =>
+            _windowOutput.retain(() => _block(index, tokenized, offset)),
       );
     }
     return SingleChildScrollView(
@@ -611,7 +641,8 @@ class _HighlightedCodeState extends State<HighlightedCode> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            for (var i = 0; i < count; i++) _block(i, tokenized, offset),
+            for (var i = 0; i < count; i++)
+              _windowOutput.retain(() => _block(i, tokenized, offset)),
           ],
         ),
       ),
@@ -674,10 +705,17 @@ class _HighlightedCodeState extends State<HighlightedCode> {
     if (_windowed) {
       _recentBlocks.remove(index);
       _recentBlocks.add(index);
-      while (_recentBlocks.length > 16) {
+      final blockLimit = math.max(
+        16,
+        (_windowOutput.mountedWindows * _windowSize + linesPerBlock - 1) ~/
+            linesPerBlock,
+      );
+      while (_recentBlocks.length > blockLimit) {
         final oldest = _recentBlocks.first;
         _recentBlocks.remove(oldest);
-        if (_selection.isSelected(oldest)) {
+        // Every cached paragraph participates in the global selection freeze,
+        // including unselected neighbors that may be revisited before clearing.
+        if (_selection.hasSelection) {
           _held.add(oldest);
         } else {
           _blocks[oldest] = null;
