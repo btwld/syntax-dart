@@ -9,6 +9,20 @@
   missing-newline markers. Existing constructors keep their defaults.
 - File and context-gap controls support keyboard activation, focus indication
   and button semantics. Default glyphs and selection handles are painted.
+- Reveal source lines inside shared two-dimensional viewports without changing
+  horizontal scroll positions.
+
+- Keep collapsed native clicks from copying separators, and preserve horizontal
+  offsets when revealing through intervening horizontal viewports.
+
+- Preserve native selection separators between source rows, reveal vertically
+  inside enclosing scroll views, and allow gutter selection and autoscroll
+  beside wrapped continuations and nested source views.
+
+- Add `CodeViewController` and `HighlightedCode.controlled` for revisioned
+  source, directed line selection and queued distant reveal requests.
+- Add per-line backgrounds and gutter slots, aligned with wrapped source
+  lines while retaining virtualization and exact source copying.
 
 ## 0.0.10
 

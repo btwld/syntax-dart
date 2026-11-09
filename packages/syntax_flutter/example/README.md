@@ -3,6 +3,10 @@
 A read-only preview of `HighlightedCode` and `PatchView`, with a picker for
 every bundled language and theme.
 
+The code preview uses `CodeViewController` with a gutter marker on line 2.
+Choose **Reveal line 2** to select and reveal it, or drag its line numbers
+to select complete source lines.
+
 Every push to `main` deploys it to <https://btwld.github.io/syntax-dart/>.
 
 ```bash

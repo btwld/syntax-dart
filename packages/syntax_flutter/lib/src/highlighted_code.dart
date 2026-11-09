@@ -1,15 +1,21 @@
 import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
-import 'package:flutter/rendering.dart' show ViewportOffset;
+import 'package:flutter/rendering.dart'
+    show ClearSelectionEvent, RenderAbstractViewport, ViewportOffset;
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart';
 import 'package:syntax_core/syntax.dart';
 
 import 'code_rows.dart';
+import 'code_view_controller.dart';
 import 'highlighter_scope.dart';
+import 'indexed_viewport.dart';
 import 'selectable_region.dart';
 import 'selection_chrome.dart';
 import 'styles.dart';
+
+part 'code_lines.dart';
 
 /// Read-only, syntax-highlighted code.
 ///
@@ -46,7 +52,7 @@ import 'styles.dart';
 class HighlightedCode extends StatefulWidget {
   /// Shows [code] highlighted as [language] in [theme].
   const HighlightedCode(
-    this.code, {
+    String code, {
     super.key,
     required this.language,
     required this.theme,
@@ -58,10 +64,50 @@ class HighlightedCode extends StatefulWidget {
     this.selectionChrome,
     this.softWrap = false,
     this.borderRadius,
-  });
+    this.lineBackgroundBuilder,
+    this.gutterBuilder,
+  }) : _source = code,
+       controller = null;
+
+  /// Shows the source, selection and reveal requests of [controller].
+  ///
+  /// The caller owns the controller and must dispose it. Individual source
+  /// lines are virtualized when the view has a bounded height.
+  const HighlightedCode.controlled({
+    super.key,
+    required CodeViewController this.controller,
+    required this.language,
+    required this.theme,
+    this.highlighter,
+    this.textStyle,
+    this.padding = const EdgeInsets.all(16),
+    this.lineNumbers = false,
+    this.selectable = true,
+    this.softWrap = false,
+    this.borderRadius,
+    this.lineBackgroundBuilder,
+    this.gutterBuilder,
+  }) : _source = null;
+
+  final String? _source;
 
   /// The code to show.
-  final String code;
+  String get code => controller?.code ?? _source!;
+
+  /// Caller-owned source controller, or `null` for the source constructor.
+  final CodeViewController? controller;
+
+  /// Background of each zero-based source line, including wrapped continuations.
+  /// A `null` color leaves the theme background visible.
+  final Color? Function(int line)? lineBackgroundBuilder;
+
+  /// Optional content beside each zero-based source line, before its number.
+  ///
+  /// The slot is 24 logical pixels wide whenever a builder is supplied,
+  /// including when it returns `null`. It stays fixed during horizontal
+  /// scrolling and is excluded from copied source. Keep markers within the
+  /// base line height; their height does not change source-line geometry.
+  final Widget? Function(BuildContext context, int line)? gutterBuilder;
 
   /// Language name, alias or scope name, as registered on the highlighter.
   final String language;
@@ -90,8 +136,9 @@ class HighlightedCode extends StatefulWidget {
   /// Defaults to widgets-only controls that need no app theme or icon font.
   final SyntaxSelectionChrome? selectionChrome;
 
-  /// Wraps long lines instead of scrolling horizontally. Line numbers are
-  /// not shown when wrapping, because wrapped lines would misalign them.
+  /// Wraps long lines instead of scrolling horizontally. With a controller
+  /// or line slots, numbers align with the first visual row of each source
+  /// line. The block renderer otherwise hides numbers when wrapping.
   final bool softWrap;
 
   /// Rounds the background's corners.
@@ -139,6 +186,13 @@ class _HighlightedCodeState extends State<HighlightedCode> {
   final _horizontal = ScrollController();
   final _selection = CodeSelectionDelegate();
 
+  bool get _perLine =>
+      widget.controller != null ||
+      widget.lineBackgroundBuilder != null ||
+      widget.gutterBuilder != null;
+  int get _blockSize => _perLine ? 1 : linesPerBlock;
+  Object? _sourceIdentity;
+
   /// Blocks left as they were when their colors arrived, because part of
   /// the selection was in them: a paragraph whose spans change shape loses
   /// its selection. They take their colors once the selection leaves.
@@ -148,7 +202,19 @@ class _HighlightedCodeState extends State<HighlightedCode> {
   void initState() {
     super.initState();
     _selection.onSelectedBlocksChanged = _releaseHeld;
+    widget.controller?.addListener(_controllerChanged);
     PaintingBinding.instance.systemFonts.addListener(_fontsChanged);
+  }
+
+  void _controllerChanged() => setState(() {});
+
+  @override
+  void didUpdateWidget(HighlightedCode oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller?.removeListener(_controllerChanged);
+      widget.controller?.addListener(_controllerChanged);
+    }
   }
 
   /// A font that loads later, such as one fetched at run time, changes the
@@ -159,6 +225,11 @@ class _HighlightedCodeState extends State<HighlightedCode> {
   var _fonts = 0;
 
   void _releaseHeld() {
+    if (_perLine) {
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() {});
+      });
+    }
     final released = [
       for (final block in _held)
         if (!_selection.isSelected(block)) block,
@@ -176,6 +247,7 @@ class _HighlightedCodeState extends State<HighlightedCode> {
 
   @override
   void dispose() {
+    widget.controller?.removeListener(_controllerChanged);
     PaintingBinding.instance.systemFonts.removeListener(_fontsChanged);
     _horizontal.dispose();
     _selection.dispose();
@@ -183,6 +255,18 @@ class _HighlightedCodeState extends State<HighlightedCode> {
   }
 
   void _syncCode() {
+    final identity = (
+      widget.controller,
+      widget.controller?.revision,
+      widget.code,
+      _blockSize,
+    );
+    if (identity != _sourceIdentity) {
+      _sourceIdentity = identity;
+      _selection.dispatchSelectionEvent(const ClearSelectionEvent());
+      _selection.blockSize = _blockSize;
+      _held.clear();
+    }
     if (widget.code == _code) return;
     _code = widget.code;
     final lines = widget.code.split('\n');
@@ -247,7 +331,7 @@ class _HighlightedCodeState extends State<HighlightedCode> {
     }
     final scaler =
         MediaQuery.maybeTextScalerOf(context) ?? TextScaler.noScaling;
-    final metrics = (styles, scaler, _lines, _fonts);
+    final metrics = (styles, scaler, _lines, _fonts, _blockSize);
     if (metrics == _metricsKey) return;
     _metricsKey = metrics;
     _plainSpans = List.filled(_lines.length, null);
@@ -287,7 +371,7 @@ class _HighlightedCodeState extends State<HighlightedCode> {
     final painter = measure(_shown(sample));
     _widths = LineWidths(
       sample.isEmpty ? 0 : painter.width * line.length / sample.length,
-      guessBlock: longest ~/ linesPerBlock,
+      guessBlock: longest ~/ _blockSize,
     );
     painter.dispose();
     digit.dispose();
@@ -371,7 +455,9 @@ class _HighlightedCodeState extends State<HighlightedCode> {
       viewportBuilder: (context, offset) => HorizontalExtent(
         offset: offset,
         widths: _widths,
-        gutterWidth: widget.lineNumbers ? _gutterWidth : 0,
+        gutterWidth:
+            (widget.lineNumbers ? _gutterWidth : 0) +
+            (widget.gutterBuilder == null ? 0 : 24),
         child: _list(virtualize: virtualize, offset: offset),
       ),
     );
@@ -385,18 +471,27 @@ class _HighlightedCodeState extends State<HighlightedCode> {
       virtualize ? _finishLater() : document.tokenize();
     }
     final tokenized = _document?.lines ?? const <DocumentLine>[];
-    final count = (_lines.length + linesPerBlock - 1) ~/ linesPerBlock;
+    final count = (_lines.length + _blockSize - 1) ~/ _blockSize;
     final key = (
       _metricsKey,
       offset,
       widget.lineNumbers && !widget.softWrap,
       widget.softWrap,
       widget.selectable,
+      _blockSize,
     );
     if (key != _blocksKey) {
       _blocksKey = key;
       _blocks = List.filled(count, null);
       _held.clear();
+    }
+    if (_perLine) {
+      return _CodeLines(
+        owner: this,
+        tokenized: tokenized,
+        offset: offset,
+        virtualize: virtualize,
+      );
     }
     if (virtualize) {
       return ListView.builder(
@@ -425,7 +520,7 @@ class _HighlightedCodeState extends State<HighlightedCode> {
   }
 
   int _linesIn(int block) =>
-      math.min(linesPerBlock, _lines.length - block * linesPerBlock);
+      math.min(_blockSize, _lines.length - block * _blockSize);
 
   static const _lineBreak = TextSpan(text: '\n');
 
@@ -434,7 +529,7 @@ class _HighlightedCodeState extends State<HighlightedCode> {
     List<DocumentLine> tokenized,
     ViewportOffset? offset,
   ) {
-    final first = index * linesPerBlock;
+    final first = index * _blockSize;
     final lines = [
       for (var i = 0; i < _linesIn(index); i++) _span(first + i, tokenized),
     ];
@@ -449,7 +544,7 @@ class _HighlightedCodeState extends State<HighlightedCode> {
         return block;
       }
     }
-    final numbered = widget.lineNumbers && !widget.softWrap;
+    final numbered = !_perLine && widget.lineNumbers && !widget.softWrap;
     final block = CodeBlock(
       index: index,
       span: TextSpan(
