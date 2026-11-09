@@ -168,6 +168,30 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
   double _within = 0;
   bool _programmaticScroll = false;
   bool _revealIssued = false;
+  ({int row, double within})? _restoringAnchor;
+
+  bool get _hasPendingReveal {
+    final row = widget.revealRow;
+    return _activeReveal != null ||
+        (row != null && _lastReveal != (widget.revealRequest, row));
+  }
+
+  void _restoreAnchor(int row, double within) {
+    _restoringAnchor = (row: row, within: within);
+    final generation = _generation;
+    final command = (widget.revealRequest, widget.revealRow);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted ||
+          generation != _generation ||
+          _restoringAnchor == null ||
+          _hasPendingReveal ||
+          command != (widget.revealRequest, widget.revealRow)) {
+        return;
+      }
+      _jump(row, within);
+    });
+  }
+
   (int, int)? _lastReveal;
   ({
     int request,
@@ -186,6 +210,7 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
       ? widget.controller.offset
       : widget.controller.initialScrollOffset;
   void _reset() {
+    _restoringAnchor = null;
     _heights = RowHeightIndex(
       widget.count,
       estimatedHeight: widget.estimatedHeight,
@@ -226,7 +251,8 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
   void _reportRange() {
     if ((widget.onVisibleRange == null &&
             widget.onLayout == null &&
-            !_revealIssued) ||
+            !_revealIssued &&
+            _restoringAnchor == null) ||
         _rangeQueued) {
       return;
     }
@@ -243,8 +269,9 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
           _extent,
         ),
       );
-      if (_revealIssued && _measurements.isEmpty && !_queued) {
-        _completeReveal();
+      if (_measurements.isEmpty && !_queued) {
+        if (_revealIssued) _completeReveal();
+        _restoringAnchor = null;
       }
       final end = (_heights.rowAt(_offset + _extent) + 1).clamp(
         0,
@@ -258,7 +285,10 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
   }
 
   void _scroll() {
-    if (!_programmaticScroll) _completeReveal();
+    if (!_programmaticScroll) {
+      _completeReveal();
+      _restoringAnchor = null;
+    }
     final base = _base;
     _range();
     if (!widget.fixedHeight && _base != base && mounted) setState(() {});
@@ -266,7 +296,9 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
   }
 
   void _measure(int index, double height) {
-    if (!mounted || index >= widget.count || height <= 0) return;
+    if (!mounted || index >= widget.count || !height.isFinite || height < 0) {
+      return;
+    }
     final seen = !_laidOut.add(index);
     if ((_heights.offsetFor(index + 1) - _heights.offsetFor(index) - height)
             .abs() <
@@ -287,6 +319,7 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
     final before = reveal == null
         ? null
         : _revealOffset(reveal.row, reveal.header, reveal.inset);
+    var restoring = _restoringAnchor;
     final anchor = _heights.rowAt(_offset);
     final within = _offset - _heights.offsetFor(anchor);
     var correction = 0.0;
@@ -304,12 +337,28 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
     if (_measurements.containsKey(anchor) && within >= anchorHeight) {
       correction += math.max(0, anchorHeight - _extent) - within;
     }
+    if (restoring != null && _measurements.containsKey(restoring.row)) {
+      final height =
+          _heights.offsetFor(restoring.row + 1) -
+          _heights.offsetFor(restoring.row);
+      if (restoring.within >= height) {
+        restoring = (
+          row: restoring.row,
+          within: math.max(0.0, height - _extent),
+        );
+        _restoringAnchor = restoring;
+      }
+    }
     _measurements.clear();
     if (reveal != null) {
       // While layout settles, the command's logical target is the anchor.
       // Wrapped rows can change the prefix between the viewport and target.
       correction =
           _revealOffset(reveal.row, reveal.header, reveal.inset) - before!;
+    }
+    if (reveal == null && restoring != null) {
+      correction =
+          _heights.offsetFor(restoring.row) + restoring.within - _offset;
     }
     // The correction assumes rows above the anchor pushed it down by
     // their change, as a row laid out for the first time does: the list
@@ -356,6 +405,7 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
     if (_lastReveal == key) return;
     _completeReveal();
     _lastReveal = key;
+    _restoringAnchor = null;
     final command = (
       request: widget.revealRequest,
       row: row,
@@ -438,11 +488,7 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
       _reset();
       if (index != null && height != null) _heights.measure(index, height);
       _range();
-      if (index != null && widget.revealRow == null) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _jump(index, within);
-        });
-      }
+      if (index != null && !_hasPendingReveal) _restoreAnchor(index, within);
     }
     _requestReveal();
   }
@@ -451,17 +497,14 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
       if (_width != null && _width != constraints.maxWidth) {
-        final anchor = _visible, within = _within;
+        final anchor = _restoringAnchor?.row ?? _visible;
+        final within = _restoringAnchor?.within ?? _within;
         final height = widget.count == 0
             ? null
             : _heights.offsetFor(anchor + 1) - _heights.offsetFor(anchor);
         _reset();
         if (height != null) _heights.measure(anchor, height);
-        if (widget.revealRow == null) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) _jump(anchor, within);
-          });
-        }
+        if (!_hasPendingReveal) _restoreAnchor(anchor, within);
       }
       _width = constraints.maxWidth;
       _extent = constraints.maxHeight.isFinite ? constraints.maxHeight : 600;
