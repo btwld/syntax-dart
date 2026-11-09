@@ -417,106 +417,114 @@ class _PatchViewState<T> extends State<PatchView<T>>
   PatchWindowHighlights? _windowHighlights;
   Object? _windowKey;
   bool _repaintScheduled = false;
-  final _revealRowKey = GlobalKey();
-  final _stickyViewportKey = GlobalKey();
-  final _pinnedHeaderKey = GlobalKey();
-  final _fileHeaderKeys = <int, GlobalKey>{};
+  List<DiffRow> _geometryRows = const [];
+  int _leadingCount = 0;
+  final _headerRows = <int, int?>{};
+  IndexedViewportLayout? _indexedLayout;
   int? _pinnedFile;
   bool _stickyBounded = false;
-  bool _stickyUpdateQueued = false;
+  bool _ownShrinkScroll = false;
+  bool _shrinkGeometryQueued = false;
+  Object? _shrinkLayoutKey;
+  RowHeightIndex _shrinkHeights = RowHeightIndex(0);
+  int _shrinkGeneration = 0;
+  final _shrinkMeasurements = <int, double>{};
+  final _shrinkContexts = <int, BuildContext>{};
 
   bool get _controlledSticky =>
       widget.controller != null && widget.stickyHeaders;
 
-  Rect? _rectFor(GlobalKey key) {
-    final box = key.currentContext?.findRenderObject();
-    return box is RenderBox && box.attached && box.hasSize
-        ? box.localToGlobal(Offset.zero) & box.size
+  int? _headerForFile(int file) => _headerRows.putIfAbsent(file, () {
+    final rows = _geometryRows;
+    if (rows is! DiffLayout) return null;
+    final row = rows.rowForFile(file);
+    return row != null && rows[row] is DiffFileHeaderRow
+        ? row + _leadingCount
         : null;
+  });
+
+  int? _headerForRow(int row) {
+    final source = row - _leadingCount;
+    return source < 0 || source >= _geometryRows.length
+        ? null
+        : _headerForFile(_geometryRows[source].file);
   }
 
-  void _queueStickyUpdate() {
-    if (!_controlledSticky || _stickyUpdateQueued) return;
-    _stickyUpdateQueued = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _stickyUpdateQueued = false;
-      if (mounted) _updatePinnedHeader();
-    });
-  }
+  double _headerInset(int row) => row > _leadingCount ? 16 : 0;
 
-  // Layout, rather than a guessed row height, decides when the complete
-  // in-list header and label have left this viewport.
-  bool _updatePinnedHeader() {
-    if (!_controlledSticky || !_stickyBounded) return false;
-    final viewport = _rectFor(_stickyViewportKey);
-    if (viewport == null) return false;
-    var file = _stickyFile;
-    if (widget.shrinkWrap) {
-      file = null;
-      var latest = double.negativeInfinity;
-      for (final entry in _fileHeaderKeys.entries) {
-        final rect = _rectFor(entry.value);
-        if (rect != null && rect.top <= viewport.top && rect.top > latest) {
-          file = entry.key;
-          latest = rect.top;
-        }
-      }
+  void _updatePinned(
+    int Function(double) rowAt,
+    double Function(int) offsetFor,
+    double Function(int) heightFor,
+  ) {
+    if (!_controlledSticky ||
+        !_stickyBounded ||
+        !_scroll.hasClients ||
+        _geometryRows.isEmpty) {
+      return;
     }
-    final header = file == null ? null : _fileHeaderKeys[file];
-    final rect = header == null ? null : _rectFor(header);
+    final row = rowAt(_scroll.offset);
+    final header = _headerForRow(row);
+    final source = row - _leadingCount;
     final pinned =
-        file != null &&
-            file < _files.length &&
-            _files[file].path.isNotEmpty &&
-            (rect == null || rect.bottom <= viewport.top)
-        ? file
+        header != null &&
+            _scroll.offset >= offsetFor(header) + heightFor(header)
+        ? _geometryRows[source].file
         : null;
-    if (_pinnedFile == pinned) return false;
-    setState(() => _pinnedFile = pinned);
-    return true;
+    if (_pinnedFile != pinned) setState(() => _pinnedFile = pinned);
   }
 
-  void _finishStickyReveal(int token) {
+  void _indexedGeometry(IndexedViewportLayout layout) {
+    _indexedLayout = layout;
+    _updatePinned(layout.rowAt, layout.offsetFor, layout.heightFor);
+  }
+
+  void _recordShrinkHeight(int row, double height) {
+    if (row >= _shrinkHeights.length || height <= 0) return;
+    if ((_shrinkHeight(row) - height).abs() < .1) return;
+    _shrinkMeasurements[row] = height;
+    _queueShrinkGeometry();
+  }
+
+  double get _topPadding => widget.padding.resolve(TextDirection.ltr).top;
+  double _shrinkOffset(int row) => _topPadding + _shrinkHeights.offsetFor(row);
+  double _shrinkHeight(int row) =>
+      _shrinkHeights.offsetFor(row + 1) - _shrinkHeights.offsetFor(row);
+
+  void _flushShrinkGeometry() {
+    for (final entry in _shrinkMeasurements.entries) {
+      _shrinkHeights.measure(entry.key, entry.value);
+    }
+    _shrinkMeasurements.clear();
+    _updatePinned(
+      (offset) => _shrinkHeights.rowAt(math.max(0, offset - _topPadding)),
+      _shrinkOffset,
+      _shrinkHeight,
+    );
+  }
+
+  void _queueShrinkGeometry() {
+    if (_shrinkGeometryQueued) return;
+    _shrinkGeometryQueued = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || token != _revealToken) return;
-      if (!_controlledSticky || !_stickyBounded) {
-        _scheduledRevealToken = null;
-        _completedRevealToken = token;
-        return;
-      }
-      if (widget.controller?.revealRow == null) {
-        _scheduledRevealToken = null;
-        return;
-      }
-      // The indexed jump and shrink-wrapped ensureVisible run first. Wait
-      // for the resulting header to mount before measuring its full height.
-      if (_updatePinnedHeader()) {
-        _finishStickyReveal(token);
-        return;
-      }
-      final target = _rectFor(_revealRowKey);
-      final header = _rectFor(_pinnedHeaderKey);
-      if (target == null || (_pinnedFile != null && header == null)) {
-        _finishStickyReveal(token);
-        return;
-      }
-      if (_pinnedFile != null && header != null && _scroll.hasClients) {
-        final overlap = header.bottom - target.top;
-        final position = _scroll.position;
-        final offset = (position.pixels - overlap).clamp(
-          position.minScrollExtent,
-          position.maxScrollExtent,
-        );
-        if (overlap > .1 && offset != position.pixels) {
-          position.jumpTo(offset);
-          _finishStickyReveal(token);
-          return;
-        }
-      }
-      _scheduledRevealToken = null;
-      _completedRevealToken = token;
+      _shrinkGeometryQueued = false;
+      if (mounted) _flushShrinkGeometry();
     });
-    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  void _scrollChanged() {
+    if (!widget.shrinkWrap) return;
+    if (!_ownShrinkScroll) {
+      final token = _scheduledRevealToken;
+      if (token != null) _completeReveal(token);
+    }
+    _queueShrinkGeometry();
+  }
+
+  void _completeReveal(int token) {
+    if (token != _revealToken) return;
+    _scheduledRevealToken = null;
+    _completedRevealToken = token;
   }
 
   PatchController<T>? _revealController;
@@ -540,45 +548,72 @@ class _PatchViewState<T> extends State<PatchView<T>>
     return _completedRevealToken == _revealToken ? null : controller?.revealRow;
   }
 
-  void _scheduleRevealCompletion({required bool shrinkWrapped}) {
+  void _scheduleShrinkReveal(int row) {
     final token = _revealToken;
     if (_scheduledRevealToken == token) return;
+    final rows = _geometryRows;
+    final sourceRow = row - _leadingCount;
     _scheduledRevealToken = token;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || token != _revealToken) return;
-      if (shrinkWrapped) {
-        final row = _revealRowKey.currentContext;
-        if (row == null) return;
-        final target = row.findRenderObject()!;
-        var object = target;
-        var scrollable = Scrollable.maybeOf(row);
-        while (scrollable != null) {
-          if (scrollable.position.axis == Axis.vertical) {
-            scrollable.position.ensureVisible(
-              object,
-              targetRenderObject: target,
-            );
-          }
-          final viewport = RenderAbstractViewport.maybeOf(object);
-          final vertical = Scrollable.maybeOf(
-            scrollable.context,
-            axis: Axis.vertical,
+      if (!mounted || _scheduledRevealToken != token || token != _revealToken) {
+        return;
+      }
+      if (!identical(rows, _geometryRows) ||
+          widget.controller?.revealRow != sourceRow) {
+        _completeReveal(token);
+        return;
+      }
+      _flushShrinkGeometry();
+      _ownShrinkScroll = true;
+      try {
+        if (_stickyBounded) {
+          final header = _controlledSticky ? _headerForRow(row) : null;
+          final clearance = header == null
+              ? 0.0
+              : math.max(0.0, _shrinkHeight(header) - _headerInset(header));
+          final position = _scroll.position;
+          position.jumpTo(
+            (_shrinkOffset(row) - clearance).clamp(
+              position.minScrollExtent,
+              position.maxScrollExtent,
+            ),
           );
-          final sharedViewport =
-              viewport is RenderTwoDimensionalViewport &&
-              identical(viewport.horizontalOffset, scrollable.position) &&
-              identical(viewport.verticalOffset, vertical?.position);
-          if (!sharedViewport) object = scrollable.context.findRenderObject()!;
-          scrollable = Scrollable.maybeOf(scrollable.context);
+        } else {
+          // Only unbounded shrink-wrapped content needs a render target to
+          // reveal through its containing (possibly two-dimensional) viewport.
+          // Its Builder is permanent; issuing a command never reparents rows.
+          final context = _shrinkContexts[row];
+          if (context != null) {
+            final target = context.findRenderObject()!;
+            var object = target;
+            var scrollable = Scrollable.maybeOf(context);
+            while (scrollable != null) {
+              if (scrollable.position.axis == Axis.vertical) {
+                scrollable.position.ensureVisible(
+                  object,
+                  targetRenderObject: target,
+                );
+              }
+              final viewport = RenderAbstractViewport.maybeOf(object);
+              final vertical = Scrollable.maybeOf(
+                scrollable.context,
+                axis: Axis.vertical,
+              );
+              final shared =
+                  viewport is RenderTwoDimensionalViewport &&
+                  identical(viewport.horizontalOffset, scrollable.position) &&
+                  identical(viewport.verticalOffset, vertical?.position);
+              if (!shared) object = scrollable.context.findRenderObject()!;
+              scrollable = Scrollable.maybeOf(scrollable.context);
+            }
+          }
         }
+      } finally {
+        _ownShrinkScroll = false;
       }
-      if (_controlledSticky && _stickyBounded) {
-        _finishStickyReveal(token);
-      } else {
-        // IndexedCodeViewport dispatches its jump in this frame too.
-        _scheduledRevealToken = null;
-        _completedRevealToken = token;
-      }
+      // Both jumpTo and the zero-duration parent ensureVisible settle
+      // synchronously; an already-visible target needs no further frame.
+      _completeReveal(token);
     });
   }
 
@@ -652,7 +687,12 @@ class _PatchViewState<T> extends State<PatchView<T>>
     };
     _stickyFile = widget.leading == null ? 0 : null;
     _pinnedFile = null;
-    _fileHeaderKeys.clear();
+    _headerRows.clear();
+    _geometryRows = const [];
+    _indexedLayout = null;
+    _shrinkLayoutKey = null;
+    _shrinkMeasurements.clear();
+    _shrinkContexts.clear();
     _localSelection = null;
     _stopDrag();
     _gutterCells.clear();
@@ -747,7 +787,7 @@ class _PatchViewState<T> extends State<PatchView<T>>
   void initState() {
     super.initState();
     _scroll = widget.scrollController ?? ScrollController();
-    _scroll.addListener(_queueStickyUpdate);
+    _scroll.addListener(_scrollChanged);
     _nativeSelection.onBegin = () => _setSelection(null);
     _syncSource();
     widget.controller?.addListener(_controllerChanged);
@@ -762,10 +802,10 @@ class _PatchViewState<T> extends State<PatchView<T>>
       widget.controller?.addListener(_controllerChanged);
     }
     if (oldWidget.scrollController != widget.scrollController) {
-      _scroll.removeListener(_queueStickyUpdate);
+      _scroll.removeListener(_scrollChanged);
       if (oldWidget.scrollController == null) _scroll.dispose();
       _scroll = widget.scrollController ?? ScrollController();
-      _scroll.addListener(_queueStickyUpdate);
+      _scroll.addListener(_scrollChanged);
     }
     _syncSource();
     _reportSelection();
@@ -778,7 +818,7 @@ class _PatchViewState<T> extends State<PatchView<T>>
     _nativeSelection.dispose();
     _lineFocus.dispose();
     _windows?.dispose();
-    _scroll.removeListener(_queueStickyUpdate);
+    _scroll.removeListener(_scrollChanged);
     if (widget.scrollController == null) _scroll.dispose();
     super.dispose();
   }
@@ -872,9 +912,7 @@ class _PatchViewState<T> extends State<PatchView<T>>
     final windows = _windowsFor(highlighter);
     final shrinkControlled = widget.shrinkWrap && widget.controller != null;
     final revealRow = _pendingRevealRow();
-    if (revealRow != null) {
-      _scheduleRevealCompletion(shrinkWrapped: shrinkControlled);
-    }
+
     _annotationsByLine.clear();
     final revisions = {for (final file in _files) file.id: file.revision};
     for (final annotation
@@ -907,6 +945,37 @@ class _PatchViewState<T> extends State<PatchView<T>>
       identity: (index) => _identity(rows[index]),
     );
     final leadingCount = widget.leading == null ? 0 : 1;
+    if (!identical(_geometryRows, rows)) _headerRows.clear();
+    _geometryRows = rows;
+    _leadingCount = leadingCount;
+    final layoutKey = (
+      widget.controller?.layout ?? _files,
+      widget.mode,
+      Object.hashAllUnordered(widget.collapsed),
+      Object.hashAllUnordered(widget.expanded),
+      widget.wrap,
+      widget.textStyle,
+      widget.showLineNumbers,
+      widget.showChangeIndicators,
+      widget.indicators,
+      widget.hunkSeparatorStyle,
+      leadingCount,
+      widget.gutterBuilder != null,
+      widget.sectionDecoration,
+    );
+    if (shrinkControlled) {
+      if (_shrinkLayoutKey != layoutKey) {
+        _shrinkLayoutKey = layoutKey;
+        _shrinkHeights = RowHeightIndex(
+          (rows.isEmpty ? 1 : rows.length) + leadingCount,
+          estimatedHeight: palette.lineHeight,
+        );
+        _shrinkMeasurements.clear();
+        _shrinkGeneration++;
+      }
+      if (revealRow != null) _scheduleShrinkReveal(revealRow + leadingCount);
+    }
+
     Widget buildRow(BuildContext context, int index) {
       if (leadingCount == 1 && index == 0) {
         return SelectionContainer.disabled(child: widget.leading!);
@@ -918,9 +987,6 @@ class _PatchViewState<T> extends State<PatchView<T>>
       Widget row = windows.retain(
         () => _composedRow(context, index, rows, palette, highlighter, labels),
       );
-      if (index == revealRow && (shrinkControlled || _controlledSticky)) {
-        row = KeyedSubtree(key: _revealRowKey, child: row);
-      }
       if (index > 0 && rows[index - 1].file != rows[index].file) {
         row = Padding(padding: const EdgeInsets.only(top: 16), child: row);
       }
@@ -955,7 +1021,17 @@ class _PatchViewState<T> extends State<PatchView<T>>
                                 ? 'empty'
                                 : _identity(rows[i - leadingCount]),
                           ),
-                          child: buildRow(context, i),
+                          child: MeasuredCodeRow(
+                            generation: _shrinkGeneration,
+                            onSize: (size) =>
+                                _recordShrinkHeight(i, size.height),
+                            child: Builder(
+                              builder: (rowContext) {
+                                _shrinkContexts[i] = rowContext;
+                                return buildRow(rowContext, i);
+                              },
+                            ),
+                          ),
                         ),
                     ],
                   )
@@ -969,21 +1045,18 @@ class _PatchViewState<T> extends State<PatchView<T>>
               builder: buildRow,
               revealRow: revealRow == null ? null : revealRow + leadingCount,
               revealRequest: _revealToken,
-              layoutKey: (
-                widget.controller?.layout ?? _files,
-                widget.mode,
-                Object.hashAllUnordered(widget.collapsed),
-                Object.hashAllUnordered(widget.expanded),
-                widget.wrap,
-                widget.textStyle,
-                widget.showLineNumbers,
-                widget.showChangeIndicators,
-                widget.indicators,
-                widget.hunkSeparatorStyle,
-                leadingCount,
-                widget.gutterBuilder != null,
-                widget.sectionDecoration,
-              ),
+              layoutKey: layoutKey,
+              revealHeaderRow: _controlledSticky && revealRow != null
+                  ? _headerForRow(revealRow + leadingCount)
+                  : null,
+              revealHeaderInset: _controlledSticky && revealRow != null
+                  ? switch (_headerForRow(revealRow + leadingCount)) {
+                      final header? => _headerInset(header),
+                      _ => 0.0,
+                    }
+                  : 0.0,
+              onRevealComplete: _completeReveal,
+              onLayout: _controlledSticky ? _indexedGeometry : null,
               identity: (index) => index < leadingCount
                   ? 'leading'
                   : rows.isEmpty
@@ -1012,7 +1085,15 @@ class _PatchViewState<T> extends State<PatchView<T>>
             ),
           );
 
-    Widget list = viewport();
+    Widget list = widget.shrinkWrap && widget.controller != null
+        ? LayoutBuilder(
+            builder: (context, constraints) {
+              _stickyBounded = constraints.hasBoundedHeight;
+              _queueShrinkGeometry();
+              return viewport();
+            },
+          )
+        : viewport();
     if (widget.stickyHeaders && _files.isNotEmpty) {
       Widget headerFor(int index) => _section(
         _buildRow(
@@ -1025,11 +1106,11 @@ class _PatchViewState<T> extends State<PatchView<T>>
         last: _isCollapsed(index),
       );
       if (_controlledSticky) {
-        final content = KeyedSubtree(key: _stickyViewportKey, child: list);
+        final content = list;
         list = LayoutBuilder(
           builder: (context, constraints) {
             _stickyBounded = constraints.hasBoundedHeight;
-            _queueStickyUpdate();
+            if (widget.shrinkWrap) _queueShrinkGeometry();
             if (!_stickyBounded) return content;
             return Stack(
               children: [
@@ -1046,8 +1127,18 @@ class _PatchViewState<T> extends State<PatchView<T>>
                       ),
                       child: ColoredBox(
                         color: widget.canvasColor ?? palette.background,
-                        child: KeyedSubtree(
-                          key: _pinnedHeaderKey,
+                        child: MeasuredCodeRow(
+                          generation: 0,
+                          onSize: (size) {
+                            final row = _headerForFile(index);
+                            if (row == null) return;
+                            final height = size.height + _headerInset(row);
+                            if (widget.shrinkWrap) {
+                              _recordShrinkHeight(row, height);
+                            } else {
+                              _indexedLayout?.measure(row, height);
+                            }
+                          },
                           child: headerFor(index),
                         ),
                       ),
@@ -1162,12 +1253,7 @@ class _PatchViewState<T> extends State<PatchView<T>>
                   children: [header, label],
                 ),
         );
-        return _controlledSticky && index != null
-            ? KeyedSubtree(
-                key: _fileHeaderKeys.putIfAbsent(file, GlobalKey.new),
-                child: content,
-              )
-            : content;
+        return content;
       case DiffNoticeRow(:final notice):
         return PatchNoticeBar(text: labels.notice(notice), palette: palette);
       case DiffHunkHeaderRow(:final hunk):

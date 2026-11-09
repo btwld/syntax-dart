@@ -4,6 +4,45 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 import 'package:syntax_core/syntax.dart';
 
+/// Local row geometry published by an indexed viewport after layout.
+///
+/// Offsets include the viewport's top padding. Measurements can be supplied
+/// for a header laid out in an overlay or outside the visible row window.
+class IndexedViewportLayout {
+  IndexedViewportLayout._(
+    this._heights,
+    this._measured,
+    this._measure,
+    this.paddingTop,
+    this.extent,
+  );
+  final RowHeightIndex _heights;
+  final Set<int> _measured;
+  final void Function(int, double) _measure;
+
+  /// Top inset in logical viewport pixels.
+  final double paddingTop;
+
+  /// Viewport height in logical pixels.
+  final double extent;
+
+  /// Content offset of a row, including top padding.
+  double offsetFor(int row) => paddingTop + _heights.offsetFor(row);
+
+  /// Measured or estimated height of a row.
+  double heightFor(int row) =>
+      _heights.offsetFor(row + 1) - _heights.offsetFor(row);
+
+  /// Logical row at a local scroll offset.
+  int rowAt(double offset) => _heights.rowAt(math.max(0, offset - paddingTop));
+
+  /// Whether a row has been laid out in this layout generation.
+  bool isMeasured(int row) => _measured.contains(row);
+
+  /// Records an independently laid-out row's local height.
+  void measure(int row, double height) => _measure(row, height);
+}
+
 /// Scrollable list that measures only the rows it builds.
 /// Large unmounted ranges occupy estimated sliver space, so jumping to a
 /// distant row never requires building all preceding widgets. Rows already
@@ -23,6 +62,10 @@ class IndexedCodeViewport extends StatefulWidget {
     this.physics,
     this.revealRow,
     this.revealRequest = 0,
+    this.revealHeaderRow,
+    this.revealHeaderInset = 0,
+    this.onRevealComplete,
+    this.onLayout,
     this.onFirstRow,
     this.onVisibleRange,
     this.fixedHeight = false,
@@ -61,6 +104,18 @@ class IndexedCodeViewport extends StatefulWidget {
 
   /// Increments even when a later command targets the same row.
   final int revealRequest;
+
+  /// Header row whose height clears an explicit reveal destination.
+  final int? revealHeaderRow;
+
+  /// Non-header spacing included in [revealHeaderRow], such as a file gap.
+  final double revealHeaderInset;
+
+  /// Reports a settled or cancelled request. Neither is retried.
+  final ValueChanged<int>? onRevealComplete;
+
+  /// Publishes local row geometry after layout and scrolling.
+  final ValueChanged<IndexedViewportLayout>? onLayout;
 
   /// Reports the first visible logical row for sticky headers.
   final ValueChanged<int>? onFirstRow;
@@ -111,6 +166,18 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
   double? _width;
   Object? _anchor;
   double _within = 0;
+  bool _programmaticScroll = false;
+  bool _revealIssued = false;
+  (int, int)? _lastReveal;
+  ({
+    int request,
+    int row,
+    int? header,
+    double inset,
+    Object key,
+    ScrollController controller,
+  })?
+  _activeReveal;
   bool _queued = false;
   bool _rangeQueued = false;
   (int, int)? _reportedRange;
@@ -157,11 +224,28 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
   }
 
   void _reportRange() {
-    if (widget.onVisibleRange == null || _rangeQueued) return;
+    if ((widget.onVisibleRange == null &&
+            widget.onLayout == null &&
+            !_revealIssued) ||
+        _rangeQueued) {
+      return;
+    }
     _rangeQueued = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _rangeQueued = false;
       if (!mounted) return;
+      widget.onLayout?.call(
+        IndexedViewportLayout._(
+          _heights,
+          _laidOut,
+          _measure,
+          widget.padding.resolve(TextDirection.ltr).top,
+          _extent,
+        ),
+      );
+      if (_revealIssued && _measurements.isEmpty && !_queued) {
+        _completeReveal();
+      }
       final end = (_heights.rowAt(_offset + _extent) + 1).clamp(
         0,
         widget.count,
@@ -174,6 +258,7 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
   }
 
   void _scroll() {
+    if (!_programmaticScroll) _completeReveal();
     final base = _base;
     _range();
     if (!widget.fixedHeight && _base != base && mounted) setState(() {});
@@ -192,52 +277,134 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
     if (seen) _relaidOut.add(index);
     if (_queued) return;
     _queued = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _flushMeasurements());
+  }
+
+  void _flushMeasurements() {
+    _queued = false;
+    if (!mounted || _measurements.isEmpty) return;
+    final reveal = _revealIssued ? _activeReveal : null;
+    final before = reveal == null
+        ? null
+        : _revealOffset(reveal.row, reveal.header, reveal.inset);
+    final anchor = _heights.rowAt(_offset);
+    final within = _offset - _heights.offsetFor(anchor);
+    var correction = 0.0;
+    var restart = false;
+    for (final entry in _measurements.entries) {
+      final delta = _heights.measure(entry.key, entry.value);
+      if (entry.key < anchor) {
+        correction += delta;
+        restart = restart || _relaidOut.contains(entry.key);
+      }
+    }
+    _relaidOut.clear();
+    final anchorHeight =
+        _heights.offsetFor(anchor + 1) - _heights.offsetFor(anchor);
+    if (_measurements.containsKey(anchor) && within >= anchorHeight) {
+      correction += math.max(0, anchorHeight - _extent) - within;
+    }
+    _measurements.clear();
+    if (reveal != null) {
+      // While layout settles, the command's logical target is the anchor.
+      // Wrapped rows can change the prefix between the viewport and target.
+      correction =
+          _revealOffset(reveal.row, reveal.header, reveal.inset) - before!;
+    }
+    // The correction assumes rows above the anchor pushed it down by
+    // their change, as a row laid out for the first time does: the list
+    // builds those forward from its first row. A row laid out before that
+    // comes back with a new height may have been put back above rows the
+    // list already had, so it grew upward instead; then the list starts
+    // again, laying every row out where the heights now put it.
+    if (restart) {
+      _rebase = true;
+      _restarts++;
+    }
+    setState(_range);
+    if (correction != 0 && widget.controller.hasClients) {
+      _setOffset(
+        (_offset + correction).clamp(0, _heights.offsetFor(widget.count)),
+      );
+    }
+  }
+
+  void _setOffset(double offset) {
+    _programmaticScroll = true;
+    try {
+      widget.controller.jumpTo(offset);
+    } finally {
+      _programmaticScroll = false;
+    }
+  }
+
+  void _completeReveal() {
+    final command = _activeReveal;
+    if (command == null) return;
+    _activeReveal = null;
+    _revealIssued = false;
+    widget.onRevealComplete?.call(command.request);
+  }
+
+  void _requestReveal() {
+    final row = widget.revealRow;
+    if (row == null) {
+      _completeReveal();
+      return;
+    }
+    final key = (widget.revealRequest, row);
+    if (_lastReveal == key) return;
+    _completeReveal();
+    _lastReveal = key;
+    final command = (
+      request: widget.revealRequest,
+      row: row,
+      header: widget.revealHeaderRow,
+      inset: widget.revealHeaderInset,
+      key: widget.layoutKey,
+      controller: widget.controller,
+    );
+    _activeReveal = command;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _queued = false;
-      if (!mounted || _measurements.isEmpty) return;
-      final anchor = _heights.rowAt(_offset);
-      final within = _offset - _heights.offsetFor(anchor);
-      var correction = 0.0;
-      var restart = false;
-      for (final entry in _measurements.entries) {
-        final delta = _heights.measure(entry.key, entry.value);
-        if (entry.key < anchor) {
-          correction += delta;
-          restart = restart || _relaidOut.contains(entry.key);
-        }
+      if (!mounted || _activeReveal != command) return;
+      if (widget.layoutKey != command.key ||
+          widget.controller != command.controller ||
+          widget.revealRow != command.row ||
+          widget.revealRequest != command.request) {
+        _completeReveal();
+        return;
       }
-      _relaidOut.clear();
-      final anchorHeight =
-          _heights.offsetFor(anchor + 1) - _heights.offsetFor(anchor);
-      if (_measurements.containsKey(anchor) && within >= anchorHeight) {
-        correction += math.max(0, anchorHeight - _extent) - within;
-      }
-      _measurements.clear();
-      // The correction assumes rows above the anchor pushed it down by
-      // their change, as a row laid out for the first time does: the list
-      // builds those forward from its first row. A row laid out before that
-      // comes back with a new height may have been put back above rows the
-      // list already had, so it grew upward instead; then the list starts
-      // again, laying every row out where the heights now put it.
-      if (restart) {
-        _rebase = true;
-        _restarts++;
-      }
+      // All rows laid out this frame, including a needed offscreen header,
+      // contribute to this one command before its offset is computed.
+      _flushMeasurements();
+      final offset = _revealOffset(command.row, command.header, command.inset);
+      _revealIssued = true;
+      _setOffset(
+        offset.clamp(
+          widget.controller.position.minScrollExtent,
+          widget.controller.position.maxScrollExtent,
+        ),
+      );
       setState(_range);
-      if (correction != 0 && widget.controller.hasClients) {
-        widget.controller.jumpTo(
-          (_offset + correction).clamp(0, _heights.offsetFor(widget.count)),
-        );
-      }
     });
+  }
+
+  double _revealOffset(int row, int? header, double inset) {
+    final clearance = header == null
+        ? 0.0
+        : math.max(
+            0.0,
+            _heights.offsetFor(header + 1) - _heights.offsetFor(header) - inset,
+          );
+    return widget.padding.resolve(TextDirection.ltr).top +
+        _heights.offsetFor(row) -
+        clearance;
   }
 
   void _jump(int index, [double within = 0]) {
     if (widget.count == 0 || !widget.controller.hasClients) return;
     final value = _heights.offsetFor(index.clamp(0, widget.count - 1)) + within;
-    widget.controller.jumpTo(
-      value.clamp(0, widget.controller.position.maxScrollExtent),
-    );
+    _setOffset(value.clamp(0, widget.controller.position.maxScrollExtent));
     setState(_range);
   }
 
@@ -247,17 +414,14 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
     _reset();
     _range();
     widget.controller.addListener(_scroll);
-    if (widget.revealRow case final target?) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _jump(target);
-      });
-    }
+    _requestReveal();
   }
 
   @override
   void didUpdateWidget(IndexedCodeViewport oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.controller != widget.controller) {
+      _completeReveal();
       oldWidget.controller.removeListener(_scroll);
       widget.controller.addListener(_scroll);
     }
@@ -274,19 +438,13 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
       _reset();
       if (index != null && height != null) _heights.measure(index, height);
       _range();
-      if (index != null) {
+      if (index != null && widget.revealRow == null) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) _jump(index, within);
         });
       }
     }
-    if (widget.revealRow != null &&
-        (oldWidget.revealRequest != widget.revealRequest ||
-            oldWidget.revealRow != widget.revealRow)) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _jump(widget.revealRow!);
-      });
-    }
+    _requestReveal();
   }
 
   @override
@@ -299,9 +457,11 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
             : _heights.offsetFor(anchor + 1) - _heights.offsetFor(anchor);
         _reset();
         if (height != null) _heights.measure(anchor, height);
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _jump(anchor, within);
-        });
+        if (widget.revealRow == null) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) _jump(anchor, within);
+          });
+        }
       }
       _width = constraints.maxWidth;
       _extent = constraints.maxHeight.isFinite ? constraints.maxHeight : 600;
@@ -317,7 +477,7 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
                     widget.identity(index) == identity)
               index,
       ]..sort();
-      return CustomScrollView(
+      final scrollView = CustomScrollView(
         controller: widget.controller,
         physics: widget.physics,
         // Supported by the package's minimum Flutter SDK.
@@ -383,7 +543,7 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
                               retained: widget.retainedRows.contains(
                                 widget.identity(index),
                               ),
-                              child: _MeasuredRow(
+                              child: MeasuredCodeRow(
                                 generation: _generation,
                                 onSize: (size) => _measure(index, size.height),
                                 child: widget.builder(context, index),
@@ -416,6 +576,31 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
                     ],
                   ),
           ),
+        ],
+      );
+      final header = _activeReveal?.header;
+      final lastCached = _heights.rowAt(_offset + _extent + _cache);
+      final needsHeader =
+          header != null &&
+          !_laidOut.contains(header) &&
+          (header < _base || header > lastCached);
+      return Stack(
+        children: [
+          scrollView,
+          if (needsHeader)
+            Offstage(
+              child: Padding(
+                padding: EdgeInsets.only(
+                  left: widget.padding.resolve(TextDirection.ltr).left,
+                  right: widget.padding.resolve(TextDirection.ltr).right,
+                ),
+                child: MeasuredCodeRow(
+                  generation: _generation,
+                  onSize: (size) => _measure(header, size.height),
+                  child: widget.builder(context, header),
+                ),
+              ),
+            ),
         ],
       );
     },
@@ -579,8 +764,11 @@ class _RetainedRow extends StatelessWidget {
   );
 }
 
-class _MeasuredRow extends SingleChildRenderObjectWidget {
-  const _MeasuredRow({
+/// A stable layout measurement boundary; it does not depend on reveal state.
+class MeasuredCodeRow extends SingleChildRenderObjectWidget {
+  /// Reports a child's local layout size for each layout generation.
+  const MeasuredCodeRow({
+    super.key,
     required this.generation,
     required this.onSize,
     required super.child,
@@ -589,13 +777,18 @@ class _MeasuredRow extends SingleChildRenderObjectWidget {
   /// The viewport's count of height resets; a new one measures the row
   /// again even when nothing else about it changed.
   final int generation;
+
+  /// Receives the untransformed local size.
   final ValueChanged<Size> onSize;
   @override
   RenderObject createRenderObject(BuildContext context) =>
       _MeasureBox(onSize, generation);
   @override
-  void updateRenderObject(BuildContext context, _MeasureBox renderObject) {
-    renderObject
+  void updateRenderObject(
+    BuildContext context,
+    covariant RenderObject renderObject,
+  ) {
+    (renderObject as _MeasureBox)
       ..onSize = onSize
       ..generation = generation;
   }
