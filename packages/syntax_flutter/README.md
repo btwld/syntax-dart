@@ -42,6 +42,56 @@ changes build the `FileDiff`s ahead of time and pass them to
 numbers, markers or headers. Its words come from `DiffLabels`;
 extend it to translate them.
 
+Compose a review surface without introducing application models:
+
+```dart
+PatchView<MyDraft>(
+  files: files,
+  theme: githubDarkTheme,
+  annotations: drafts, // List<DiffAnnotation<MyDraft>>, owned by the app.
+  leading: const Text('Review introduction'),
+  stickyHeaders: true,
+  canvasColor: const Color(0xff101010),
+  sectionDecoration: BoxDecoration(
+    border: Border.all(color: const Color(0xff444444)),
+    borderRadius: BorderRadius.circular(8),
+  ),
+  fileLabelBuilder: (context, file) => Text(file.language ?? 'plain text'),
+  fileFooterBuilder: (context, file, collapsed) => Text('End of ${file.path}'),
+  gutterBuilder: (context, line) => markers[line.line],
+  rowBelowBuilder: (context, row) => buildDrafts(row.annotations),
+  selectionActionBuilder: (context, details) => buildAction(details),
+  onSelectionChanged: (selection) => selectedLines = selection,
+  onVisibleRange: (start, end) => recordVisibleRows(start, end),
+);
+```
+
+Every constructor accepts these slots. `DiffLineContext` uses a one-based
+line number and an explicit `DiffSide`. Gutter drags and Shift-clicks report
+inclusive `DiffSelection` endpoints with their original direction, file ID and
+revision; crossing sides is allowed. `DiffSelectionDetails.selectedText` gives
+the corresponding source in diff order. Character selection stays on the split
+side where the drag began, retains only endpoint rows across scrolling, and
+clears the gutter selection. Control+C and Command+C copy source only.
+
+`DiffRowContext<T>` supplies a source row and immutable annotations matching
+that file's revision. Anchor a draft using `DiffAnnotation<T>` (optionally with
+its original `sourceSelection`); changing live selection does not move it.
+Stale revisions are excluded. The application owns draft state, persistence
+and any eligibility policy. Slots can be unmounted offscreen, so keep editing
+controllers in the application.
+
+A gutter builder reserves 24 logical pixels even when it returns null. Labels,
+footers, inserted rows and actions are excluded from source copying. Inserted
+content shares its source row's stable identity and measured height. Updating
+annotations keeps the viewport's source anchor. Footers also render on binary
+and collapsed files. Section borders and rounded corners join individual rows
+and pinned headers while keeping files virtualized; gradients and images are
+painted per row. The leading widget scrolls before the first pinned header.
+Visible ranges are half-open logical viewport indices, including the leading
+row when supplied. `shrinkWrap` retains the existing non-virtual list behavior;
+its extra header is static rather than pinned to an enclosing scroll view.
+
 Both views render under a routed `WidgetsApp`, with no Material theme,
 localizations, ancestor or icon font. File headers and context gaps support
 pointer, Enter and Space activation and expose button semantics. Default

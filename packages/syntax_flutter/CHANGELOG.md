@@ -1,5 +1,15 @@
 ## Unreleased
 
+- Add typed `PatchView<T>` composition slots for scrolling introductions,
+  file labels and footers, gutters, application-owned annotations and selection
+  actions, plus canvas colors, joined section decorations and visible ranges.
+- Support directed gutter drag and Shift-click selection across diff sides,
+  and native character selection across virtualized rows with exact endpoint
+  retention. Copied source excludes inserted content and stays on the starting
+  side of a split text drag.
+- Keep annotation-only updates anchored in the measured viewport; reject stale
+  annotation revisions and pin file headers after scrolling introductions.
+
 - Keep plain selection menus compact in application overlays and fit their
   actions within narrow viewports, including larger text and localized labels.
 - Render `PatchView`, `HighlightedCode` and `SyntaxChrome` without Material
