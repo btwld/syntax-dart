@@ -42,6 +42,7 @@
   missing-newline markers. Existing constructors keep their defaults.
 - File and context-gap controls support keyboard activation, focus indication
   and button semantics. Default glyphs and selection handles are painted.
+- Reveal enclosing vertical scroll views after a virtualized source-line jump.
 - Reveal source lines inside shared two-dimensional viewports without changing
   horizontal scroll positions.
 
@@ -56,6 +57,12 @@
   source, directed line selection and queued distant reveal requests.
 - Add per-line backgrounds and gutter slots, aligned with wrapped source
   lines while retaining virtualization and exact source copying.
+- Keep unselected cached paragraphs frozen through scrolling while a code
+  selection is active; release their held output when the selection clears.
+
+- Retain mounted code-window output so small-font viewports larger than the
+  scheduler cache settle. Index patch change blocks once per hunk so default
+  inline highlighting no longer scans offscreen changes for each visible row.
 - Keep syntax output for mounted patch rows so large stationary layouts settle,
   preserve inline emphasis for equal line pairs in different files, and reuse
   parsed hunk indexes without scanning the hunk side for every row.

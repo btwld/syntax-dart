@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -780,4 +782,130 @@ void main() {
       }
     });
   });
+  testWidgets(
+    'selection freezes unselected blocks through LRU eviction and revisit',
+    (tester) async {
+      tester.view.physicalSize = const Size(800, 1200);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final copied = recordClipboard(tester);
+      final lines = numberedLines(2000);
+      final jobs =
+          <
+            (
+              HighlightWindowRequest,
+              SyntaxTheme,
+              int,
+              Completer<HighlightWindowResult>,
+            )
+          >[];
+      Future<HighlightWindowResult> worker(
+        HighlightWindowRequest request, {
+        required Highlighter highlighter,
+        required SyntaxTheme theme,
+        required HighlightCancellation cancellation,
+      }) {
+        final done = Completer<HighlightWindowResult>();
+        jobs.add((request, theme, highlighter.revision, done));
+        return done.future;
+      }
+
+      await tester.pumpWidget(
+        app(
+          HighlightedCode(
+            lines.join('\n'),
+            language: 'dart',
+            theme: githubDarkTheme,
+            executor: worker,
+          ),
+        ),
+      );
+      for (var frame = 0; frame < 3; frame++) {
+        await tester.pump();
+      }
+      final gesture = await tester.startGesture(
+        at(tester, 1, 4),
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pump();
+      await gesture.moveTo(at(tester, 2, 3));
+      await tester.pump();
+      await gesture.up();
+      await tester.pump();
+      final selection =
+          tester
+                  .widget<SelectionContainer>(
+                    find.byWidgetPredicate(
+                      (w) =>
+                          w is SelectionContainer &&
+                          w.delegate is CodeSelectionDelegate,
+                    ),
+                  )
+                  .delegate
+              as CodeSelectionDelegate;
+      expect(selection.isSelected(0), isTrue);
+      expect(selection.isSelected(1), isFalse);
+      final frozen = tester.widget<CodeBlock>(block(1)).span;
+      expect(colored(shownLines(tester)[32]!), isFalse);
+      var coloredTarget = false;
+      for (var job = 0; job < 4 && !coloredTarget; job++) {
+        expect(jobs.length, greaterThan(job));
+        final (request, theme, revision, done) = jobs[job];
+        final ranges = <StyledRange>[];
+        var offset = 0;
+        for (var line = 0; line < request.endLine; line++) {
+          if (line >= request.startLine) {
+            ranges.add(
+              StyledRange(
+                offset,
+                offset + lines[line].length,
+                const TokenStyle(foreground: 0xFF00FF00),
+              ),
+            );
+          }
+          offset += lines[line].length + 1;
+        }
+        done.complete(
+          HighlightWindowResult(
+            request: request,
+            grammarRevision: revision,
+            theme: theme,
+            ranges: ranges,
+          ),
+        );
+        coloredTarget = request.startLine <= 32 && request.endLine > 32;
+        await tester.pump();
+        await tester.pump();
+      }
+      expect(coloredTarget, isTrue);
+      expect(tester.widget<CodeBlock>(block(1)).span, same(frozen));
+      final vertical = scrollable(tester, AxisDirection.down).position;
+      for (var jump = 1; jump <= 12; jump++) {
+        vertical.jumpTo(jump * 128 * 21.0);
+        await tester.pump();
+        await tester.pump();
+        expect(selection.hasSelection, isTrue);
+      }
+      vertical.jumpTo(0);
+      await tester.pump();
+      await tester.pump();
+      expect(selection.isSelected(0), isTrue);
+      expect(selection.isSelected(1), isFalse);
+      expect(
+        tester.widget<CodeBlock>(block(1)).span,
+        same(frozen),
+        reason:
+            'An unselected paragraph still belongs to the active selection freeze',
+      );
+      await copy(tester);
+      expect(copied(), '${lines[1].substring(4)}\n${lines[2].substring(0, 3)}');
+      region(tester).clearSelection();
+      await tester.pump();
+      await tester.pump();
+      expect(colored(shownLines(tester)[32]!), isTrue);
+      expect(tester.widget<CodeBlock>(block(1)).span, isNot(same(frozen)));
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
 }

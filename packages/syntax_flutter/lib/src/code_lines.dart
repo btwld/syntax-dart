@@ -116,11 +116,17 @@ class _CodeLinesState extends State<_CodeLines>
   void _revealVertically(BuildContext row) {
     final target = row.findRenderObject()!;
     var object = target;
+    // The indexed viewport owns its measured jump. Only enclosing positions
+    // need another reveal once that jump has built the target row.
+    final indexedPosition = widget.virtualize && _vertical.hasClients
+        ? _vertical.position
+        : null;
     // Cross distinct horizontal viewports without scrolling them, but stay
     // inside a shared 2D viewport until its vertical position is processed.
     var scrollable = Scrollable.maybeOf(row);
     while (scrollable != null) {
-      if (scrollable.position.axis == Axis.vertical) {
+      if (scrollable.position.axis == Axis.vertical &&
+          scrollable.position != indexedPosition) {
         scrollable.position.ensureVisible(object, targetRenderObject: target);
       }
       final viewport = RenderAbstractViewport.maybeOf(object);
@@ -177,6 +183,31 @@ class _CodeLinesState extends State<_CodeLines>
     }
   }
 
+  void _completeReveal(Object reveal, int line, [Rect? previousRect]) {
+    if (!mounted || reveal != _reveal) return;
+    final row = _rows[line];
+    Rect? rect;
+    if (row != null && row.mounted) {
+      if (widget.virtualize) {
+        final box = row.findRenderObject()! as RenderBox;
+        final viewport = RenderAbstractViewport.maybeOf(box);
+        if (viewport is RenderBox) {
+          rect = box.localToGlobal(Offset.zero, ancestor: viewport) & box.size;
+        }
+      }
+      // Measured rows can still shift after the indexed jump builds them.
+      // Wait for the target's position in its viewport to settle before
+      // aligning that target in the enclosing scroll views.
+      if (rect == previousRect) {
+        _revealVertically(row);
+        return;
+      }
+    }
+    WidgetsBinding.instance
+      ..addPostFrameCallback((_) => _completeReveal(reveal, line, rect))
+      ..ensureVisualUpdate();
+  }
+
   void _syncRequests() {
     if (_source != owner._sourceIdentity) {
       _source = owner._sourceIdentity;
@@ -200,13 +231,11 @@ class _CodeLinesState extends State<_CodeLines>
     final reveal = (controller, controller?.revealRequest, _source);
     if (reveal == _reveal) return;
     _reveal = reveal;
-    if (!widget.virtualize && controller?.revealTarget != null) {
+    if (controller?.revealTarget != null) {
       final line = controller!.revealTarget!;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || reveal != _reveal) return;
-        final row = _rows[line];
-        if (row != null && row.mounted) _revealVertically(row);
-      });
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _completeReveal(reveal, line),
+      );
     }
   }
 
