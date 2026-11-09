@@ -27,3 +27,7 @@ This target uses only the widgets layer: no Material theme, localizations or
 icon font. It demonstrates selectable code, keyboard folding, the default
 selection menu and an injected missing-newline marker. The main demo retains
 its Material application controls; the syntax surfaces support either host.
+
+Touch selection handles show a widgets-only magnifier on Android and iOS.
+`SyntaxSelectionChrome.magnifierConfiguration` lets the host replace it with
+its own controls or disable it with `TextMagnifierConfiguration.disabled`.
