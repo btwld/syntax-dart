@@ -99,6 +99,112 @@ void main() {
     );
   }
 
+  for (final reorder in [false, true]) {
+    testWidgets(
+      '${reorder ? 'reordering' : 'folding'} a preceding file preserves manual scrolling after reveal',
+      (tester) async {
+        final a = added('a');
+        final b = added('b', count: 600);
+        final controller = PatchController<String>([a, b]);
+        final scroll = ScrollController();
+        addTearDown(controller.dispose);
+        addTearDown(scroll.dispose);
+        await tester.pumpWidget(view(controller, scroll));
+        await tester.pumpAndSettle();
+        controller.revealLine('b', DiffSide.newer, 150, revision: 0);
+        await tester.pumpAndSettle();
+        final target = find.text('b 150', findRichText: true);
+        expect(target, findsOneWidget);
+
+        // Read a different part of the file without issuing another reveal.
+        scroll.jumpTo(scroll.offset + 2100);
+        await tester.pumpAndSettle();
+        final reader = find.text('b 250', findRichText: true);
+        expect(reader, findsOneWidget);
+        expect(target, findsNothing);
+        final before = tester.getTopLeft(reader).dy;
+        final offset = scroll.offset;
+        final request = tester
+            .widget<IndexedCodeViewport>(find.byType(IndexedCodeViewport))
+            .revealRequest;
+        if (reorder) {
+          controller.setFiles([b, a]);
+        } else {
+          controller.setCollapsed('a', true);
+        }
+        await tester.pumpAndSettle();
+
+        expect(reader, findsOneWidget);
+        expect(tester.getTopLeft(reader).dy, closeTo(before, 1));
+        expect(scroll.offset, lessThan(offset));
+        expect(
+          target,
+          findsNothing,
+          reason: 'The completed reveal must not run again',
+        );
+        expect(
+          tester
+              .widget<IndexedCodeViewport>(find.byType(IndexedCodeViewport))
+              .revealRequest,
+          request,
+        );
+        expectPlainTree(tester);
+      },
+    );
+  }
+
+  testWidgets('swapping controllers refreshes an identical pending reveal', (
+    tester,
+  ) async {
+    final file = added('a');
+    final first = PatchController<String>([file]);
+    final second = PatchController<String>([file]);
+    final scroll = ScrollController();
+    final highlighter = Highlighter(languages: []);
+    addTearDown(first.dispose);
+    addTearDown(second.dispose);
+    addTearDown(scroll.dispose);
+    first.revealLine('a', DiffSide.newer, 150, revision: 0);
+    second.revealLine('a', DiffSide.newer, 150, revision: 0);
+    var current = first;
+    late StateSetter update;
+    await tester.pumpWidget(
+      neutralApp(
+        StatefulBuilder(
+          builder: (context, setState) {
+            update = setState;
+            return PatchView<String>.controlled(
+              controller: current,
+              scrollController: scroll,
+              theme: githubDarkTheme,
+              highlighter: highlighter,
+            );
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final target = find.text('a 150', findRichText: true);
+    expect(target, findsOneWidget);
+    final request = tester
+        .widget<IndexedCodeViewport>(find.byType(IndexedCodeViewport))
+        .revealRequest;
+    scroll.jumpTo(0);
+    await tester.pumpAndSettle();
+    expect(target, findsNothing);
+
+    update(() => current = second);
+    await tester.pumpAndSettle();
+    expect(target, findsOneWidget);
+    expect(
+      tester
+          .widget<IndexedCodeViewport>(find.byType(IndexedCodeViewport))
+          .revealRequest,
+      greaterThan(request),
+    );
+    expectPlainTree(tester);
+  });
+
   testWidgets('queued and repeated reveals reach distant rows in both modes', (
     tester,
   ) async {

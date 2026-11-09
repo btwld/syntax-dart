@@ -297,39 +297,63 @@ class _PatchViewState<T> extends State<PatchView<T>> {
   Object? _windowKey;
   bool _repaintScheduled = false;
   final _shrinkRevealKey = GlobalKey();
-  (Object, int, int?)? _shrinkRevealRequest;
+  PatchController<T>? _revealController;
+  int? _controllerRevealRequest;
+  int _revealToken = 0;
+  int? _scheduledRevealToken, _completedRevealToken;
 
-  void _revealShrinkWrapped() {
+  int? _pendingRevealRow() {
     final controller = widget.controller;
-    final request = controller == null
-        ? null
-        : (controller, controller.revealRequest, controller.revealRow);
-    if (request == _shrinkRevealRequest) return;
-    _shrinkRevealRequest = request;
-    if (controller?.revealRow == null) return;
+    final request = controller?.revealRequest ?? 0;
+    // Serials belong to each controller; a replacement needs a fresh token
+    // even when it requests the same row with the same controller serial.
+    if (!identical(controller, _revealController) ||
+        request != _controllerRevealRequest) {
+      _revealController = controller;
+      _controllerRevealRequest = request;
+      _revealToken++;
+    }
+    // A completed command must not become navigation again when folding or
+    // reordering changes its layout-dependent row index.
+    return _completedRevealToken == _revealToken ? null : controller?.revealRow;
+  }
+
+  void _scheduleRevealCompletion({required bool shrinkWrapped}) {
+    final token = _revealToken;
+    if (_scheduledRevealToken == token) return;
+    _scheduledRevealToken = token;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || request != _shrinkRevealRequest) return;
-      final row = _shrinkRevealKey.currentContext;
-      if (row == null) return;
-      final target = row.findRenderObject()!;
-      var object = target;
-      var scrollable = Scrollable.maybeOf(row);
-      while (scrollable != null) {
-        if (scrollable.position.axis == Axis.vertical) {
-          scrollable.position.ensureVisible(object, targetRenderObject: target);
+      if (!mounted || token != _revealToken) return;
+      _scheduledRevealToken = null;
+      if (shrinkWrapped) {
+        final row = _shrinkRevealKey.currentContext;
+        if (row == null) return;
+        final target = row.findRenderObject()!;
+        var object = target;
+        var scrollable = Scrollable.maybeOf(row);
+        while (scrollable != null) {
+          if (scrollable.position.axis == Axis.vertical) {
+            scrollable.position.ensureVisible(
+              object,
+              targetRenderObject: target,
+            );
+          }
+          final viewport = RenderAbstractViewport.maybeOf(object);
+          final vertical = Scrollable.maybeOf(
+            scrollable.context,
+            axis: Axis.vertical,
+          );
+          final sharedViewport =
+              viewport is RenderTwoDimensionalViewport &&
+              identical(viewport.horizontalOffset, scrollable.position) &&
+              identical(viewport.verticalOffset, vertical?.position);
+          if (!sharedViewport) object = scrollable.context.findRenderObject()!;
+          scrollable = Scrollable.maybeOf(scrollable.context);
         }
-        final viewport = RenderAbstractViewport.maybeOf(object);
-        final vertical = Scrollable.maybeOf(
-          scrollable.context,
-          axis: Axis.vertical,
-        );
-        final sharedViewport =
-            viewport is RenderTwoDimensionalViewport &&
-            identical(viewport.horizontalOffset, scrollable.position) &&
-            identical(viewport.verticalOffset, vertical?.position);
-        if (!sharedViewport) object = scrollable.context.findRenderObject()!;
-        scrollable = Scrollable.maybeOf(scrollable.context);
       }
+      // IndexedCodeViewport dispatches its jump in this frame's post-frame
+      // callbacks too. Further builds may retain the reader's current anchor.
+      _completedRevealToken = token;
     });
   }
 
@@ -589,10 +613,9 @@ class _PatchViewState<T> extends State<PatchView<T>> {
 
     final windows = _windowsFor(highlighter);
     final shrinkControlled = widget.shrinkWrap && widget.controller != null;
-    if (shrinkControlled) {
-      _revealShrinkWrapped();
-    } else {
-      _shrinkRevealRequest = null;
+    final revealRow = _pendingRevealRow();
+    if (revealRow != null) {
+      _scheduleRevealCompletion(shrinkWrapped: shrinkControlled);
     }
     Widget buildRow(BuildContext context, int index) {
       if (rows.isEmpty) {
@@ -641,8 +664,8 @@ class _PatchViewState<T> extends State<PatchView<T>> {
             controller: _scroll,
             count: rows.isEmpty ? 1 : rows.length,
             builder: buildRow,
-            revealRow: widget.controller?.revealRow,
-            revealRequest: widget.controller?.revealRequest ?? 0,
+            revealRow: revealRow,
+            revealRequest: _revealToken,
             layoutKey: (
               widget.controller?.layout ?? _files,
               widget.mode,
