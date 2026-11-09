@@ -116,11 +116,16 @@ class _CodeLinesState extends State<_CodeLines>
   void _revealVertically(BuildContext row) {
     final target = row.findRenderObject()!;
     var object = target;
-    // Advance past each vertical viewport before asking its enclosing one.
-    // The custom horizontal scrollable has no render viewport of its own.
-    for (final scrollable in _verticalScrollables(row)) {
-      scrollable.position.ensureVisible(object, targetRenderObject: target);
+    // Cross every intervening scrollable, including horizontal viewports,
+    // so each vertical position resolves its own enclosing render viewport.
+    // Only vertical positions move; horizontal offsets are preserved.
+    var scrollable = Scrollable.maybeOf(row);
+    while (scrollable != null) {
+      if (scrollable.position.axis == Axis.vertical) {
+        scrollable.position.ensureVisible(object, targetRenderObject: target);
+      }
       object = scrollable.context.findRenderObject()!;
+      scrollable = Scrollable.maybeOf(scrollable.context);
     }
   }
 

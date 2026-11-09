@@ -483,6 +483,16 @@ final class CodeSelectionDelegate extends RowSelectionDelegate {
   @override
   SelectedContent? getSelectedContent() {
     if (_all) return SelectedContent(plainText: lines.join('\n'));
+    // Native geometry may collapse onto the preceding paragraph's end while
+    // both source boundaries point to the next line's start. Those equivalent
+    // carets must not manufacture a selected separator.
+    final hasBoundaryRange =
+        _startBoundary != null &&
+        _endBoundary != null &&
+        _startBoundary != _endBoundary;
+    if (!hasBoundaryRange && value.status != SelectionStatus.uncollapsed) {
+      return null;
+    }
     final positions = <(int, int)>[?_startBoundary, ?_endBoundary];
     if (_selected.isNotEmpty) {
       final first = _selected.first;

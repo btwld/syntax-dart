@@ -1,5 +1,8 @@
 ## Unreleased
 
+- Keep collapsed native clicks from copying separators, and preserve horizontal
+  offsets when revealing through intervening horizontal viewports.
+
 - Preserve native selection separators between source rows, reveal vertically
   inside enclosing scroll views, and allow gutter selection and autoscroll
   beside wrapped continuations and nested source views.

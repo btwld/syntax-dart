@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:syntax_core/themes/github_dark.dart';
 import 'package:syntax_flutter/syntax_flutter.dart';
+import 'package:syntax_flutter/src/code_rows.dart';
 
 Widget _app(Widget child) => MaterialApp(home: child);
 
@@ -92,6 +93,136 @@ void main() {
       },
     );
   }
+
+  testWidgets('collapsed click copies nothing and preserves the clipboard', (
+    tester,
+  ) async {
+    final controller = CodeViewController(
+      sourceId: 'a',
+      code: 'alpha\nbeta\nlast',
+    );
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(_app(_view(controller)));
+    await tester.pumpAndSettle();
+    await tester.tapAt(_at(tester, 'last', 0), kind: PointerDeviceKind.mouse);
+    await tester.pumpAndSettle();
+    final delegate = tester
+        .widgetList<SelectionContainer>(find.byType(SelectionContainer))
+        .map((container) => container.delegate)
+        .whereType<CodeSelectionDelegate>()
+        .single;
+    expect(delegate.getSelectedContent(), isNull);
+    var clipboard = 'keep me';
+    var writes = 0;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          clipboard = (call.arguments as Map)['text'] as String;
+          writes++;
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+    Actions.invoke(tester.element(_text('last')), CopySelectionTextIntent.copy);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyC);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pump();
+    expect(writes, 0);
+    expect(clipboard, 'keep me');
+  });
+
+  testWidgets(
+    'a genuine separator-only drag remains copyable before a collapsed click',
+    (tester) async {
+      final controller = CodeViewController(
+        sourceId: 'a',
+        code: 'alpha\nbeta\nlast',
+      );
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(_app(_view(controller)));
+      await tester.pumpAndSettle();
+      final gesture = await tester.startGesture(
+        _at(tester, 'alpha', 5),
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pump();
+      await gesture.moveTo(_at(tester, 'beta', 0));
+      await tester.pump();
+      await gesture.up();
+      await tester.pumpAndSettle();
+      final delegate = tester
+          .widgetList<SelectionContainer>(find.byType(SelectionContainer))
+          .map((container) => container.delegate)
+          .whereType<CodeSelectionDelegate>()
+          .single;
+      expect(delegate.getSelectedContent()?.plainText, '\n');
+      await tester.tapAt(_at(tester, 'last', 0), kind: PointerDeviceKind.mouse);
+      await tester.pumpAndSettle();
+      expect(delegate.getSelectedContent(), isNull);
+    },
+  );
+
+  testWidgets(
+    'vertical reveal crosses external horizontal viewports without scrolling them',
+    (tester) async {
+      final lines = List.generate(150, (i) => 'line $i ${'long ' * 100}');
+      final controller = CodeViewController(
+        sourceId: 'a',
+        code: lines.join('\n'),
+      )..revealLine(100);
+      final outer = ScrollController();
+      final sideways = ScrollController(initialScrollOffset: 30);
+      addTearDown(controller.dispose);
+      addTearDown(outer.dispose);
+      addTearDown(sideways.dispose);
+      const outerKey = Key('outer');
+      await tester.pumpWidget(
+        _app(
+          SingleChildScrollView(
+            key: outerKey,
+            controller: outer,
+            child: Column(
+              children: [
+                const SizedBox(height: 180),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  controller: sideways,
+                  child: SizedBox(width: 1000, child: _view(controller)),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(outer.offset, greaterThan(180));
+      final viewport = tester.getRect(find.byKey(outerKey));
+      final line = tester.getRect(_row(lines[100]));
+      expect(line.top, greaterThanOrEqualTo(viewport.top));
+      expect(line.bottom, lessThanOrEqualTo(viewport.bottom));
+      expect(sideways.offset, 30);
+      final horizontal = tester.stateList<ScrollableState>(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is Scrollable &&
+              widget.axisDirection == AxisDirection.right,
+        ),
+      );
+      expect(
+        horizontal.map((state) => state.position.pixels).toList()..sort(),
+        [0, 30],
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('nested vertical reveal leaves horizontal scroll unchanged', (
     tester,
