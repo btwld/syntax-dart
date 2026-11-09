@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Keep plain selection menus compact in application overlays and fit their
+  actions within narrow viewports, including larger text and localized labels.
 - Render `PatchView`, `HighlightedCode` and `SyntaxChrome` without Material
   widgets, localizations, themes or icon fonts, including selection menus.
 - Add optional `selectionChrome` to both views and `SyntaxChrome`, with

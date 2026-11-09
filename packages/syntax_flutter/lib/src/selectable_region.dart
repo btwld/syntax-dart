@@ -74,35 +74,45 @@ Widget _plainMenu(
           border: Border.all(color: theme.foregroundColor),
         ),
         child: FocusScope(
-          child: Builder(
-            builder: (context) => Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (final item in state.contextMenuButtonItems)
-                  if (item.type == ContextMenuButtonType.copy ||
-                      item.type == ContextMenuButtonType.selectAll)
-                    buildSyntaxAction(
-                      context,
-                      chrome,
-                      SyntaxChromeAction(
-                        kind: item.type == ContextMenuButtonType.copy
-                            ? SyntaxChromeActionKind.copy
-                            : SyntaxChromeActionKind.selectAll,
-                        label: item.type == ContextMenuButtonType.copy
-                            ? localizations.copyButtonLabel
-                            : localizations.selectAllButtonLabel,
-                        onInvoke: item.onPressed,
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Text(
-                          item.type == ContextMenuButtonType.copy
+          child: DefaultTextStyle(
+            // Overlay text must not inherit an application's fallback style.
+            style: TextStyle(
+              inherit: false,
+              color: theme.foregroundColor,
+              fontSize: 14,
+              fontWeight: FontWeight.w400,
+              height: 1.25,
+              decoration: TextDecoration.none,
+            ),
+            child: Builder(
+              builder: (context) => Wrap(
+                children: [
+                  for (final item in state.contextMenuButtonItems)
+                    if (item.type == ContextMenuButtonType.copy ||
+                        item.type == ContextMenuButtonType.selectAll)
+                      buildSyntaxAction(
+                        context,
+                        chrome,
+                        SyntaxChromeAction(
+                          kind: item.type == ContextMenuButtonType.copy
+                              ? SyntaxChromeActionKind.copy
+                              : SyntaxChromeActionKind.selectAll,
+                          label: item.type == ContextMenuButtonType.copy
                               ? localizations.copyButtonLabel
                               : localizations.selectAllButtonLabel,
+                          onInvoke: item.onPressed,
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Text(
+                            item.type == ContextMenuButtonType.copy
+                                ? localizations.copyButtonLabel
+                                : localizations.selectAllButtonLabel,
+                          ),
                         ),
                       ),
-                    ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
