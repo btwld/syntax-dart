@@ -1,3 +1,10 @@
+## Unreleased
+
+- Add `PatchDocument`, `PatchDiagnostic` and `parsePatchDocuments` to retain
+  introductions and original patch transport, split concatenated commits,
+  qualify file IDs by commit, and report recoverable parsing problems.
+  Strict mode throws `FormatException` on the first diagnostic.
+
 ## 0.0.3
 
 - `SyntaxTheme.background` and `foreground` start from the editor colors. A

@@ -88,6 +88,16 @@ strings, takes `injectTo: ['source.js']`.
 // From git, or any unified diff.
 final files = parsePatch(gitDiffOutput);
 
+// Keep commit introductions and diagnostics from git log -p or format-patch.
+final documents = parsePatchDocuments(mailbox);
+for (final document in documents) {
+  print(document.introduction);
+  for (final diagnostic in document.diagnostics) {
+    print('Line ${diagnostic.line}: ${diagnostic.message}');
+  }
+}
+// Use strict: true to reject malformed patches with FormatException.
+
 // Or between two versions of a file. This keeps both texts, so viewers
 // can expand unchanged lines and highlight exactly.
 final diff = diffTexts(before, after, path: 'lib/main.dart');
