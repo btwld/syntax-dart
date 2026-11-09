@@ -2,11 +2,14 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/rendering.dart';
-import 'package:flutter/widgets.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 import 'package:syntax_core/syntax.dart';
 
 import 'chrome.dart';
+import 'diff_context.dart';
+import 'diff_text_selection.dart';
 import 'highlighter_scope.dart';
 import 'highlight_scheduler.dart';
 import 'patch_highlights.dart';
@@ -17,6 +20,10 @@ import 'patch_controller.dart';
 import 'selectable_region.dart';
 import 'selection_chrome.dart';
 import 'styles.dart';
+import 'patch_line_endings.dart';
+
+part 'patch_composition.dart';
+part 'patch_selection.dart';
 
 /// A syntax-highlighted view of code changes.
 ///
@@ -60,6 +67,17 @@ class PatchView<T> extends StatefulWidget {
     this.headerBuilder,
     this.hunkBuilder,
     this.scrollController,
+    this.leading,
+    this.canvasColor,
+    this.sectionDecoration,
+    this.fileLabelBuilder,
+    this.fileFooterBuilder,
+    this.rowBelowBuilder,
+    this.gutterBuilder,
+    this.selectionActionBuilder,
+    this.onSelectionChanged,
+    this.onVisibleRange,
+    this.annotations = const [],
   }) : controller = null,
        _mode = mode,
        _files = files,
@@ -68,7 +86,8 @@ class PatchView<T> extends StatefulWidget {
 
   /// Shows caller-owned patch state, rebuilding when the controller changes.
   ///
-  /// The controller owns mode, file/hunk folding, context expansion and reveal.
+  /// The controller owns mode, file/hunk folding, context expansion, selection,
+  /// annotations and reveal.
   /// Caller-owned folding parameters belong to the source constructors only.
   /// The owner must dispose the controller after the view stops using it.
   const PatchView.controlled({
@@ -96,7 +115,18 @@ class PatchView<T> extends StatefulWidget {
     this.headerBuilder,
     this.hunkBuilder,
     this.scrollController,
-  }) : _mode = DiffMode.unified,
+    this.leading,
+    this.canvasColor,
+    this.sectionDecoration,
+    this.fileLabelBuilder,
+    this.fileFooterBuilder,
+    this.rowBelowBuilder,
+    this.gutterBuilder,
+    this.selectionActionBuilder,
+    this.onSelectionChanged,
+    this.onVisibleRange,
+  }) : annotations = const [],
+       _mode = DiffMode.unified,
        collapsed = const {},
        expanded = const {},
        onToggleFile = null,
@@ -136,6 +166,17 @@ class PatchView<T> extends StatefulWidget {
     this.headerBuilder,
     this.hunkBuilder,
     this.scrollController,
+    this.leading,
+    this.canvasColor,
+    this.sectionDecoration,
+    this.fileLabelBuilder,
+    this.fileFooterBuilder,
+    this.rowBelowBuilder,
+    this.gutterBuilder,
+    this.selectionActionBuilder,
+    this.onSelectionChanged,
+    this.onVisibleRange,
+    this.annotations = const [],
   }) : controller = null,
        _mode = mode,
        _files = null,
@@ -177,6 +218,17 @@ class PatchView<T> extends StatefulWidget {
     this.headerBuilder,
     this.hunkBuilder,
     this.scrollController,
+    this.leading,
+    this.canvasColor,
+    this.sectionDecoration,
+    this.fileLabelBuilder,
+    this.fileFooterBuilder,
+    this.rowBelowBuilder,
+    this.gutterBuilder,
+    this.selectionActionBuilder,
+    this.onSelectionChanged,
+    this.onVisibleRange,
+    this.annotations = const [],
   }) : controller = null,
        _mode = mode,
        _files = null,
@@ -277,15 +329,85 @@ class PatchView<T> extends StatefulWidget {
   /// Optional controller for the underlying vertical viewport.
   final ScrollController? scrollController;
 
+  /// Introduction that scrolls before the first file and its pinned header.
+  final Widget? leading;
+
+  /// Color behind file sections and the introduction.
+  final Color? canvasColor;
+
+  /// Decoration sliced across individual rows, preserving virtualization.
+  ///
+  /// Borders and corner radii join at file boundaries and pinned headers.
+  /// Gradients and images are painted separately for each row.
+  final BoxDecoration? sectionDecoration;
+
+  /// Optional label below the file's header content, including pinned copies.
+  final Widget? Function(BuildContext, FileDiff)? fileLabelBuilder;
+
+  /// Optional content after every file, including collapsed and binary files.
+  final Widget? Function(BuildContext, FileDiff, bool)? fileFooterBuilder;
+
+  /// Optional application content below a source row, outside copied code.
+  ///
+  /// The source row's stable identity owns the slot and its measured height.
+  /// Drafts can be annotation payloads independent of the current selection.
+  final Widget? Function(BuildContext, DiffRowContext<T>)? rowBelowBuilder;
+
+  /// Optional marker reserving 24 pixels even when it returns null.
+  ///
+  /// Unified context rows offer the newer side; split rows offer each side.
+  final Widget? Function(BuildContext, DiffLineContext)? gutterBuilder;
+
+  /// Optional action below the active endpoint of a directed line selection.
+  final Widget? Function(BuildContext, DiffSelectionDetails)?
+  selectionActionBuilder;
+
+  /// Reports directed gutter selections and clearing by native text selection.
+  final ValueChanged<DiffSelection?>? onSelectionChanged;
+
+  /// Visible logical rows, half-open, forwarded from [IndexedCodeViewport].
+  /// Includes a leading row when [leading] is supplied.
+  final void Function(int start, int end)? onVisibleRange;
+
+  /// Application-owned row payloads for source constructors. Controlled views
+  /// use [PatchController.annotations]. Stale revisions are never rendered.
+  final List<DiffAnnotation<T>> annotations;
+
   @override
   State<PatchView<T>> createState() => _PatchViewState<T>();
 }
 
 const _sliceBudget = Duration(milliseconds: 6);
 
-class _PatchViewState<T> extends State<PatchView<T>> {
+class _PatchViewState<T> extends State<PatchView<T>>
+    with SingleTickerProviderStateMixin {
   late ScrollController _scroll;
-  int _stickyFile = 0;
+  int? _stickyFile;
+  final _nativeSelection = DiffTextSelection();
+  final _lineFocus = FocusNode();
+  final _gutterCells = <(int, DiffSide, int), BuildContext>{};
+  List<DiffRow> _layout = const [];
+  final _annotationsByLine =
+      <(String, DiffSide, int), List<DiffAnnotation<T>>>{};
+  void _rebuild(VoidCallback callback) => setState(callback);
+  DiffSelection? _localSelection;
+  DiffSelection? get _selection => widget.controller == null
+      ? _localSelection
+      : widget.controller!.selection;
+  DiffSelection? _reportedSelection;
+
+  bool _isCollapsed(int index) =>
+      widget.controller?.isCollapsed(_files[index].id) ??
+      widget.collapsed.contains(index);
+  (FileDiff, DiffSelection)? _crossKey;
+  ({DiffLayout layout, int start, int end})? _crossBounds;
+  DiffSelection? _copiedSelection;
+  String? _copiedText;
+  final _lineEndings = <FileDiff, PatchLineEndings>{};
+  DiffLineContext? _dragAnchor;
+  Offset? _pointer;
+  late final Ticker _autoScroll = createTicker(_scrollTick);
+  Duration _lastTick = Duration.zero;
   Object? _sourceKey, _highlightKey;
   List<FileDiff> _files = const [];
   final _horizontal = HorizontalCodeGroup();
@@ -412,6 +534,11 @@ class _PatchViewState<T> extends State<PatchView<T>> {
     // snapshot immediately. A late executor still settles serially.
     _windowHighlights?.clear();
     _highlights = null;
+    _lineEndings.clear();
+    _crossKey = null;
+    _crossBounds = null;
+    _copiedSelection = null;
+    _copiedText = null;
     _files = switch (key) {
       (final files?, _, _) => files,
       (_, final patch?, _) => parsePatch(patch),
@@ -420,7 +547,10 @@ class _PatchViewState<T> extends State<PatchView<T>> {
       ],
       _ => const [],
     };
-    _stickyFile = 0;
+    _stickyFile = widget.leading == null ? 0 : null;
+    _localSelection = null;
+    _stopDrag();
+    _gutterCells.clear();
   }
 
   DiffHighlightCache _highlightsFor(Highlighter highlighter) {
@@ -491,16 +621,31 @@ class _PatchViewState<T> extends State<PatchView<T>> {
     );
   }
 
+  void _reportSelection() {
+    final selection = _selection;
+    if (_reportedSelection == selection) return;
+    _reportedSelection = selection;
+    if (selection != null) _nativeSelection.beginGutter();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _reportedSelection == selection) {
+        widget.onSelectionChanged?.call(selection);
+      }
+    });
+  }
+
   void _controllerChanged() {
     setState(_syncSource);
+    _reportSelection();
   }
 
   @override
   void initState() {
     super.initState();
     _scroll = widget.scrollController ?? ScrollController();
+    _nativeSelection.onBegin = () => _setSelection(null);
     _syncSource();
     widget.controller?.addListener(_controllerChanged);
+    _reportSelection();
   }
 
   @override
@@ -515,11 +660,15 @@ class _PatchViewState<T> extends State<PatchView<T>> {
       _scroll = widget.scrollController ?? ScrollController();
     }
     _syncSource();
+    _reportSelection();
   }
 
   @override
   void dispose() {
     widget.controller?.removeListener(_controllerChanged);
+    _autoScroll.dispose();
+    _nativeSelection.dispose();
+    _lineFocus.dispose();
     _windows?.dispose();
     if (widget.scrollController == null) _scroll.dispose();
     super.dispose();
@@ -617,19 +766,57 @@ class _PatchViewState<T> extends State<PatchView<T>> {
     if (revealRow != null) {
       _scheduleRevealCompletion(shrinkWrapped: shrinkControlled);
     }
+    _layout = rows;
+    _annotationsByLine.clear();
+    final revisions = {for (final file in _files) file.id: file.revision};
+    for (final annotation
+        in widget.controller?.annotations ?? widget.annotations) {
+      if (revisions[annotation.fileId] != annotation.revision) continue;
+      (_annotationsByLine[(
+                annotation.fileId,
+                annotation.side,
+                annotation.line,
+              )] ??=
+              [])
+          .add(annotation);
+    }
+    _nativeSelection.configure(
+      source: (
+        _sourceKey,
+        widget.controller?.layout,
+        widget.mode,
+        Object.hashAllUnordered(widget.collapsed),
+        Object.hashAllUnordered(widget.expanded),
+      ),
+      rowCount: rows.length,
+      split: widget.mode == DiffMode.split,
+      textAt: (index, side) => _textAt(rows[index], side)?.text,
+      endingAt: (index, side) {
+        final row = rows[index];
+        final line = _textAt(row, side);
+        return line == null ? '\n' : _lineEnding(_files[row.file], line, side);
+      },
+      identity: (index) => _identity(rows[index]),
+    );
+    final leadingCount = widget.leading == null ? 0 : 1;
     Widget buildRow(BuildContext context, int index) {
+      if (leadingCount == 1 && index == 0) {
+        return SelectionContainer.disabled(child: widget.leading!);
+      }
+      index -= leadingCount;
       if (rows.isEmpty) {
         return PatchNoticeBar(text: labels.noFiles, palette: palette);
       }
-      final row = windows.retain(
-        () => _buildRow(rows[index], palette, highlighter, labels),
+      Widget row = windows.retain(
+        () => _composedRow(context, index, rows, palette, highlighter, labels),
       );
-      return index > 0 && rows[index - 1].file != rows[index].file
-          ? Padding(padding: const EdgeInsets.only(top: 16), child: row)
-          : row;
+      if (index > 0 && rows[index - 1].file != rows[index].file) {
+        row = Padding(padding: const EdgeInsets.only(top: 16), child: row);
+      }
+      return row;
     }
 
-    Widget list = widget.shrinkWrap
+    Widget viewport() => widget.shrinkWrap
         ? ListView.builder(
             controller: _scroll,
             padding: widget.padding,
@@ -638,19 +825,29 @@ class _PatchViewState<T> extends State<PatchView<T>> {
             itemCount: shrinkControlled
                 ? 1
                 : rows.isEmpty
-                ? 1
-                : rows.length,
+                ? 1 + leadingCount
+                : rows.length + leadingCount,
             itemBuilder: shrinkControlled
                 ? (context, _) => Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      for (var i = 0; i < (rows.isEmpty ? 1 : rows.length); i++)
+                      for (
+                        var i = 0;
+                        i < ((rows.isEmpty ? 1 : rows.length) + leadingCount);
+                        i++
+                      )
                         KeyedSubtree(
                           key: ValueKey(
-                            rows.isEmpty ? 'empty' : _identity(rows[i]),
+                            i < leadingCount
+                                ? 'leading'
+                                : rows.isEmpty
+                                ? 'empty'
+                                : _identity(rows[i - leadingCount]),
                           ),
                           child: KeyedSubtree(
-                            key: i == widget.controller!.revealRow
+                            key:
+                                revealRow != null &&
+                                    i == revealRow + leadingCount
                                 ? _shrinkRevealKey
                                 : null,
                             child: buildRow(context, i),
@@ -660,71 +857,112 @@ class _PatchViewState<T> extends State<PatchView<T>> {
                   )
                 : buildRow,
           )
-        : IndexedCodeViewport(
-            controller: _scroll,
-            count: rows.isEmpty ? 1 : rows.length,
-            builder: buildRow,
-            revealRow: revealRow,
-            revealRequest: _revealToken,
-            layoutKey: (
-              widget.controller?.layout ?? _files,
-              widget.mode,
-              Object.hashAllUnordered(widget.collapsed),
-              Object.hashAllUnordered(widget.expanded),
-              widget.wrap,
-              widget.textStyle,
-              widget.showLineNumbers,
-              widget.showChangeIndicators,
-              widget.indicators,
-              widget.hunkSeparatorStyle,
+        : ValueListenableBuilder<Set<Object>>(
+            valueListenable: _nativeSelection.retainedRows,
+            builder: (_, retained, _) => IndexedCodeViewport(
+              controller: _scroll,
+              count: (rows.isEmpty ? 1 : rows.length) + leadingCount,
+              builder: buildRow,
+              revealRow: revealRow == null ? null : revealRow + leadingCount,
+              revealRequest: _revealToken,
+              layoutKey: (
+                widget.controller?.layout ?? _files,
+                widget.mode,
+                Object.hashAllUnordered(widget.collapsed),
+                Object.hashAllUnordered(widget.expanded),
+                widget.wrap,
+                widget.textStyle,
+                widget.showLineNumbers,
+                widget.showChangeIndicators,
+                widget.indicators,
+                widget.hunkSeparatorStyle,
+                leadingCount,
+                widget.gutterBuilder != null,
+                widget.sectionDecoration,
+              ),
+              identity: (index) => index < leadingCount
+                  ? 'leading'
+                  : rows.isEmpty
+                  ? 'empty'
+                  : _identity(rows[index - leadingCount]),
+              indexOf: (key) => key == 'leading'
+                  ? (leadingCount == 1 ? 0 : null)
+                  : switch (_indexOf(key, rows)) {
+                      final index? => index + leadingCount,
+                      _ => null,
+                    },
+              retainedRows: retained,
+              padding: widget.padding,
+              physics: widget.physics,
+              estimatedHeight: palette.lineHeight,
+              onVisibleRange: widget.onVisibleRange,
+              onFirstRow: (index) {
+                final sourceIndex = index - leadingCount;
+                final file = sourceIndex < 0 || rows.isEmpty
+                    ? null
+                    : rows[sourceIndex.clamp(0, rows.length - 1)].file;
+                if (widget.stickyHeaders && file != _stickyFile && mounted) {
+                  setState(() => _stickyFile = file);
+                }
+              },
             ),
-            identity: (index) =>
-                rows.isEmpty ? 'empty' : _identity(rows[index]),
-            indexOf: (key) => _indexOf(key, rows),
-            padding: widget.padding,
-            physics: widget.physics,
-            estimatedHeight: palette.lineHeight,
-            onFirstRow: (index) {
-              if (!widget.stickyHeaders || rows.isEmpty) return;
-              final file = rows[index.clamp(0, rows.length - 1)].file;
-              if (file != _stickyFile && mounted) {
-                setState(() => _stickyFile = file);
-              }
-            },
           );
 
+    Widget list = viewport();
     if (widget.stickyHeaders && _files.isNotEmpty) {
-      final index = _stickyFile.clamp(0, _files.length - 1);
-      final stickyHeader = _buildRow(
-        DiffFileHeaderRow(
-          index,
-          collapsed:
-              widget.controller?.isCollapsed(_files[index].id) ??
-              widget.collapsed.contains(index),
+      final index = (_stickyFile ?? 0).clamp(0, _files.length - 1);
+      final header = _section(
+        _buildRow(
+          DiffFileHeaderRow(index, collapsed: _isCollapsed(index)),
+          palette,
+          highlighter,
+          labels,
         ),
-        palette,
-        highlighter,
-        labels,
+        first: true,
+        last: _isCollapsed(index),
       );
-      list = widget.shrinkWrap
-          ? Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [stickyHeader, list],
-            )
-          : Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                stickyHeader,
-                Expanded(child: list),
-              ],
-            );
+      if (widget.shrinkWrap) {
+        list = Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [header, list],
+        );
+      } else {
+        list = Stack(
+          children: [
+            Positioned.fill(child: list),
+            if (_stickyFile != null)
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: Padding(
+                  padding: EdgeInsets.only(
+                    left: widget.padding.resolve(TextDirection.ltr).left,
+                    right: widget.padding.resolve(TextDirection.ltr).right,
+                  ),
+                  child: ColoredBox(
+                    color: widget.canvasColor ?? palette.background,
+                    child: header,
+                  ),
+                ),
+              ),
+          ],
+        );
+      }
     }
     if (widget.selectable) {
       list = SyntaxSelectableRegion(
         theme: widget.theme,
         chrome: widget.selectionChrome,
-        child: list,
+        child: SelectionContainer(delegate: _nativeSelection, child: list),
+      );
+      list = CallbackShortcuts(
+        bindings: {
+          const SingleActivator(LogicalKeyboardKey.keyC, control: true): _copy,
+          const SingleActivator(LogicalKeyboardKey.keyC, meta: true): _copy,
+        },
+        child: Focus(focusNode: _lineFocus, child: list),
       );
     }
     return SyntaxChrome(
@@ -735,7 +973,7 @@ class _PatchViewState<T> extends State<PatchView<T>> {
         child: DefaultSelectionStyle(
           selectionColor: widget.theme.selectionColor,
           child: ColoredBox(
-            color: palette.background,
+            color: widget.canvasColor ?? palette.background,
             child: Directionality(
               textDirection: TextDirection.ltr,
               child: list,
@@ -774,7 +1012,15 @@ class _PatchViewState<T> extends State<PatchView<T>> {
                     ? null
                     : toggle,
               );
-        return SelectionContainer.disabled(child: header);
+        final label = widget.fileLabelBuilder?.call(context, _files[file]);
+        return SelectionContainer.disabled(
+          child: label == null
+              ? header
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [header, label],
+                ),
+        );
       case DiffNoticeRow(:final notice):
         return PatchNoticeBar(text: labels.notice(notice), palette: palette);
       case DiffHunkHeaderRow(:final hunk):
@@ -800,26 +1046,39 @@ class _PatchViewState<T> extends State<PatchView<T>> {
           ),
         );
       case DiffLineRow(:final file, :final line):
-        return PatchUnifiedLine(
-          line: line,
-          spans: _spans(file, line, highlighter, palette),
-          gutterWidth: palette.gutterWidth(_files[file]),
-          palette: palette,
-          labels: labels,
-        );
+        return _sourceLine(file, line, null, palette, highlighter, labels);
       case DiffPairRow(:final file, :final left, :final right):
-        return PatchSplitLine(
-          left: left,
-          right: right,
-          leftSpans: left == null
-              ? null
-              : _spans(file, left, highlighter, palette),
-          rightSpans: right == null
-              ? null
-              : _spans(file, right, highlighter, palette),
-          gutterWidth: palette.gutterWidth(_files[file]),
-          palette: palette,
-          labels: labels,
+        return IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: left == null
+                    ? ColoredBox(color: palette.emptySide)
+                    : _sourceLine(
+                        file,
+                        left,
+                        DiffSide.old,
+                        palette,
+                        highlighter,
+                        labels,
+                      ),
+              ),
+              SizedBox(width: 1, child: ColoredBox(color: palette.divider)),
+              Expanded(
+                child: right == null
+                    ? ColoredBox(color: palette.emptySide)
+                    : _sourceLine(
+                        file,
+                        right,
+                        DiffSide.newer,
+                        palette,
+                        highlighter,
+                        labels,
+                      ),
+              ),
+            ],
+          ),
         );
     }
   }

@@ -80,6 +80,30 @@ class _DemoSurfacesState extends State<_DemoSurfaces> {
                 Expanded(
                   child: PatchView<void>.controlled(
                     controller: _patch,
+                    leading: const Text(
+                      'Compare the greeting implementations.',
+                    ),
+                    stickyHeaders: true,
+                    canvasColor: const Color(0xff101010),
+                    sectionDecoration: BoxDecoration(
+                      border: Border.all(color: const Color(0xff444444)),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    fileFooterBuilder: (_, file, collapsed) => Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: Text(
+                        collapsed ? 'File folded' : 'End of ${file.path}',
+                      ),
+                    ),
+                    gutterBuilder: (_, line) =>
+                        line.line == 1 ? const Text('•') : null,
+                    selectionActionBuilder: (_, details) => Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: Text(
+                        'Selected ${details.selection.anchor} → '
+                        '${details.selection.active} on ${details.selection.activeSide.name}',
+                      ),
+                    ),
                     theme: githubDarkTheme,
                     selectionChrome: _chrome,
                   ),

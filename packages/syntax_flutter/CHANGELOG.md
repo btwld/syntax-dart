@@ -8,6 +8,29 @@
   cached state and reject obsolete coordinates.
 - Measure patch gutter widths without retaining replaced file revisions.
 
+- Index hunk source-line ranges once per file so native and gutter copies
+  resolve recorded separators by binary search instead of rescanning layout
+  blocks for every copied line. Synthesized context keeps lazy source lookup.
+
+- Resolve copied line endings only between selected source rows. Reuse hunk
+  terminators and lazily read expanded context instead of indexing every
+  terminator for a small native selection in a large file.
+
+- Preserve empty native selection endpoints and source line endings when
+  copying expanded context. Keep section decoration image painters alive for
+  asynchronous resolution, and bound cross-side selection highlighting to
+  indexed coordinates instead of materializing the selected source per cell.
+
+- Add typed `PatchView<T>` composition slots for scrolling introductions,
+  file labels and footers, gutters, application-owned annotations and selection
+  actions, plus canvas colors, joined section decorations and visible ranges.
+- Support directed gutter drag and Shift-click selection across diff sides,
+  and native character selection across virtualized rows with exact endpoint
+  retention. Copied source excludes inserted content and stays on the starting
+  side of a split text drag.
+- Keep annotation-only updates anchored in the measured viewport; reject stale
+  annotation revisions and pin file headers after scrolling introductions.
+
 - Keep plain selection menus compact in application overlays and fit their
   actions within narrow viewports, including larger text and localized labels.
 - Render `PatchView`, `HighlightedCode` and `SyntaxChrome` without Material
