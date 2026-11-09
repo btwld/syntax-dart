@@ -1,3 +1,13 @@
+## Unreleased
+
+- Add `HighlightExecutor` injection to `HighlightedCode` and all `PatchView`
+  constructors. Large sources highlight built windows first with serialized,
+  bounded work; content/grammar changes cancel stale work and disposal ignores
+  late results. Parsed hunks keep independent grammar state on both sides.
+- Add `HighlightWindowScheduler` for application-owned window workers and
+  visible-line word comparisons for large diffs.
+- Preserve native selections during deferred recoloring, including drag scrolling.
+
 ## 0.0.10
 
 - Requires `syntax_core` 0.0.3, whose themes start from the editor colors and

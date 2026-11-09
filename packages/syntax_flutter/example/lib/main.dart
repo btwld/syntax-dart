@@ -10,6 +10,10 @@ void main() => runApp(const SyntaxDemo());
 
 final _highlighter = Highlighter(languages: bundledLanguages.values);
 
+// Replace this with an application worker to move window work off the UI
+// isolate. The widgets serialize calls and discard cancelled or stale results.
+final HighlightExecutor _executor = highlightWindow;
+
 /// What the pane shows.
 enum _View { preview, diff, patch }
 
@@ -143,6 +147,7 @@ class _SyntaxDemoState extends State<SyntaxDemo> {
       _sampleText,
       language: _language,
       theme: theme,
+      executor: _executor,
       textStyle: code,
       lineNumbers: true,
     ),
@@ -152,6 +157,7 @@ class _SyntaxDemoState extends State<SyntaxDemo> {
       path: _samplePath,
       language: _language,
       theme: theme,
+      executor: _executor,
       mode: _mode,
       collapsed: _collapsedDiff,
       expanded: _expandedDiff,
@@ -164,6 +170,7 @@ class _SyntaxDemoState extends State<SyntaxDemo> {
     _View.patch => PatchView.fromPatch(
       samplePatch,
       theme: theme,
+      executor: _executor,
       mode: _mode,
       collapsed: _collapsedPatch,
       expanded: _expandedPatch,
