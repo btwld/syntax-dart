@@ -307,16 +307,21 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
       _extent = constraints.maxHeight.isFinite ? constraints.maxHeight : 600;
       _range();
       final activeCount = widget.count - _base;
-      final retainedBeforeBase = <int>[
-        if (!widget.fixedHeight)
-          for (final identity in widget.retainedRows)
-            if (widget.indexOf(identity) case final index?
-                when index >= 0 &&
-                    index < _base &&
-                    index < widget.count &&
-                    widget.identity(index) == identity)
-              index,
-      ]..sort();
+      final retainedBeforeBase = <int>[];
+      if (!widget.fixedHeight) {
+        for (final identity in widget.retainedRows) {
+          final index = widget.indexOf(identity);
+          if (index != null &&
+              index >= 0 &&
+              index < _base &&
+              index < widget.count &&
+              widget.identity(index) == identity) {
+            retainedBeforeBase.add(index);
+          }
+        }
+        retainedBeforeBase.sort();
+      }
+      final padding = widget.padding.resolve(Directionality.of(context));
       return CustomScrollView(
         controller: widget.controller,
         physics: widget.physics,
@@ -324,8 +329,24 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
         // ignore: deprecated_member_use
         cacheExtent: _cache,
         slivers: [
+          // Keep the spacer and row list as viewport siblings. Older
+          // SliverMainAxisGroup versions discard the leading cache origin
+          // after a spacer, causing retained rows to drift on a distant rebase.
+          if (!widget.fixedHeight)
+            SliverPadding(
+              padding: EdgeInsets.only(top: padding.top),
+              sliver: SliverToBoxAdapter(
+                child: SizedBox(height: _heights.offsetFor(_base)),
+              ),
+            ),
           SliverPadding(
-            padding: widget.padding,
+            padding: widget.fixedHeight
+                ? widget.padding
+                : EdgeInsets.only(
+                    left: padding.left,
+                    right: padding.right,
+                    bottom: padding.bottom,
+                  ),
             sliver: widget.fixedHeight
                 ? SliverFixedExtentList(
                     itemExtent: widget.estimatedHeight,
@@ -355,65 +376,58 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
                       addSemanticIndexes: false,
                     ),
                   )
-                : SliverMainAxisGroup(
-                    slivers: [
-                      SliverToBoxAdapter(
-                        child: SizedBox(height: _heights.offsetFor(_base)),
-                      ),
-                      _RowList(
-                        key: ValueKey(_restarts),
-                        firstRow: _base,
-                        activeCount: activeCount,
-                        offsetFor: (local) =>
-                            _heights.offsetFor(_base + local) -
-                            _heights.offsetFor(_base),
-                        remainingAfter: (local) =>
-                            _heights.offsetFor(widget.count) -
-                            _heights.offsetFor(
-                              math.min(widget.count, _base + local + 1),
-                            ),
-                        delegate: SliverChildBuilderDelegate(
-                          (context, local) {
-                            final index = local < activeCount
-                                ? _base + local
-                                : retainedBeforeBase[local - activeCount];
-                            return _RetainedRow(
-                              key: ValueKey(widget.identity(index)),
-                              index: index,
-                              retained: widget.retainedRows.contains(
-                                widget.identity(index),
-                              ),
-                              child: _MeasuredRow(
-                                generation: _generation,
-                                onSize: (size) => _measure(index, size.height),
-                                child: widget.builder(context, index),
-                              ),
-                            );
-                          },
-                          childCount: activeCount + retainedBeforeBase.length,
-                          findChildIndexCallback: (key) {
-                            if (key is! ValueKey<Object>) return null;
-                            final identity = key.value;
-                            final index = widget.indexOf(identity);
-                            // indexOf may return a nearby reveal anchor when a
-                            // row disappeared. Only an exact match can reuse
-                            // the element; fallback anchors may collide.
-                            if (index == null ||
-                                index < 0 ||
-                                index >= widget.count ||
-                                widget.identity(index) != identity) {
-                              return null;
-                            }
-                            if (index >= _base) return index - _base;
-                            final parked = retainedBeforeBase.indexOf(index);
-                            return parked < 0 ? null : activeCount + parked;
-                          },
-                          addAutomaticKeepAlives: false,
-                          addRepaintBoundaries: false,
-                          addSemanticIndexes: false,
+                : _RowList(
+                    key: ValueKey(_restarts),
+                    firstRow: _base,
+                    activeCount: activeCount,
+                    offsetFor: (local) =>
+                        _heights.offsetFor(_base + local) -
+                        _heights.offsetFor(_base),
+                    remainingAfter: (local) =>
+                        _heights.offsetFor(widget.count) -
+                        _heights.offsetFor(
+                          math.min(widget.count, _base + local + 1),
                         ),
-                      ),
-                    ],
+                    delegate: SliverChildBuilderDelegate(
+                      (context, local) {
+                        final index = local < activeCount
+                            ? _base + local
+                            : retainedBeforeBase[local - activeCount];
+                        return _RetainedRow(
+                          key: ValueKey(widget.identity(index)),
+                          index: index,
+                          retained: widget.retainedRows.contains(
+                            widget.identity(index),
+                          ),
+                          child: _MeasuredRow(
+                            generation: _generation,
+                            onSize: (size) => _measure(index, size.height),
+                            child: widget.builder(context, index),
+                          ),
+                        );
+                      },
+                      childCount: activeCount + retainedBeforeBase.length,
+                      findChildIndexCallback: (key) {
+                        if (key is! ValueKey<Object>) return null;
+                        final identity = key.value;
+                        final index = widget.indexOf(identity);
+                        // indexOf may return a nearby reveal anchor when a
+                        // row disappeared. Only an exact match can reuse
+                        // the element; fallback anchors may collide.
+                        if (index == null ||
+                            index < 0 ||
+                            index >= widget.count ||
+                            widget.identity(index) != identity) {
+                          return null;
+                        }
+                        if (index >= _base) return index - _base;
+                        final parked = retainedBeforeBase.indexOf(index);
+                        return parked < 0 ? null : activeCount + parked;
+                      },
+                      addAutomaticKeepAlives: false,
+                      addRepaintBoundaries: false,
+                      addSemanticIndexes: false,
+                    ),
                   ),
           ),
         ],
