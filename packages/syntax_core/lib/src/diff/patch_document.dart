@@ -55,6 +55,9 @@ final _hunkHeader = RegExp(
 /// nonempty preamble before the first commit is its own document. Leading
 /// whitespace is kept with the first commit. Empty or whitespace-only input
 /// returns an empty list.
+/// In a mailbox, only `From` envelope headers separate documents; commit
+/// mentions and patch-like message text remain in the introduction before
+/// the first `diff --git` file header.
 ///
 /// Malformed hunk headers, incomplete file headers and hunk count mismatches
 /// become [PatchDiagnostic]s. In [strict] mode the first diagnostic throws a
@@ -62,7 +65,13 @@ final _hunkHeader = RegExp(
 /// recoverable files are returned. The result and document lists are immutable.
 List<PatchDocument> parsePatchDocuments(String source, {bool strict = false}) {
   if (source.trim().isEmpty) return const [];
-  final commits = _commitHeader.allMatches(source).toList();
+  final headers = _commitHeader.allMatches(source).toList();
+  // Mail messages may mention commits on unindented lines. Once the input
+  // has mailbox envelopes, only those envelopes delimit its documents.
+  final mailbox = headers.any((header) => header[1] != null);
+  final commits = headers
+      .where((header) => !mailbox || header[1] != null)
+      .toList();
   final boundaries = <int>{
     0,
     for (final commit in commits)
@@ -81,7 +90,9 @@ List<PatchDocument> parsePatchDocuments(String source, {bool strict = false}) {
         line.endsWith('\r') ? line.substring(0, line.length - 1) : line,
     ];
     final start = normalized.indexWhere(
-      (line) => line.startsWith('diff --git ') || line.startsWith('--- '),
+      (line) =>
+          line.startsWith('diff --git ') ||
+          (!mailbox && line.startsWith('--- ')),
     );
     final introduction = start < 0
         ? part
@@ -89,10 +100,16 @@ List<PatchDocument> parsePatchDocuments(String source, {bool strict = false}) {
     final commit = _commitHeader.firstMatch(introduction);
     final hash = commit?[1] ?? commit?[2];
     final files = [
-      for (final file in parsePatch(part))
+      for (final file in parsePatch(
+        mailbox ? part.substring(introduction.length) : part,
+      ))
         hash == null ? file : file.copyWith(identity: '$hash:${file.id}'),
     ];
-    final diagnostics = _diagnose(normalized, files);
+    final diagnostics = _diagnose(
+      normalized,
+      files,
+      start: mailbox ? (start < 0 ? normalized.length : start) : 0,
+    );
     if (strict && diagnostics.isNotEmpty) {
       final first = diagnostics.first;
       final offset = lines
@@ -112,13 +129,17 @@ List<PatchDocument> parsePatchDocuments(String source, {bool strict = false}) {
   return List.unmodifiable(documents);
 }
 
-List<PatchDiagnostic> _diagnose(List<String> lines, List<FileDiff> files) {
+List<PatchDiagnostic> _diagnose(
+  List<String> lines,
+  List<FileDiff> files, {
+  int start = 0,
+}) {
   final diagnostics = <PatchDiagnostic>[];
   final hunks = files.expand((file) => file.hunks).iterator;
   final fileHeaders = <int>[];
   var inFile = false;
   var sawHunk = false;
-  for (var i = 0; i < lines.length; i++) {
+  for (var i = start; i < lines.length; i++) {
     final line = lines[i];
     if (line.startsWith('diff --git ')) {
       fileHeaders.add(i + 1);
