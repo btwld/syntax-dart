@@ -1,5 +1,11 @@
 ## Unreleased
 
+- Add `PatchController<T>` and `PatchView<T>.controlled` for stable-ID folding,
+  revision-bound selection and annotations, and queued, repeatable line reveal.
+  Annotation changes preserve layout and scrolling; replaced sources release
+  cached state and reject obsolete coordinates.
+- Measure patch gutter widths without retaining replaced file revisions.
+
 - Keep plain selection menus compact in application overlays and fit their
   actions within narrow viewports, including larger text and localized labels.
 - Render `PatchView`, `HighlightedCode` and `SyntaxChrome` without Material

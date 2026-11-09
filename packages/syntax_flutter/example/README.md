@@ -29,5 +29,7 @@ flutter run -t lib/widgets_app.dart -d chrome
 
 This target uses only the widgets layer: no Material theme, localizations or
 icon font. It demonstrates selectable code, keyboard folding, the default
-selection menu and an injected missing-newline marker. The main demo retains
+selection menu and an injected missing-newline marker. Its patch uses a
+caller-owned `PatchController<void>` and `PatchView.controlled`; file folding
+and context expansion need no local index sets. The main demo retains
 its Material application controls; the syntax surfaces support either host.

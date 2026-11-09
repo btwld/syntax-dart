@@ -28,8 +28,20 @@ class _DemoSurfaces extends StatefulWidget {
 
 class _DemoSurfacesState extends State<_DemoSurfaces> {
   final _highlighter = Highlighter(languages: [dartLanguage]);
-  final _collapsed = <int>{};
-  final _expanded = <DiffGapId>{};
+  final _patch = PatchController<void>([
+    diffTexts(
+      'void main() => print("Hello");\n',
+      'void main() => print("Hello, widgets!");',
+      path: 'lib/main.dart',
+    ),
+  ]);
+
+  @override
+  void dispose() {
+    _patch.dispose();
+    super.dispose();
+  }
+
   final _chrome = SyntaxSelectionChrome(
     selectionControls: SyntaxSelectionChrome.plain.selectionControls,
     // A host can supply its own tooltip here; the accessible description is
@@ -66,18 +78,10 @@ class _DemoSurfacesState extends State<_DemoSurfaces> {
                   'Patch: Tab to its header; Enter or Space folds it.',
                 ),
                 Expanded(
-                  child: PatchView.fromTexts(
-                    oldText: 'void main() => print("Hello");\n',
-                    newText: 'void main() => print("Hello, widgets!");',
-                    path: 'lib/main.dart',
+                  child: PatchView<void>.controlled(
+                    controller: _patch,
                     theme: githubDarkTheme,
                     selectionChrome: _chrome,
-                    collapsed: _collapsed,
-                    expanded: _expanded,
-                    onToggleFile: (file) => setState(() {
-                      if (!_collapsed.remove(file)) _collapsed.add(file);
-                    }),
-                    onExpandGap: (gap) => setState(() => _expanded.add(gap)),
                   ),
                 ),
               ],
