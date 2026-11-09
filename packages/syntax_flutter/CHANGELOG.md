@@ -1,3 +1,13 @@
+## Unreleased
+
+- Render `PatchView`, `HighlightedCode` and `SyntaxChrome` without Material
+  widgets, localizations, themes or icon fonts, including selection menus.
+- Add optional `selectionChrome` to both views and `SyntaxChrome`, with
+  `SyntaxSelectionChrome` for selection controls, menus, action widgets and
+  missing-newline markers. Existing constructors keep their defaults.
+- File and context-gap controls support keyboard activation, focus indication
+  and button semantics. Default glyphs and selection handles are painted.
+
 ## 0.0.10
 
 - Requires `syntax_core` 0.0.3, whose themes start from the editor colors and
