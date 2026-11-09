@@ -309,3 +309,21 @@ extension _PatchSelection<T> on _PatchViewState<T> {
     if (text != null) Clipboard.setData(ClipboardData(text: text));
   }
 }
+
+// The outer SelectableRegion is overridable too. A nested editor/region adds
+// its own calling action to that chain; forward it, while keeping the outer
+// patch's native and gutter selections on the same source-copy path.
+class _PatchCopyAction extends Action<CopySelectionTextIntent> {
+  _PatchCopyAction(this.copy);
+  final VoidCallback copy;
+
+  @override
+  Object? invoke(CopySelectionTextIntent intent) {
+    final caller = callingAction;
+    if (caller != null && caller.callingAction != null) {
+      return caller.invoke(intent);
+    }
+    copy();
+    return null;
+  }
+}

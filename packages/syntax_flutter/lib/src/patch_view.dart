@@ -1385,12 +1385,17 @@ class _PatchViewState<T> extends State<PatchView<T>>
         chrome: widget.selectionChrome,
         child: SelectionContainer(delegate: _nativeSelection, child: list),
       );
-      list = CallbackShortcuts(
-        bindings: {
-          const SingleActivator(LogicalKeyboardKey.keyC, control: true): _copy,
-          const SingleActivator(LogicalKeyboardKey.keyC, meta: true): _copy,
+      list = Shortcuts(
+        shortcuts: const {
+          SingleActivator(LogicalKeyboardKey.keyC, control: true):
+              CopySelectionTextIntent.copy,
+          SingleActivator(LogicalKeyboardKey.keyC, meta: true):
+              CopySelectionTextIntent.copy,
         },
-        child: Focus(focusNode: _lineFocus, child: list),
+        child: Actions(
+          actions: {CopySelectionTextIntent: _PatchCopyAction(_copy)},
+          child: Focus(focusNode: _lineFocus, child: list),
+        ),
       );
     }
     return SyntaxChrome(

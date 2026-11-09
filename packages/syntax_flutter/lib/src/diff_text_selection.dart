@@ -231,6 +231,28 @@ final class DiffTextSelection extends RowSelectionDelegate {
   }
 
   @override
+  SelectionResult handleSelectAll(SelectAllSelectionEvent event) {
+    if (!_split) return super.handleSelectAll(event);
+    final side = activeSide.value ?? DiffSide.newer;
+    // Scrollable's select-all walk needs valid geometry at both boundaries.
+    // Establish that geometry while both columns remain registered, then clear
+    // the other column before returning so paint, retention and copy agree.
+    activeSide.value = null;
+    try {
+      final result = super.handleSelectAll(event);
+      activeSide.value = side;
+      for (final entry in _cells.entries.toList()) {
+        if (entry.key.side != side) {
+          entry.value.dispatchSelectionEvent(const ClearSelectionEvent());
+        }
+      }
+      return result;
+    } finally {
+      activeSide.value = side;
+    }
+  }
+
+  @override
   SelectionResult handleClearSelection(ClearSelectionEvent event) {
     _clearing = true;
     try {

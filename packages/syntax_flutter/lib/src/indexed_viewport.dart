@@ -216,14 +216,19 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
     _generation++;
   }
 
+  double get _paddingTop => widget.padding.resolve(TextDirection.ltr).top;
+  double _rowOffset(int row) => _paddingTop + _heights.offsetFor(row);
+  int _rowAt(double offset) =>
+      _heights.rowAt(math.max(0, offset - _paddingTop));
+
   void _range() {
     if (widget.count == 0) {
       _visible = _base = 0;
       return;
     }
     final offset = _offset;
-    _visible = _heights.rowAt(offset);
-    final first = _heights.rowAt(math.max(0, offset - _cache));
+    _visible = _rowAt(offset);
+    final first = _rowAt(offset - _cache);
     // A jump past everything built starts a new list at the target instead
     // of building every row in between.
     final jumped = (offset - _rangeOffset).abs() > _extent + 2 * _cache;
@@ -232,7 +237,7 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
     } else if (first < _base) {
       // Extend a screen upward. The sliver remaps its retained children and
       // their local offsets instead of replacing the list and every row.
-      _base = _heights.rowAt(math.max(0, offset - _cache - _extent));
+      _base = _rowAt(offset - _cache - _extent);
     }
     _rebase = false;
     _rangeOffset = offset;
@@ -240,7 +245,7 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
       key: _hasPriorGeometry ? _measuredLayout.key : null,
       reader: widget.identity(_visible),
     );
-    _within = _offset - _heights.offsetFor(_visible);
+    _within = _offset - _rowOffset(_visible);
     _queueLayout();
   }
 
@@ -300,7 +305,7 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
       _restoringAnchor = null;
       if (_activeReveal?.positioned ?? false) _completeReveal();
     }
-    final end = (_heights.rowAt(_offset + _extent) + 1).clamp(0, widget.count);
+    final end = (_rowAt(_offset + _extent) + 1).clamp(0, widget.count);
     final range = (_visible, end);
     if (range != _reportedRange) {
       _reportedRange = range;
@@ -341,8 +346,8 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
         ? null
         : _revealOffset(reveal.row, reveal.header, reveal.inset);
     var restoring = _restoringAnchor;
-    final anchor = _heights.rowAt(_offset);
-    final within = _offset - _heights.offsetFor(anchor);
+    final anchor = _rowAt(_offset);
+    final within = _offset - _rowOffset(anchor);
     var correction = 0.0;
     var restart = false;
     for (final entry in _measurements.entries) {
@@ -447,14 +452,12 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
             0.0,
             _heights.offsetFor(header + 1) - _heights.offsetFor(header) - inset,
           );
-    return widget.padding.resolve(TextDirection.ltr).top +
-        _heights.offsetFor(row) -
-        clearance;
+    return _rowOffset(row) - clearance;
   }
 
   void _jump(int index, [double within = 0]) {
     if (widget.count == 0 || !widget.controller.hasClients) return;
-    final value = _heights.offsetFor(index.clamp(0, widget.count - 1)) + within;
+    final value = _rowOffset(index.clamp(0, widget.count - 1)) + within;
     final offset = value.clamp(0.0, widget.controller.position.maxScrollExtent);
     if ((_offset - offset).abs() < .1) return;
     _setOffset(offset);
@@ -633,7 +636,7 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
         ],
       );
       final header = _activeReveal?.header;
-      final lastCached = _heights.rowAt(_offset + _extent + _cache);
+      final lastCached = _rowAt(_offset + _extent + _cache);
       final needsHeader =
           header != null &&
           !_laidOut.contains(header) &&
