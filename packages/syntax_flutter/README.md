@@ -86,8 +86,9 @@ An empty source has one line, and a trailing newline adds an empty final
 line. Invalid selection or reveal indices throw `RangeError`.
 
 Both constructors accept `lineBackgroundBuilder` and `gutterBuilder`.
-Backgrounds cover each source line's wrapped continuations. A gutter builder
-reserves 24 logical pixels before the line number, even for `null` markers;
+Backgrounds cover each source line's wrapped continuations, with controller
+line selection painted over them. A gutter builder reserves 24 logical pixels
+before the line number, even for `null` markers;
 markers stay fixed during horizontal scrolling and are excluded from copying.
 Line slots and controlled views use individual virtualized source rows,
 so line numbers remain aligned when wrapping. Give large sources a bounded

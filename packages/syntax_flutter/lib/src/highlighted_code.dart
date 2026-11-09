@@ -96,6 +96,7 @@ class HighlightedCode extends StatefulWidget {
 
   /// Background of each zero-based source line, including wrapped continuations.
   /// A `null` color leaves the theme background visible.
+  /// Controller line selection is painted over this color.
   final Color? Function(int line)? lineBackgroundBuilder;
 
   /// Optional content beside each zero-based source line, before its number.
