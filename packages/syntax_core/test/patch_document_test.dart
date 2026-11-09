@@ -105,6 +105,83 @@ void main() {
       },
     );
 
+    test('mailbox body commit mentions are not document boundaries', () {
+      final hashes = ['a' * 40, 'b' * 40];
+      final mentioned = 'c' * 40;
+      final sources = [
+        for (final hash in hashes)
+          'From $hash Mon Sep 17 00:00:00 2001\n'
+              'Subject: [PATCH] Change a\n\n'
+              'Related change:\ncommit $mentioned\n'
+              'commit $mentioned (tag: example)\n\n---\n$_patch',
+      ];
+      for (final ending in ['\n', '\r\n']) {
+        final encoded = sources
+            .map((source) => source.replaceAll('\n', ending))
+            .toList();
+        final documents = parsePatchDocuments(encoded.join(), strict: true);
+        expect(documents, hasLength(2));
+        expect(documents.map((document) => document.source), encoded);
+        for (var i = 0; i < documents.length; i++) {
+          expect(
+            documents[i].introduction,
+            encoded[i].split('diff --git').first,
+          );
+          expect(
+            documents[i].files.single.id,
+            '${hashes[i]}:${parsePatch(_patch).single.id}',
+          );
+        }
+      }
+    });
+
+    test(
+      'mailbox body patch-like text remains introduction without errors',
+      () {
+        final hash = 'a' * 40;
+        for (final message in [
+          '@@ a message, not a hunk',
+          '--- a message, not a file header',
+          '--- a/example\n+++ b/example\n@@ -1 +1 @@\n-old\n+new',
+        ]) {
+          for (final ending in ['\n', '\r\n']) {
+            final introduction =
+                'From $hash Mon Sep 17 00:00:00 2001\n'
+                        'Subject: [PATCH] Change a\n\n$message\n\n---\n'
+                    .replaceAll('\n', ending);
+            final source = '$introduction${_patch.replaceAll('\n', ending)}';
+            final document = parsePatchDocuments(source).single;
+            expect(document.introduction, introduction);
+            expect(document.diagnostics, isEmpty);
+            expect(document.files, hasLength(1));
+            expect(document.files.single.path, 'a');
+            expect(document.source, source);
+            expect(
+              () => parsePatchDocuments(source, strict: true),
+              returnsNormally,
+            );
+            final malformed = source.replaceFirst('-1,3', '-1,9');
+            final offset = malformed.indexOf('@@ -1,9');
+            final diagnostic = parsePatchDocuments(
+              malformed,
+            ).single.diagnostics.single;
+            expect(
+              diagnostic.line,
+              malformed.substring(0, offset).split('\n').length,
+            );
+            expect(
+              () => parsePatchDocuments(malformed, strict: true),
+              throwsA(
+                isA<FormatException>()
+                    .having((error) => error.source, 'source', malformed)
+                    .having((error) => error.offset, 'offset', offset),
+              ),
+            );
+          }
+        }
+      },
+    );
+
     test(
       'decorated commit headers retain introductions and hash identities',
       () {

@@ -307,10 +307,13 @@ class _CodeLinesState extends State<_CodeLines>
       );
     }
     return ColoredBox(
-      color:
-          view.lineBackgroundBuilder?.call(line) ??
-          (selected ? view.theme.selectionColor : const Color(0x00000000)),
-      child: code,
+      color: view.lineBackgroundBuilder?.call(line) ?? const Color(0x00000000),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: selected ? view.theme.selectionColor : null,
+        ),
+        child: code,
+      ),
     );
   }
 

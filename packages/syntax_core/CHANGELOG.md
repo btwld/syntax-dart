@@ -4,6 +4,8 @@
   `DiffAnnotation<T>` payloads with value equality. Selections retain cross-side
   endpoints for copying; annotations reject mismatched source files/revisions
   and invalid coordinates.
+- Keep commit mentions and patch-like message lines in mailbox introductions
+  without splitting documents or reporting patch errors for message text.
 - Diagnose excess hunk content in `parsePatchDocuments`, including its
   transport line, and recognize decorated `git log` commit headers so
   adjacent commits keep separate documents and file identities.

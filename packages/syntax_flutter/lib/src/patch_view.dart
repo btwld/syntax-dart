@@ -1403,15 +1403,9 @@ class _PatchViewState<T> extends State<PatchView<T>>
       selectionChrome: widget.selectionChrome,
       child: HorizontalCodeScope(
         group: _horizontal,
-        child: DefaultSelectionStyle(
-          selectionColor: widget.theme.selectionColor,
-          child: ColoredBox(
-            color: widget.canvasColor ?? palette.background,
-            child: Directionality(
-              textDirection: TextDirection.ltr,
-              child: list,
-            ),
-          ),
+        child: ColoredBox(
+          color: widget.canvasColor ?? palette.background,
+          child: Directionality(textDirection: TextDirection.ltr, child: list),
         ),
       ),
     );

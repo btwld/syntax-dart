@@ -178,6 +178,7 @@ To use your host's selection controls or action widgets, pass the same
 final chrome = SyntaxSelectionChrome(
   selectionControls: mySelectionControls,
   contextMenuBuilder: mySelectionMenu,
+  magnifierConfiguration: myMagnifierConfiguration,
   actionBuilder: (context, action, child) => MyButton(
     label: action.label,
     onPressed: action.onInvoke,
@@ -196,7 +197,10 @@ PatchView.fromPatch(gitDiffOutput, theme: githubDarkTheme,
 `TextSelectionHandleControls` use `contextMenuBuilder`; legacy Flutter controls
 manage their own toolbar. A null menu builder uses the plain Copy/Select all
 menu, localized through `WidgetsLocalizations`. Omit `selectionChrome` to use
-`SyntaxSelectionChrome.plain`, including painted draggable handles. Custom
+`SyntaxSelectionChrome.plain`, including painted draggable handles and a
+widgets-only magnifier during touch-handle drags on Android and iOS. Use
+`magnifierConfiguration` for your host's magnifier configuration, or pass
+`TextMagnifierConfiguration.disabled` to disable magnification. Custom
 `actionBuilder` controls own focus, keyboard activation and semantics;
 `action` supplies `kind`, `label`, `enabled`, `onInvoke` and `expanded`.
 `noNewlineMarkerBuilder` replaces the visual marker while preserving its
@@ -233,8 +237,9 @@ An empty source has one line, and a trailing newline adds an empty final
 line. Invalid selection or reveal indices throw `RangeError`.
 
 Both constructors accept `lineBackgroundBuilder` and `gutterBuilder`.
-Backgrounds cover each source line's wrapped continuations. A gutter builder
-reserves 24 logical pixels before the line number, even for `null` markers;
+Backgrounds cover each source line's wrapped continuations, with controller
+line selection painted over them. A gutter builder reserves 24 logical pixels
+before the line number, even for `null` markers;
 markers stay fixed during horizontal scrolling and are excluded from copying.
 Line slots and controlled views use individual virtualized source rows,
 so line numbers remain aligned when wrapping. Give large sources a bounded

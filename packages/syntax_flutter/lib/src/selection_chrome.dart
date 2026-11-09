@@ -1,5 +1,7 @@
 import 'package:flutter/widgets.dart';
 
+import 'selection_magnifier.dart';
+
 /// The purpose of a syntax surface's control.
 enum SyntaxChromeActionKind {
   /// Fold or unfold a file.
@@ -54,6 +56,10 @@ class SyntaxSelectionChrome {
   const SyntaxSelectionChrome({
     required this.selectionControls,
     this.contextMenuBuilder,
+    this.magnifierConfiguration = const TextMagnifierConfiguration(
+      magnifierBuilder: buildSyntaxMagnifier,
+      shouldDisplayHandlesInMagnifier: false,
+    ),
     this.actionBuilder,
     this.noNewlineMarkerBuilder,
   });
@@ -63,6 +69,13 @@ class SyntaxSelectionChrome {
 
   /// Builds a selection menu; null uses the plain Copy/Select all menu.
   final SelectableRegionContextMenuBuilder? contextMenuBuilder;
+
+  /// Magnifier shown while dragging a touch selection handle.
+  ///
+  /// Defaults to a widgets-only loupe on Android and iOS, and no loupe on
+  /// desktop. Hosts can supply their own configuration, including adaptive
+  /// controls, or [TextMagnifierConfiguration.disabled] to turn it off.
+  final TextMagnifierConfiguration magnifierConfiguration;
 
   /// Replaces an action's entire control, including activation and semantics.
   ///

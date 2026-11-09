@@ -32,7 +32,10 @@
   side of a split text drag.
 - Keep annotation-only updates anchored in the measured viewport; reject stale
   annotation revisions and pin file headers after scrolling introductions.
-
+- Preserve the theme cursor color in patch selection handles and focus rings.
+- Restore mobile touch-handle magnification with a widgets-only loupe. Add
+  `SyntaxSelectionChrome.magnifierConfiguration` for host magnifiers or explicit
+  disabling.
 - Keep plain selection menus compact in application overlays and fit their
   actions within narrow viewports, including larger text and localized labels.
 - Render `PatchView`, `HighlightedCode` and `SyntaxChrome` without Material
@@ -42,6 +45,7 @@
   missing-newline markers. Existing constructors keep their defaults.
 - File and context-gap controls support keyboard activation, focus indication
   and button semantics. Default glyphs and selection handles are painted.
+- Keep line selection visible over custom source-line background colors.
 - Reveal enclosing vertical scroll views after a virtualized source-line jump.
 - Reveal source lines inside shared two-dimensional viewports without changing
   horizontal scroll positions.

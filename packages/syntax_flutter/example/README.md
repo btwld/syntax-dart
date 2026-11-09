@@ -33,3 +33,7 @@ selection menu and an injected missing-newline marker. Its patch uses a
 caller-owned `PatchController<void>` and `PatchView.controlled`; file folding
 and context expansion need no local index sets. The main demo retains
 its Material application controls; the syntax surfaces support either host.
+
+Touch selection handles show a widgets-only magnifier on Android and iOS.
+`SyntaxSelectionChrome.magnifierConfiguration` lets the host replace it with
+its own controls or disable it with `TextMagnifierConfiguration.disabled`.
