@@ -1161,6 +1161,30 @@ class _PatchViewState<T> extends State<PatchView<T>>
       return row;
     }
 
+    Object rowIdentity(int index) => index < leadingCount
+        ? 'leading'
+        : rows.isEmpty
+        ? 'empty'
+        : _identity(rows[index - leadingCount]);
+
+    // Keys belong to the list children themselves, so a retained source row
+    // can move when expansion or folding changes its viewport index.
+    Widget shrinkRow(BuildContext context, int index) => KeyedSubtree(
+      key: ValueKey(rowIdentity(index)),
+      child: MeasuredCodeRow(
+        generation: _shrinkGeneration,
+        onSize: (size) {
+          if (shrinkControlled) _recordShrinkHeight(index, size.height);
+        },
+        child: Builder(
+          builder: (rowContext) {
+            if (shrinkControlled) _shrinkContexts[index] = rowContext;
+            return buildRow(rowContext, index);
+          },
+        ),
+      ),
+    );
+
     Widget viewport() => widget.shrinkWrap
         ? ListView.builder(
             controller: _scroll,
@@ -1181,29 +1205,34 @@ class _PatchViewState<T> extends State<PatchView<T>>
                         i < ((rows.isEmpty ? 1 : rows.length) + leadingCount);
                         i++
                       )
-                        KeyedSubtree(
-                          key: ValueKey(
-                            i < leadingCount
-                                ? 'leading'
-                                : rows.isEmpty
-                                ? 'empty'
-                                : _identity(rows[i - leadingCount]),
-                          ),
-                          child: MeasuredCodeRow(
-                            generation: _shrinkGeneration,
-                            onSize: (size) =>
-                                _recordShrinkHeight(i, size.height),
-                            child: Builder(
-                              builder: (rowContext) {
-                                _shrinkContexts[i] = rowContext;
-                                return buildRow(rowContext, i);
-                              },
-                            ),
-                          ),
-                        ),
+                        shrinkRow(context, i),
                     ],
                   )
-                : buildRow,
+                : shrinkRow,
+            findChildIndexCallback: shrinkControlled
+                ? null
+                : (key) {
+                    if (key is! ValueKey<Object>) return null;
+                    final identity = key.value;
+                    final index = identity == 'leading'
+                        ? (leadingCount == 1 ? 0 : null)
+                        : identity == 'empty'
+                        ? (rows.isEmpty ? leadingCount : null)
+                        : switch (_indexOf(identity, rows)) {
+                            final row? => row + leadingCount,
+                            _ => null,
+                          };
+                    // _indexOf also supplies nearby scroll anchors when a row
+                    // disappears. Element reuse requires an exact identity.
+                    return index != null &&
+                            index >= 0 &&
+                            index <
+                                (rows.isEmpty ? 1 : rows.length) +
+                                    leadingCount &&
+                            rowIdentity(index) == identity
+                        ? index
+                        : null;
+                  },
           )
         : ValueListenableBuilder<Set<Object>>(
             valueListenable: _nativeSelection.retainedRows,

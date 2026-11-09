@@ -171,60 +171,82 @@ extension _PatchComposition<T> on _PatchViewState<T> {
                 markerNumber,
                 SizedBox(
                   width: 24,
-                  child: Align(
-                    alignment: Alignment.topLeft,
-                    child: ClipRect(
-                      child: widget.gutterBuilder!(
-                        context,
-                        DiffLineContext(
-                          file: file,
-                          side: markerSide,
-                          line: markerNumber!,
+                  // Positioned children do not contribute intrinsic height.
+                  // The code and built-in gutter set the row height first;
+                  // only actual layout reaches the application widget.
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: Align(
+                          alignment: Alignment.topLeft,
+                          child: ClipRect(
+                            child: widget.gutterBuilder!(
+                              context,
+                              DiffLineContext(
+                                file: file,
+                                side: markerSide,
+                                line: markerNumber!,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            // Keep caller-provided labels and actions above outside this
+            // exclusion; only the built-in numbers/indicator are replaced.
+            Semantics(
+              label: line.kind == DiffLineKind.context
+                  ? null
+                  : labels.changedLine(line.kind, markerNumber),
+              excludeSemantics: true,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (palette.lineNumbers)
+                    for (final (coordinateSide, number) in coordinates)
+                      gutterCell(
+                        coordinateSide,
+                        number,
+                        SizedBox(
+                          width: numberWidth,
+                          child: Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: Text(
+                              number?.toString() ?? '',
+                              style: palette.numberText,
+                              textAlign: TextAlign.right,
+                            ),
+                          ),
+                        ),
+                      ),
+                  gutterCell(
+                    markerSide,
+                    markerNumber,
+                    SizedBox(
+                      width: 20,
+                      child: Text(
+                        palette.indicators == DiffIndicators.none
+                            ? ' '
+                            : line.kind == DiffLineKind.context
+                            ? ' '
+                            : palette.indicators == DiffIndicators.bars
+                            ? '┃'
+                            : line.kind == DiffLineKind.added
+                            ? '+'
+                            : '−',
+                        textAlign: TextAlign.center,
+                        style: palette.numberText.copyWith(
+                          color: line.kind == DiffLineKind.added
+                              ? palette.inserted
+                              : palette.removed,
                         ),
                       ),
                     ),
                   ),
-                ),
-              ),
-            if (palette.lineNumbers)
-              for (final (coordinateSide, number) in coordinates)
-                gutterCell(
-                  coordinateSide,
-                  number,
-                  SizedBox(
-                    width: numberWidth,
-                    child: Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: Text(
-                        number?.toString() ?? '',
-                        style: palette.numberText,
-                        textAlign: TextAlign.right,
-                      ),
-                    ),
-                  ),
-                ),
-            gutterCell(
-              markerSide,
-              markerNumber,
-              SizedBox(
-                width: 20,
-                child: Text(
-                  palette.indicators == DiffIndicators.none
-                      ? ' '
-                      : line.kind == DiffLineKind.context
-                      ? ' '
-                      : palette.indicators == DiffIndicators.bars
-                      ? '┃'
-                      : line.kind == DiffLineKind.added
-                      ? '+'
-                      : '−',
-                  textAlign: TextAlign.center,
-                  style: palette.numberText.copyWith(
-                    color: line.kind == DiffLineKind.added
-                        ? palette.inserted
-                        : palette.removed,
-                  ),
-                ),
+                ],
               ),
             ),
           ],
@@ -240,13 +262,7 @@ extension _PatchComposition<T> on _PatchViewState<T> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Semantics(
-              label: line.kind == DiffLineKind.context
-                  ? null
-                  : labels.changedLine(line.kind, markerNumber),
-              excludeSemantics: true,
-              child: gutter,
-            ),
+            gutter,
             Expanded(
               child: widget.selectable
                   ? DiffSelectableCell(
