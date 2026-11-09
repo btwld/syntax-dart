@@ -44,6 +44,7 @@ class _SyntaxSelectableRegionState extends State<SyntaxSelectableRegion> {
     return SelectableRegion(
       focusNode: _focus,
       selectionControls: chrome.selectionControls,
+      magnifierConfiguration: chrome.magnifierConfiguration,
       contextMenuBuilder: (context, state) =>
           chrome.contextMenuBuilder?.call(context, state) ??
           _plainMenu(context, state, chrome, widget.theme),

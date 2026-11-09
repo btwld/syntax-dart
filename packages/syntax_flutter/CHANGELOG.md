@@ -1,5 +1,9 @@
 ## Unreleased
 
+- Preserve the theme cursor color in patch selection handles and focus rings.
+- Restore mobile touch-handle magnification with a widgets-only loupe. Add
+  `SyntaxSelectionChrome.magnifierConfiguration` for host magnifiers or explicit
+  disabling.
 - Keep plain selection menus compact in application overlays and fit their
   actions within narrow viewports, including larger text and localized labels.
 - Render `PatchView`, `HighlightedCode` and `SyntaxChrome` without Material
