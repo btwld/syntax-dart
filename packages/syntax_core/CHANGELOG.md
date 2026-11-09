@@ -4,6 +4,13 @@
   `DiffAnnotation<T>` payloads with value equality. Selections retain cross-side
   endpoints for copying; annotations reject mismatched source files/revisions
   and invalid coordinates.
+- Diagnose excess hunk content in `parsePatchDocuments`, including its
+  transport line, and recognize decorated `git log` commit headers so
+  adjacent commits keep separate documents and file identities.
+- Add `PatchDocument`, `PatchDiagnostic` and `parsePatchDocuments` to retain
+  introductions and original patch transport, split concatenated commits,
+  qualify file IDs by commit, and report recoverable parsing problems.
+  Strict mode throws `FormatException` on the first diagnostic.
 
 ## 0.0.3
 
