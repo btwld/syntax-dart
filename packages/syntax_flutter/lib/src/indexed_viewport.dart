@@ -112,7 +112,7 @@ class IndexedCodeViewport extends StatefulWidget {
   final double revealHeaderInset;
 
   /// Reports a settled or cancelled request. Neither is retried.
-  final ValueChanged<int>? onRevealComplete;
+  final void Function(int request, {required bool cancelled})? onRevealComplete;
 
   /// Publishes local row geometry after layout and scrolling.
   final ValueChanged<IndexedViewportLayout>? onLayout;
@@ -303,7 +303,9 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
     );
     if (!changed && !moved && _measurements.isEmpty) {
       _restoringAnchor = null;
-      if (_activeReveal?.positioned ?? false) _completeReveal();
+      if (_activeReveal?.positioned ?? false) {
+        _completeReveal(cancelled: false);
+      }
     }
     final end = (_rowAt(_offset + _extent) + 1).clamp(0, widget.count);
     final range = (_visible, end);
@@ -415,11 +417,11 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
     }
   }
 
-  void _completeReveal() {
+  void _completeReveal({bool cancelled = true}) {
     final command = _activeReveal;
     if (command == null) return;
     _activeReveal = null;
-    widget.onRevealComplete?.call(command.request);
+    widget.onRevealComplete?.call(command.request, cancelled: cancelled);
   }
 
   void _requestReveal() {

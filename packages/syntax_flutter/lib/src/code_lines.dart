@@ -29,6 +29,8 @@ class _CodeLinesState extends State<_CodeLines>
   Offset? _pointer;
   int? _dragAnchor;
   Object? _reveal;
+  int _revealToken = 0;
+  int? _pendingRevealLine;
   Object? _selection;
   Object? _source;
 
@@ -183,29 +185,12 @@ class _CodeLinesState extends State<_CodeLines>
     }
   }
 
-  void _completeReveal(Object reveal, int line, [Rect? previousRect]) {
-    if (!mounted || reveal != _reveal) return;
+  void _completeReveal(int token, {required bool cancelled}) {
+    if (!mounted || token != _revealToken) return;
+    final line = _pendingRevealLine;
+    _pendingRevealLine = null;
     final row = _rows[line];
-    Rect? rect;
-    if (row != null && row.mounted) {
-      if (widget.virtualize) {
-        final box = row.findRenderObject()! as RenderBox;
-        final viewport = RenderAbstractViewport.maybeOf(box);
-        if (viewport is RenderBox) {
-          rect = box.localToGlobal(Offset.zero, ancestor: viewport) & box.size;
-        }
-      }
-      // Measured rows can still shift after the indexed jump builds them.
-      // Wait for the target's position in its viewport to settle before
-      // aligning that target in the enclosing scroll views.
-      if (rect == previousRect) {
-        _revealVertically(row);
-        return;
-      }
-    }
-    WidgetsBinding.instance
-      ..addPostFrameCallback((_) => _completeReveal(reveal, line, rect))
-      ..ensureVisualUpdate();
+    if (!cancelled && row != null && row.mounted) _revealVertically(row);
   }
 
   void _syncRequests() {
@@ -231,10 +216,11 @@ class _CodeLinesState extends State<_CodeLines>
     final reveal = (controller, controller?.revealRequest, _source);
     if (reveal == _reveal) return;
     _reveal = reveal;
-    if (controller?.revealTarget != null) {
-      final line = controller!.revealTarget!;
+    final token = ++_revealToken;
+    _pendingRevealLine = controller?.revealTarget;
+    if (!widget.virtualize && _pendingRevealLine != null) {
       WidgetsBinding.instance.addPostFrameCallback(
-        (_) => _completeReveal(reveal, line),
+        (_) => _completeReveal(token, cancelled: false),
       );
     }
   }
@@ -339,8 +325,9 @@ class _CodeLinesState extends State<_CodeLines>
         fixedHeight: !view.softWrap,
         identity: (line) => line,
         indexOf: (id) => id is int && id < owner._lines.length ? id : null,
-        revealRow: controller?.revealTarget,
-        revealRequest: controller?.revealRequest ?? 0,
+        revealRow: _pendingRevealLine,
+        revealRequest: _revealToken,
+        onRevealComplete: _completeReveal,
         retainedRows: owner._selection.selectedEndpoints,
         builder: (_, line) =>
             Builder(builder: (context) => _row(context, line)),
