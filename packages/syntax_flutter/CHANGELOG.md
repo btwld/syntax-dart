@@ -1,5 +1,8 @@
 ## Unreleased
 
+- Keep unselected cached paragraphs frozen through scrolling while a code
+  selection is active; release their held output when the selection clears.
+
 - Retain mounted code-window output so small-font viewports larger than the
   scheduler cache settle. Index patch change blocks once per hunk so default
   inline highlighting no longer scans offscreen changes for each visible row.

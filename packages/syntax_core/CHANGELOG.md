@@ -1,5 +1,8 @@
 ## Unreleased
 
+- Count each diff source once toward `DiffHighlightCache.maxCodeUnits`, using
+  exact full-text lengths when available instead of also charging split lines.
+
 - Add cancellable `highlightWindow` requests with exact source and grammar
   identity, bounded raw-token/checkpoint reuse, and cooperative continuation.
   Styled output covers only the requested half-open line window.

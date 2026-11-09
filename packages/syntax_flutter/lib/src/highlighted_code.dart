@@ -161,9 +161,9 @@ class _HighlightedCodeState extends State<HighlightedCode> {
   final _horizontal = ScrollController();
   final _selection = CodeSelectionDelegate();
 
-  /// Blocks left as they were when their colors arrived, because part of
-  /// the selection was in them: a paragraph whose spans change shape loses
-  /// its selection. They take their colors once the selection leaves.
+  /// Paragraphs held unchanged while any selection is active, including
+  /// neighboring blocks whose recoloring could shift selection indexes.
+  /// They take their colors when the selection clears.
   final _held = <int>{};
 
   @override
@@ -606,7 +606,9 @@ class _HighlightedCodeState extends State<HighlightedCode> {
       while (_recentBlocks.length > blockLimit) {
         final oldest = _recentBlocks.first;
         _recentBlocks.remove(oldest);
-        if (_selection.isSelected(oldest)) {
+        // Every cached paragraph participates in the global selection freeze,
+        // including unselected neighbors that may be revisited before clearing.
+        if (_selection.hasSelection) {
           _held.add(oldest);
         } else {
           _blocks[oldest] = null;

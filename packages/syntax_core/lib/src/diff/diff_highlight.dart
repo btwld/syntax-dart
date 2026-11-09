@@ -309,26 +309,43 @@ final class DiffHighlightCache {
   /// Number of files with retained highlighting or word changes.
   int get entryCount => _retained.length;
 
-  /// Source size charged to retained files.
+  /// Source size charged to retained files, counting each source once.
+  /// Exact full-text lengths take precedence over line-based estimates.
   int get retainedCodeUnits => _retained.values.fold(0, (n, size) => n + size);
 
   void _touch(FileDiff file) {
     final cachedCost = _retained.remove(file);
-    int cost(List<String>? lines) =>
-        lines?.fold<int>(0, (n, l) => n + l.length + 1) ?? 0;
-    _retained[file] =
-        cachedCost ??
-        (file.oldText?.length ?? 0) +
-            (file.newText?.length ?? 0) +
-            (file.oldLines == null && file.newLines == null
-                ? file.hunks.fold<int>(
-                    0,
-                    (n, h) =>
-                        n +
-                        h.lines.fold<int>(0, (n, l) => n + l.text.length + 1),
-                  )
-                : cost(file.oldLines) + cost(file.newLines));
+    _retained[file] = cachedCost ?? _sourceCodeUnits(file);
     _trim(keep: file);
+  }
+
+  int _sourceCodeUnits(FileDiff file) {
+    // Full text and split lines describe the same source. Prefer exact text
+    // lengths, otherwise use the available line representation as an estimate.
+    int? knownCost(String? text, List<String>? lines) =>
+        text?.length ?? lines?.fold<int>(0, (n, line) => n + line.length + 1);
+    final old = knownCost(file.oldText, file.oldLines);
+    final newer = knownCost(file.newText, file.newLines);
+    int hunkCost([bool? oldSide]) {
+      var units = 0;
+      for (final hunk in file.hunks) {
+        for (final line in hunk.lines) {
+          if (oldSide == null ||
+              (oldSide
+                  ? line.kind != DiffLineKind.added
+                  : line.kind != DiffLineKind.removed)) {
+            units += line.text.length + 1;
+          }
+        }
+      }
+      return units;
+    }
+
+    // Parsed patches retain their hunk text once. For partially supplied
+    // sources, estimate only the side without full text or a line list.
+    return old == null && newer == null
+        ? hunkCost()
+        : (old ?? hunkCost(true)) + (newer ?? hunkCost(false));
   }
 
   void _trim({FileDiff? keep}) {
