@@ -106,6 +106,47 @@ void main() {
     );
 
     test(
+      'decorated commit headers retain introductions and hash identities',
+      () {
+        for (final decoration in ['HEAD -> feature', 'tag: v1, origin/main']) {
+          final header = 'commit abcdef123 ($decoration)\n';
+          final document = parsePatchDocuments(
+            '$header$_patch',
+            strict: true,
+          ).single;
+          expect(document.introduction, header);
+          expect(
+            document.files.single.id,
+            'abcdef123:${parsePatch(_patch).single.id}',
+          );
+        }
+      },
+    );
+
+    test('adjacent decorated commits touching one path remain distinct', () {
+      final first = 'a' * 40, second = 'b' * 40;
+      final sources = [
+        'commit $first (HEAD -> feature)\n${_filePatch('same', 'a', 'b')}',
+        'commit $second (tag: v1, origin/main)\n${_filePatch('same', 'b', 'c')}',
+      ];
+      for (final ending in ['\n', '\r\n']) {
+        final encoded = sources
+            .map((source) => source.replaceAll('\n', ending))
+            .toList();
+        final documents = parsePatchDocuments(encoded.join(), strict: true);
+        expect(documents.map((document) => document.source), encoded);
+        expect(documents.map((document) => document.files.single.path), [
+          'same',
+          'same',
+        ]);
+        expect(documents.map((document) => document.files.single.id), [
+          '$first:same\u0000same',
+          '$second:same\u0000same',
+        ]);
+      }
+    });
+
+    test(
       'plain unified diffs keep parsePatch identities and exact transport',
       () {
         const source =
@@ -201,6 +242,71 @@ void main() {
           throwsFormatException,
         );
       }
+    });
+
+    test(
+      'excess raw hunk content is diagnosed and rejected in strict mode',
+      () {
+        for (final content in [
+          '-old\n+new\n+extra\n',
+          '-old\n+new\n-extra\n',
+          '-old\n+new\n extra\n',
+          '-old\n-extra\n+new\n',
+        ]) {
+          for (final ending in ['\n', '\r\n']) {
+            final source = '--- a/a\n+++ b/a\n@@ -1 +1 @@\n$content'.replaceAll(
+              '\n',
+              ending,
+            );
+            final document = parsePatchDocuments(source).single;
+            expect(document.source, source);
+            expect(document.files.single.hunks.single.lines.first.text, 'old');
+            final excess = document.diagnostics.where(
+              (diagnostic) => diagnostic.message.contains('exceeds'),
+            );
+            expect(excess, isNotEmpty);
+            final offset = source.indexOf(
+              content.contains(' extra')
+                  ? ' extra'
+                  : content.contains('-extra')
+                  ? '-extra'
+                  : '+extra',
+            );
+            expect(
+              excess.first.line,
+              source.substring(0, offset).split('\n').length,
+            );
+            expect(
+              () => parsePatchDocuments(source, strict: true),
+              throwsFormatException,
+            );
+          }
+        }
+      },
+    );
+
+    test('strict excess errors point at the extra transport line', () {
+      const source =
+          '--- a/a\r\n+++ b/a\r\n@@ -1 +1 @@\r\n'
+          '-old\r\n+new\r\n+extra\r\n';
+      final document = parsePatchDocuments(source).single;
+      expect(
+        document.files.single.hunks.single.lines.map((line) => line.text),
+        ['old', 'new'],
+      );
+      expect(document.diagnostics.single.line, 6);
+      expect(
+        () => parsePatchDocuments(source, strict: true),
+        throwsA(
+          isA<FormatException>()
+              .having((error) => error.source, 'source', source)
+              .having(
+                (error) => error.offset,
+                'offset',
+                source.indexOf('+extra'),
+              ),
+        ),
+      );
     });
 
     test('reports incomplete file headers and hunks without a file', () {

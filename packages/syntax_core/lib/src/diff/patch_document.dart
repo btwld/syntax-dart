@@ -38,7 +38,7 @@ final class PatchDocument {
 }
 
 final _commitHeader = RegExp(
-  r'^(?:From ([0-9a-f]{40,64}) Mon Sep 17 00:00:00 2001|commit ([0-9a-f]{7,64}))\r?$',
+  r'^(?:From ([0-9a-f]{40,64}) Mon Sep 17 00:00:00 2001|commit ([0-9a-f]{7,64})(?: \([^\r\n]*\))?)\r?$',
   multiLine: true,
   caseSensitive: false,
 );
@@ -141,8 +141,8 @@ List<PatchDiagnostic> _diagnose(List<String> lines, List<FileDiff> files) {
       } else if (hunks.moveNext()) {
         sawHunk = true;
         final hunk = hunks.current;
-        final oldCount = hunk.lines.where((l) => l.oldNumber != null).length;
-        final newCount = hunk.lines.where((l) => l.newNumber != null).length;
+        var oldCount = hunk.lines.where((l) => l.oldNumber != null).length;
+        var newCount = hunk.lines.where((l) => l.newNumber != null).length;
         if (oldCount != hunk.oldCount || newCount != hunk.newCount) {
           diagnostics.add(
             PatchDiagnostic(i + 1, 'Hunk counts do not match its content'),
@@ -156,6 +156,30 @@ List<PatchDiagnostic> _diagnose(List<String> lines, List<FileDiff> files) {
           while (i + 1 < lines.length &&
               lines[i + 1] == r'\ No newline at end of file') {
             i++;
+          }
+        }
+        // parsePatch stops at the declared counts or the first unexpected
+        // marker. Inspect remaining raw content too, so excess lines cannot
+        // disappear silently. File headers and mail signatures end the hunk.
+        while (i + 1 < lines.length) {
+          final next = lines[i + 1];
+          if (next.isEmpty || next.startsWith('--- ') || next == '-- ') break;
+          if (next == r'\ No newline at end of file') {
+            i++;
+            continue;
+          }
+          final marker = next[0];
+          if (marker != ' ' && marker != '-' && marker != '+') break;
+          if (marker != '+') oldCount++;
+          if (marker != '-') newCount++;
+          i++;
+          if (oldCount > hunk.oldCount || newCount > hunk.newCount) {
+            diagnostics.add(
+              PatchDiagnostic(
+                i + 1,
+                'Hunk content exceeds its declared counts',
+              ),
+            );
           }
         }
       }

@@ -1,5 +1,8 @@
 ## Unreleased
 
+- Diagnose excess hunk content in `parsePatchDocuments`, including its
+  transport line, and recognize decorated `git log` commit headers so
+  adjacent commits keep separate documents and file identities.
 - Add `PatchDocument`, `PatchDiagnostic` and `parsePatchDocuments` to retain
   introductions and original patch transport, split concatenated commits,
   qualify file IDs by commit, and report recoverable parsing problems.
