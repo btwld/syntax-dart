@@ -167,7 +167,6 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
   Object? _anchor;
   double _within = 0;
   bool _programmaticScroll = false;
-  bool _revealIssued = false;
   ({int row, double within})? _restoringAnchor;
 
   bool get _hasPendingReveal {
@@ -178,32 +177,13 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
 
   void _restoreAnchor(int row, double within) {
     _restoringAnchor = (row: row, within: within);
-    final generation = _generation;
-    final command = (widget.revealRequest, widget.revealRow);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted ||
-          generation != _generation ||
-          _restoringAnchor == null ||
-          _hasPendingReveal ||
-          command != (widget.revealRequest, widget.revealRow)) {
-        return;
-      }
-      _jump(row, within);
-    });
+    _queueLayout();
   }
 
   (int, int)? _lastReveal;
-  ({
-    int request,
-    int row,
-    int? header,
-    double inset,
-    Object key,
-    ScrollController controller,
-  })?
-  _activeReveal;
-  bool _queued = false;
-  bool _rangeQueued = false;
+  _IndexedReveal? _activeReveal;
+  bool _layoutQueued = false;
+  bool _geometryEstablished = false;
   (int, int)? _reportedRange;
   final Map<int, double> _measurements = {};
   double get _offset => widget.controller.hasClients
@@ -211,6 +191,7 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
       : widget.controller.initialScrollOffset;
   void _reset() {
     _restoringAnchor = null;
+    _geometryEstablished = false;
     _heights = RowHeightIndex(
       widget.count,
       estimatedHeight: widget.estimatedHeight,
@@ -245,43 +226,69 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
     _rangeOffset = offset;
     _anchor = widget.identity(_visible);
     _within = _offset - _heights.offsetFor(_visible);
-    _reportRange();
+    _queueLayout();
   }
 
-  void _reportRange() {
-    if ((widget.onVisibleRange == null &&
-            widget.onLayout == null &&
-            !_revealIssued &&
-            _restoringAnchor == null) ||
-        _rangeQueued) {
-      return;
-    }
-    _rangeQueued = true;
+  // The sole post-layout owner of measurements, motion and notifications.
+  // Scroll listeners collect input; they never settle another operation.
+  void _queueLayout() {
+    if (_layoutQueued) return;
+    _layoutQueued = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _rangeQueued = false;
-      if (!mounted) return;
-      widget.onLayout?.call(
-        IndexedViewportLayout._(
-          _heights,
-          _laidOut,
-          _measure,
-          widget.padding.resolve(TextDirection.ltr).top,
-          _extent,
-        ),
-      );
-      if (_measurements.isEmpty && !_queued) {
-        if (_revealIssued) _completeReveal();
-        _restoringAnchor = null;
+      _layoutQueued = false;
+      if (mounted) _finishLayout();
+    });
+  }
+
+  void _finishLayout() {
+    final changed = _flushMeasurements();
+    _geometryEstablished = true;
+    final restoring = _restoringAnchor;
+    var moved = false;
+    if (restoring != null && !_hasPendingReveal) {
+      final before = _offset;
+      _jump(restoring.row, restoring.within);
+      moved = before != _offset;
+    }
+    final command = _activeReveal;
+    if (command != null && widget.controller.hasClients) {
+      if (widget.layoutKey != command.key ||
+          widget.controller != command.controller ||
+          widget.revealRow != command.row ||
+          widget.revealRequest != command.request) {
+        _completeReveal();
+      } else if (!command.positioned) {
+        command.positioned = true;
+        final before = _offset;
+        _setOffset(
+          _revealOffset(command.row, command.header, command.inset).clamp(
+            widget.controller.position.minScrollExtent,
+            widget.controller.position.maxScrollExtent,
+          ),
+        );
+        moved = before != _offset;
+        setState(_range);
       }
-      final end = (_heights.rowAt(_offset + _extent) + 1).clamp(
-        0,
-        widget.count,
-      );
-      final range = (_visible, end);
-      if (range == _reportedRange) return;
+    }
+    widget.onLayout?.call(
+      IndexedViewportLayout._(
+        _heights,
+        _laidOut,
+        _measure,
+        widget.padding.resolve(TextDirection.ltr).top,
+        _extent,
+      ),
+    );
+    if (!changed && !moved && _measurements.isEmpty) {
+      _restoringAnchor = null;
+      if (_activeReveal?.positioned ?? false) _completeReveal();
+    }
+    final end = (_heights.rowAt(_offset + _extent) + 1).clamp(0, widget.count);
+    final range = (_visible, end);
+    if (range != _reportedRange) {
       _reportedRange = range;
       widget.onVisibleRange?.call(range.$1, range.$2);
-    });
+    }
   }
 
   void _scroll() {
@@ -307,15 +314,12 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
     }
     _measurements[index] = height;
     if (seen) _relaidOut.add(index);
-    if (_queued) return;
-    _queued = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) => _flushMeasurements());
+    _queueLayout();
   }
 
-  void _flushMeasurements() {
-    _queued = false;
-    if (!mounted || _measurements.isEmpty) return;
-    final reveal = _revealIssued ? _activeReveal : null;
+  bool _flushMeasurements() {
+    if (_measurements.isEmpty) return false;
+    final reveal = (_activeReveal?.positioned ?? false) ? _activeReveal : null;
     final before = reveal == null
         ? null
         : _revealOffset(reveal.row, reveal.header, reveal.inset);
@@ -356,10 +360,9 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
       correction =
           _revealOffset(reveal.row, reveal.header, reveal.inset) - before!;
     }
-    if (reveal == null && restoring != null) {
-      correction =
-          _heights.offsetFor(restoring.row) + restoring.within - _offset;
-    }
+    // Restoration uses an absolute row offset below, after all measurements.
+    // First-layout estimates have never described the reader's position.
+    if (restoring != null || !_geometryEstablished) correction = 0;
     // The correction assumes rows above the anchor pushed it down by
     // their change, as a row laid out for the first time does: the list
     // builds those forward from its first row. A row laid out before that
@@ -376,6 +379,7 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
         (_offset + correction).clamp(0, _heights.offsetFor(widget.count)),
       );
     }
+    return true;
   }
 
   void _setOffset(double offset) {
@@ -391,7 +395,6 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
     final command = _activeReveal;
     if (command == null) return;
     _activeReveal = null;
-    _revealIssued = false;
     widget.onRevealComplete?.call(command.request);
   }
 
@@ -406,7 +409,7 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
     _completeReveal();
     _lastReveal = key;
     _restoringAnchor = null;
-    final command = (
+    final command = _IndexedReveal(
       request: widget.revealRequest,
       row: row,
       header: widget.revealHeaderRow,
@@ -415,28 +418,7 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
       controller: widget.controller,
     );
     _activeReveal = command;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || _activeReveal != command) return;
-      if (widget.layoutKey != command.key ||
-          widget.controller != command.controller ||
-          widget.revealRow != command.row ||
-          widget.revealRequest != command.request) {
-        _completeReveal();
-        return;
-      }
-      // All rows laid out this frame, including a needed offscreen header,
-      // contribute to this one command before its offset is computed.
-      _flushMeasurements();
-      final offset = _revealOffset(command.row, command.header, command.inset);
-      _revealIssued = true;
-      _setOffset(
-        offset.clamp(
-          widget.controller.position.minScrollExtent,
-          widget.controller.position.maxScrollExtent,
-        ),
-      );
-      setState(_range);
-    });
+    _queueLayout();
   }
 
   double _revealOffset(int row, int? header, double inset) {
@@ -454,7 +436,9 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
   void _jump(int index, [double within = 0]) {
     if (widget.count == 0 || !widget.controller.hasClients) return;
     final value = _heights.offsetFor(index.clamp(0, widget.count - 1)) + within;
-    _setOffset(value.clamp(0, widget.controller.position.maxScrollExtent));
+    final offset = value.clamp(0.0, widget.controller.position.maxScrollExtent);
+    if ((_offset - offset).abs() < .1) return;
+    _setOffset(offset);
     setState(_range);
   }
 
@@ -479,6 +463,7 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
         oldWidget.count != widget.count ||
         oldWidget.fixedHeight != widget.fixedHeight ||
         oldWidget.estimatedHeight != widget.estimatedHeight) {
+      final established = _geometryEstablished;
       final anchor = _anchor;
       final within = _within;
       final index = anchor == null ? null : widget.indexOf(anchor);
@@ -486,9 +471,13 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
           ? null
           : _heights.offsetFor(_visible + 1) - _heights.offsetFor(_visible);
       _reset();
-      if (index != null && height != null) _heights.measure(index, height);
+      if (!widget.fixedHeight && index != null && height != null) {
+        _heights.measure(index, height);
+      }
       _range();
-      if (index != null && !_hasPendingReveal) _restoreAnchor(index, within);
+      if (established && index != null && !_hasPendingReveal) {
+        _restoreAnchor(index, within);
+      }
     }
     _requestReveal();
   }
@@ -497,6 +486,7 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
       if (_width != null && _width != constraints.maxWidth) {
+        final established = _geometryEstablished;
         final anchor = _restoringAnchor?.row ?? _visible;
         final within = _restoringAnchor?.within ?? _within;
         final height = widget.count == 0
@@ -504,7 +494,7 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
             : _heights.offsetFor(anchor + 1) - _heights.offsetFor(anchor);
         _reset();
         if (height != null) _heights.measure(anchor, height);
-        if (!_hasPendingReveal) _restoreAnchor(anchor, within);
+        if (established && !_hasPendingReveal) _restoreAnchor(anchor, within);
       }
       _width = constraints.maxWidth;
       _extent = constraints.maxHeight.isFinite ? constraints.maxHeight : 600;
@@ -854,4 +844,23 @@ class _MeasureBox extends RenderProxyBox {
     super.performLayout();
     onSize(size);
   }
+}
+
+// A reveal owns its phase; notification callbacks cannot retire a queued jump.
+class _IndexedReveal {
+  _IndexedReveal({
+    required this.request,
+    required this.row,
+    required this.header,
+    required this.inset,
+    required this.key,
+    required this.controller,
+  });
+  final int request;
+  final int row;
+  final int? header;
+  final double inset;
+  final Object key;
+  final ScrollController controller;
+  bool positioned = false;
 }

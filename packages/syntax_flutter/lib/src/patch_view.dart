@@ -424,35 +424,62 @@ class _PatchViewState<T> extends State<PatchView<T>>
   int? _pinnedFile;
   bool _stickyBounded = false;
   bool _ownShrinkScroll = false;
-  bool _shrinkGeometryQueued = false;
+  bool _shrinkLayoutQueued = false;
+  bool _shrinkGeometryEstablished = false;
+  (int, int)? _shrinkReportedRange;
   Object? _shrinkLayoutKey;
   RowHeightIndex _shrinkHeights = RowHeightIndex(0);
   int _shrinkGeneration = 0;
   final _shrinkMeasurements = <int, double>{};
   final _shrinkContexts = <int, BuildContext>{};
-  ({Object identity, double within})? _shrinkAnchor;
+  _ShrinkAnchor? _shrinkAnchor;
 
-  ({Object identity, double within})? _captureShrinkAnchor() {
-    if (!_scroll.hasClients ||
+  _ShrinkAnchor? _captureShrinkAnchor() {
+    if (!_shrinkGeometryEstablished ||
+        !_scroll.hasClients ||
         _shrinkHeights.length == 0 ||
         _geometryRows.isEmpty) {
       return null;
     }
-    final row = _shrinkHeights.rowAt(math.max(0, _scroll.offset - _topPadding));
+    var position = _scroll.position;
+    var localOffset = _scroll.offset;
+    var scale = 1.0;
+    if (!_stickyBounded) {
+      final ancestor = Scrollable.maybeOf(context, axis: Axis.vertical);
+      final first = _shrinkContexts[0]?.findRenderObject();
+      final viewport = RenderAbstractViewport.maybeOf(
+        context.findRenderObject()!,
+      );
+      if (ancestor == null || first == null || viewport is! RenderBox) {
+        return null;
+      }
+      position = ancestor.position;
+      final transform = first.getTransformTo(viewport);
+      scale =
+          MatrixUtils.transformPoint(transform, const Offset(0, 1)).dy -
+          MatrixUtils.transformPoint(transform, Offset.zero).dy;
+      if (scale <= 0 || !scale.isFinite) return null;
+      localOffset =
+          _topPadding -
+          MatrixUtils.transformPoint(transform, Offset.zero).dy / scale;
+    }
+    final row = _shrinkHeights.rowAt(math.max(0, localOffset - _topPadding));
     final source = row - _leadingCount;
     if (source >= _geometryRows.length) return null;
     return (
       identity: source < 0 ? 'leading' : _identity(_geometryRows[source]),
-      within: _scroll.offset - _shrinkOffset(row),
+      within: localOffset - _shrinkOffset(row),
+      position: position,
+      pixels: position.pixels,
+      localOffset: localOffset,
+      scale: scale,
     );
   }
 
   void _restoreShrinkAnchor() {
     final anchor = _shrinkAnchor;
     _shrinkAnchor = null;
-    if (anchor == null ||
-        !_scroll.hasClients ||
-        _scheduledRevealToken != null) {
+    if (anchor == null || !_scroll.hasClients || _shrinkReveal != null) {
       return;
     }
     final row = anchor.identity == 'leading'
@@ -466,14 +493,18 @@ class _PatchViewState<T> extends State<PatchView<T>>
     final within = anchor.within >= height
         ? math.max(0.0, height - _scroll.position.viewportDimension)
         : anchor.within;
+    final position = anchor.position;
+    if (!position.hasPixels || position.pixels != anchor.pixels) return;
+    final destination =
+        anchor.pixels +
+        (_shrinkOffset(row) + within - anchor.localOffset) * anchor.scale;
     _ownShrinkScroll = true;
     try {
-      _scroll.jumpTo(
-        (_shrinkOffset(row) + within).clamp(
-          _scroll.position.minScrollExtent,
-          _scroll.position.maxScrollExtent,
-        ),
-      );
+      if ((destination - position.pixels).abs() >= .1) {
+        position.jumpTo(
+          destination.clamp(position.minScrollExtent, position.maxScrollExtent),
+        );
+      }
     } finally {
       _ownShrinkScroll = false;
     }
@@ -531,7 +562,7 @@ class _PatchViewState<T> extends State<PatchView<T>>
     if (row >= _shrinkHeights.length || !height.isFinite || height < 0) return;
     if ((_shrinkHeight(row) - height).abs() < .1) return;
     _shrinkMeasurements[row] = height;
-    _queueShrinkGeometry();
+    _queueShrinkLayout();
   }
 
   double get _topPadding => widget.padding.resolve(TextDirection.ltr).top;
@@ -539,28 +570,55 @@ class _PatchViewState<T> extends State<PatchView<T>>
   double _shrinkHeight(int row) =>
       _shrinkHeights.offsetFor(row + 1) - _shrinkHeights.offsetFor(row);
 
-  void _flushShrinkGeometry() {
-    if (_shrinkMeasurements.isNotEmpty && _scheduledRevealToken == null) {
+  // One post-layout pipeline: measure -> restore -> reveal -> notify.
+  // Initial estimates never establish a reader anchor.
+  void _finishShrinkLayout() {
+    if (_shrinkMeasurements.isNotEmpty && _shrinkReveal == null) {
       _shrinkAnchor ??= _captureShrinkAnchor();
     }
     for (final entry in _shrinkMeasurements.entries) {
       _shrinkHeights.measure(entry.key, entry.value);
     }
     _shrinkMeasurements.clear();
+    _shrinkGeometryEstablished = true;
     _restoreShrinkAnchor();
+    _runShrinkReveal();
     _updatePinned(
       (offset) => _shrinkHeights.rowAt(math.max(0, offset - _topPadding)),
       _shrinkOffset,
       _shrinkHeight,
     );
+    if (_scroll.hasClients && _stickyBounded) {
+      final start = _shrinkHeights.rowAt(
+        math.max(0, _scroll.offset - _topPadding),
+      );
+      final end =
+          (_shrinkHeights.rowAt(
+                    math.max(
+                      0,
+                      _scroll.offset +
+                          _scroll.position.viewportDimension -
+                          _topPadding,
+                    ),
+                  ) +
+                  1)
+              .clamp(0, _shrinkHeights.length);
+      final range = (start, end);
+      if (_shrinkReportedRange != range) {
+        _shrinkReportedRange = range;
+        widget.onVisibleRange?.call(start, end);
+      }
+    }
   }
 
-  void _queueShrinkGeometry() {
-    if (_shrinkGeometryQueued) return;
-    _shrinkGeometryQueued = true;
+  void _queueShrinkLayout() {
+    if (_shrinkLayoutQueued) return;
+    _shrinkLayoutQueued = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _shrinkGeometryQueued = false;
-      if (mounted) _flushShrinkGeometry();
+      _shrinkLayoutQueued = false;
+      if (mounted && widget.shrinkWrap && widget.controller != null) {
+        _finishShrinkLayout();
+      }
     });
   }
 
@@ -568,22 +626,23 @@ class _PatchViewState<T> extends State<PatchView<T>>
     if (!widget.shrinkWrap) return;
     if (!_ownShrinkScroll) {
       _shrinkAnchor = null;
-      final token = _scheduledRevealToken;
+      final token = _shrinkReveal?.token;
       if (token != null) _completeReveal(token);
     }
-    _queueShrinkGeometry();
+    _queueShrinkLayout();
   }
 
   void _completeReveal(int token) {
     if (token != _revealToken) return;
-    _scheduledRevealToken = null;
+    _shrinkReveal = null;
     _completedRevealToken = token;
   }
 
   PatchController<T>? _revealController;
   int? _controllerRevealRequest;
   int _revealToken = 0;
-  int? _scheduledRevealToken, _completedRevealToken;
+  _ShrinkReveal? _shrinkReveal;
+  int? _completedRevealToken;
 
   int? _pendingRevealRow() {
     final controller = widget.controller;
@@ -602,82 +661,66 @@ class _PatchViewState<T> extends State<PatchView<T>>
   }
 
   void _scheduleShrinkReveal(int row) {
-    final token = _revealToken;
-    if (_scheduledRevealToken == token) return;
-    final rows = _geometryRows;
-    final sourceRow = row - _leadingCount;
-    _scheduledRevealToken = token;
+    if (_shrinkReveal?.token == _revealToken) return;
+    _shrinkReveal = _ShrinkReveal(
+      _revealToken,
+      row,
+      _geometryRows,
+      _scroll,
+      _ancestorOffsets(_shrinkContexts[row] ?? context),
+    );
     _shrinkAnchor = null;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || _scheduledRevealToken != token || token != _revealToken) {
-        return;
-      }
-      if (!identical(rows, _geometryRows) ||
-          widget.controller?.revealRow != sourceRow) {
-        _completeReveal(token);
-        return;
-      }
-      _flushShrinkGeometry();
-      _ownShrinkScroll = true;
-      try {
-        var moved = false;
-        if (_stickyBounded) {
-          final header = _controlledSticky ? _headerForRow(row) : null;
-          final clearance = header == null
-              ? 0.0
-              : math.max(0.0, _shrinkHeight(header) - _headerInset(header));
-          final position = _scroll.position;
-          final before = position.pixels;
-          position.jumpTo(
-            (_shrinkOffset(row) - clearance).clamp(
-              position.minScrollExtent,
-              position.maxScrollExtent,
-            ),
-          );
-          moved = position.pixels != before;
-        }
-        final context = _shrinkContexts[row];
-        if (context != null && moved) {
-          final offsets = _ancestorOffsets(context);
-          if (offsets.isNotEmpty) {
-            // The inner jump has scheduled layout. Propagate exactly once
-            // after it, so ancestors see the target's updated local position.
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (!mounted ||
-                  _scheduledRevealToken != token ||
-                  token != _revealToken) {
-                return;
-              }
-              if (!context.mounted ||
-                  !identical(rows, _geometryRows) ||
-                  widget.controller?.revealRow != sourceRow ||
-                  offsets.entries.any(
-                    (entry) => entry.key.pixels != entry.value,
-                  )) {
-                _completeReveal(token);
-                return;
-              }
-              _ownShrinkScroll = true;
-              try {
-                _revealAncestors(context, skipInner: true);
-              } finally {
-                _ownShrinkScroll = false;
-              }
-              _completeReveal(token);
-            });
+    _queueShrinkLayout();
+  }
+
+  void _runShrinkReveal() {
+    final command = _shrinkReveal;
+    if (command == null) return;
+    final token = command.token;
+    final row = command.row;
+    final sourceRow = row - _leadingCount;
+    final target = _shrinkContexts[row];
+    if (token != _revealToken ||
+        !identical(command.rows, _geometryRows) ||
+        command.controller != _scroll ||
+        widget.controller?.revealRow != sourceRow ||
+        target == null ||
+        !target.mounted) {
+      _completeReveal(token);
+      return;
+    }
+    if (command.ancestorOffsets.entries.any((e) => e.key.pixels != e.value)) {
+      _completeReveal(token);
+      return;
+    }
+    _ownShrinkScroll = true;
+    try {
+      if (!command.positioned && _stickyBounded) {
+        final header = _controlledSticky ? _headerForRow(row) : null;
+        final clearance = header == null
+            ? 0.0
+            : math.max(0.0, _shrinkHeight(header) - _headerInset(header));
+        final position = _scroll.position;
+        final destination = (_shrinkOffset(row) - clearance).clamp(
+          position.minScrollExtent,
+          position.maxScrollExtent,
+        );
+        if ((destination - position.pixels).abs() >= .1) {
+          position.jumpTo(destination);
+          final ancestors = _ancestorOffsets(target);
+          if (ancestors.isNotEmpty) {
+            // The next layout supplies current geometry to ancestor scrolling.
+            command.positioned = true;
+            _queueShrinkLayout();
             return;
           }
         }
-        if (context != null) {
-          _revealAncestors(context, skipInner: _stickyBounded);
-        }
-      } finally {
-        _ownShrinkScroll = false;
       }
-      // Both jumpTo and the zero-duration parent ensureVisible settle
-      // synchronously; an already-visible target needs no further frame.
-      _completeReveal(token);
-    });
+      _revealAncestors(target, skipInner: _stickyBounded);
+    } finally {
+      _ownShrinkScroll = false;
+    }
+    _completeReveal(token);
   }
 
   Map<ScrollPosition, double> _ancestorOffsets(BuildContext context) {
@@ -686,7 +729,7 @@ class _PatchViewState<T> extends State<PatchView<T>>
     while (scrollable != null) {
       final position = scrollable.position;
       if (position.axis == Axis.vertical &&
-          !identical(position, _scroll.position)) {
+          !(_scroll.hasClients && identical(position, _scroll.position))) {
         offsets[position] = position.pixels;
       }
       scrollable = Scrollable.maybeOf(scrollable.context);
@@ -791,6 +834,8 @@ class _PatchViewState<T> extends State<PatchView<T>>
     _geometryRows = const [];
     _indexedLayout = null;
     _shrinkLayoutKey = null;
+    _shrinkGeometryEstablished = false;
+    _shrinkReportedRange = null;
     _shrinkAnchor = null;
     _shrinkMeasurements.clear();
     _shrinkContexts.clear();
@@ -1073,6 +1118,8 @@ class _PatchViewState<T> extends State<PatchView<T>>
       if (_shrinkLayoutKey != layoutKey) {
         _shrinkAnchor ??= reader;
         _shrinkLayoutKey = layoutKey;
+        _shrinkGeometryEstablished = false;
+        _shrinkReportedRange = null;
         _shrinkHeights = RowHeightIndex(
           (rows.isEmpty ? 1 : rows.length) + leadingCount,
           estimatedHeight: palette.lineHeight,
@@ -1196,7 +1243,7 @@ class _PatchViewState<T> extends State<PatchView<T>>
         ? LayoutBuilder(
             builder: (context, constraints) {
               _stickyBounded = constraints.hasBoundedHeight;
-              _queueShrinkGeometry();
+              _queueShrinkLayout();
               return viewport();
             },
           )
@@ -1217,7 +1264,7 @@ class _PatchViewState<T> extends State<PatchView<T>>
         list = LayoutBuilder(
           builder: (context, constraints) {
             _stickyBounded = constraints.hasBoundedHeight;
-            if (widget.shrinkWrap) _queueShrinkGeometry();
+            if (widget.shrinkWrap) _queueShrinkLayout();
             if (!_stickyBounded) return content;
             return Stack(
               children: [
@@ -1477,3 +1524,32 @@ class _PatchViewState<T> extends State<PatchView<T>>
     ];
   }
 }
+
+// A command has one local-layout phase and, only when necessary, one ancestor
+// phase. Scroll cancellation consumes it; no target-availability polling exists.
+class _ShrinkReveal {
+  _ShrinkReveal(
+    this.token,
+    this.row,
+    this.rows,
+    this.controller,
+    this.ancestorOffsets,
+  );
+  final int token;
+  final int row;
+  final List<DiffRow> rows;
+  final ScrollController controller;
+  final Map<ScrollPosition, double> ancestorOffsets;
+  bool positioned = false;
+}
+
+// Geometry is local to the patch. Only the final delta is converted to the
+// owning ancestor viewport's units, using its layout transform.
+typedef _ShrinkAnchor = ({
+  Object identity,
+  double within,
+  ScrollPosition position,
+  double pixels,
+  double localOffset,
+  double scale,
+});
