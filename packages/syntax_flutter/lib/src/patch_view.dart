@@ -248,12 +248,12 @@ class _PatchViewState extends State<PatchView> {
   void _highlightChanged() {
     if (!mounted || _repaintScheduled) return;
     _repaintScheduled = true;
-    SchedulerBinding.instance
-      ..addPostFrameCallback((_) {
-        _repaintScheduled = false;
-        if (mounted) setState(() {});
-      })
-      ..ensureVisualUpdate();
+    // Rebuild in the next frame's build phase, rather than waiting until its
+    // end and leaving ready syntax colors plain for another frame.
+    SchedulerBinding.instance.scheduleFrameCallback((_) {
+      _repaintScheduled = false;
+      if (mounted) setState(() {});
+    });
   }
 
   PatchWindowHighlights _windowsFor(Highlighter highlighter) {
