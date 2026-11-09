@@ -43,7 +43,6 @@ void main() {
                 controller: controller,
                 theme: githubDarkTheme,
                 highlighter: Highlighter(),
-                shrinkWrap: true,
                 rowBelowBuilder: (_, _) => EditableText(
                   controller: draft,
                   focusNode: focus,

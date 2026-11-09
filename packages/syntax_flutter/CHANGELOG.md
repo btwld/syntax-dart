@@ -1,9 +1,11 @@
 ## Unreleased
 
+- Remove `shrinkWrap` from `PatchView.controlled` and its controlled layout
+  subsystem. A future caller must bring a consumer sketch before reintroducing
+  this mode. Source constructors retain their existing shrink-wrap support.
+
 - Keep folded file anchors visible on the minimum Flutter SDK by preserving
   the viewport's leading cache across distant row rebases.
-- Preserve the visible row in controlled shrink-wrapped patches when files
-  fold or reorder, including inside an enclosing scroll view.
 - Anchor collapsed files to their file header when the reader was at a hunk
   header, rather than retaining an offset into a later file.
 - Preserve the reader's position when folding or reordering files after a

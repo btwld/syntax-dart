@@ -77,9 +77,8 @@ within one file and stale or unavailable selection endpoints throw
 source lines, including context omitted from partial patches. A successful
 request opens only the enclosing hunk or context gap and its file. Requests
 can precede mounting, and repeating a request scrolls to the same line again.
-Bounded views forward requests to `IndexedCodeViewport`. With `shrinkWrap`,
-controlled patches lay out every row and reveal through enclosing vertical
-scroll views; reserve that option for small patches.
+Controlled views forward requests to `IndexedCodeViewport` and require a
+bounded height. The controlled constructor has no `shrinkWrap` option.
 
 `setFiles` takes an immutable snapshot of the file list and requires unique
 stable file IDs. File folding follows IDs across reordering. Replacing a
@@ -144,8 +143,8 @@ and collapsed files. Section borders and rounded corners join individual rows
 and pinned headers while keeping files virtualized; gradients and images are
 painted per row. The leading widget scrolls before the first pinned header.
 Visible ranges are half-open logical viewport indices, including the leading
-row when supplied. `shrinkWrap` retains the existing non-virtual list behavior;
-its extra header is static rather than pinned to an enclosing scroll view.
+row when supplied. Source constructors retain their existing `shrinkWrap`
+nonvirtual list behavior; their extra header is static.
 
 Both views render under a routed `WidgetsApp`, with no Material theme,
 localizations, ancestor or icon font. File headers and context gaps support

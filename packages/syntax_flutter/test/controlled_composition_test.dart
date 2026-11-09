@@ -186,49 +186,45 @@ void main() {
     ]);
   });
 
-  for (final shrinkWrap in [false, true]) {
-    testWidgets(
-      'leading row offsets queued and repeated controlled reveal shrink=$shrinkWrap',
-      (tester) async {
-        final file = diffTexts(
-          '',
-          List.generate(300, (i) => 'line ${i + 1}').join('\n'),
-          path: 'a.txt',
-        );
-        final controller = PatchController<void>([file]);
-        final scroll = ScrollController();
-        addTearDown(controller.dispose);
-        addTearDown(scroll.dispose);
-        controller.revealLine(file.id, DiffSide.newer, 200, revision: 0);
-        final ranges = <(int, int)>[];
-        await tester.pumpWidget(
-          app(
-            PatchView<void>.controlled(
-              controller: controller,
-              scrollController: scroll,
-              highlighter: Highlighter(),
-              theme: githubDarkTheme,
-              leading: const SizedBox(height: 100, child: Text('Introduction')),
-              shrinkWrap: shrinkWrap,
-              onVisibleRange: (start, end) => ranges.add((start, end)),
-            ),
-          ),
-        );
-        await tester.pumpAndSettle();
-        final target = find.text('line 200', findRichText: true);
-        expect(target, findsOneWidget);
-        final y = tester.getTopLeft(target).dy;
-        expect(y, inInclusiveRange(0, 260));
-        scroll.jumpTo(0);
-        await tester.pumpAndSettle();
-        controller.revealLine(file.id, DiffSide.newer, 200, revision: 0);
-        await tester.pumpAndSettle();
-        expect(tester.getTopLeft(target).dy, closeTo(y, 1));
-        if (!shrinkWrap) expect(ranges, isNotEmpty);
-        expectPlainTree(tester);
-      },
+  testWidgets('leading row offsets queued and repeated controlled reveal', (
+    tester,
+  ) async {
+    final file = diffTexts(
+      '',
+      List.generate(300, (i) => 'line ${i + 1}').join('\n'),
+      path: 'a.txt',
     );
-  }
+    final controller = PatchController<void>([file]);
+    final scroll = ScrollController();
+    addTearDown(controller.dispose);
+    addTearDown(scroll.dispose);
+    controller.revealLine(file.id, DiffSide.newer, 200, revision: 0);
+    final ranges = <(int, int)>[];
+    await tester.pumpWidget(
+      app(
+        PatchView<void>.controlled(
+          controller: controller,
+          scrollController: scroll,
+          highlighter: Highlighter(),
+          theme: githubDarkTheme,
+          leading: const SizedBox(height: 100, child: Text('Introduction')),
+          onVisibleRange: (start, end) => ranges.add((start, end)),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final target = find.text('line 200', findRichText: true);
+    expect(target, findsOneWidget);
+    final y = tester.getTopLeft(target).dy;
+    expect(y, inInclusiveRange(0, 260));
+    scroll.jumpTo(0);
+    await tester.pumpAndSettle();
+    controller.revealLine(file.id, DiffSide.newer, 200, revision: 0);
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(target).dy, closeTo(y, 1));
+    expect(ranges, isNotEmpty);
+    expectPlainTree(tester);
+  });
 }
 
 WeakReference<FileDiff> _replaceSelected(

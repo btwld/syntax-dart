@@ -81,7 +81,7 @@ Future<void> codeResize(
   expectPlainTree(tester);
 }
 
-Future<void> zeroLeading(WidgetTester tester, bool shrinkWrap) async {
+Future<void> zeroLeading(WidgetTester tester) async {
   final source = file();
   final controller = PatchController<void>([source]);
   addTearDown(controller.dispose);
@@ -93,7 +93,6 @@ Future<void> zeroLeading(WidgetTester tester, bool shrinkWrap) async {
         highlighter: Highlighter(),
         theme: githubDarkTheme,
         padding: EdgeInsets.zero,
-        shrinkWrap: shrinkWrap,
         leading: const SizedBox.shrink(),
       ),
     ),
@@ -105,63 +104,7 @@ Future<void> zeroLeading(WidgetTester tester, bool shrinkWrap) async {
   expectPlainTree(tester);
 }
 
-Future<void> ancestor(
-  WidgetTester tester, {
-  required bool listView,
-  bool distant = false,
-}) async {
-  final source = file(count: distant ? 300 : 3);
-  final controller = PatchController<void>([source]);
-  final outer = ScrollController();
-  addTearDown(controller.dispose);
-  addTearDown(outer.dispose);
-  final children = [
-    const SizedBox(height: 600),
-    SizedBox(
-      height: 200,
-      child: PatchView<void>.controlled(
-        controller: controller,
-        highlighter: Highlighter(),
-        theme: githubDarkTheme,
-        shrinkWrap: true,
-        padding: EdgeInsets.zero,
-      ),
-    ),
-    const SizedBox(height: 600),
-  ];
-  await tester.pumpWidget(
-    app(
-      listView
-          ? ListView(controller: outer, children: children)
-          : SingleChildScrollView(
-              controller: outer,
-              child: Column(children: children),
-            ),
-      height: 600,
-    ),
-  );
-  await tester.pumpAndSettle();
-  expect(
-    find.text('line 3', findRichText: true, skipOffstage: false),
-    findsOneWidget,
-  );
-  controller.revealLine(
-    source.id,
-    DiffSide.newer,
-    distant ? 200 : 3,
-    revision: 0,
-  );
-  await tester.pumpAndSettle();
-  expect(outer.offset, greaterThan(0));
-  visible(
-    tester,
-    find.text(distant ? 'line 200' : 'line 3', findRichText: true),
-    height: 600,
-  );
-  expectPlainTree(tester);
-}
-
-Future<void> leadingChange(WidgetTester tester, bool shrinkWrap) async {
+Future<void> leadingChange(WidgetTester tester) async {
   final controller = PatchController<void>([file()]);
   final scroll = ScrollController();
   addTearDown(controller.dispose);
@@ -178,7 +121,6 @@ Future<void> leadingChange(WidgetTester tester, bool shrinkWrap) async {
             scrollController: scroll,
             highlighter: Highlighter(),
             theme: githubDarkTheme,
-            shrinkWrap: shrinkWrap,
             stickyHeaders: true,
             padding: EdgeInsets.zero,
             leading: leading ? const SizedBox(height: 300) : null,
@@ -214,11 +156,7 @@ Future<void> leadingChange(WidgetTester tester, bool shrinkWrap) async {
   expectPlainTree(tester);
 }
 
-Future<void> patchResize(
-  WidgetTester tester,
-  bool shrinkWrap,
-  bool widthChange,
-) async {
+Future<void> patchResize(WidgetTester tester, bool widthChange) async {
   final source = file(long: widthChange);
   final controller = PatchController<void>([source]);
   addTearDown(controller.dispose);
@@ -240,7 +178,6 @@ Future<void> patchResize(
                 controller: controller,
                 highlighter: highlighter,
                 theme: githubDarkTheme,
-                shrinkWrap: shrinkWrap,
                 padding: EdgeInsets.zero,
                 textStyle: TextStyle(
                   fontFamily: 'monospace',
@@ -276,17 +213,10 @@ void main() {
     'review 1: retained code reveal restores line 100 after doubled font',
     (tester) => codeResize(tester, widthChange: false),
   );
-  testWidgets(
-    'review 2: empty leading has exact shrink-wrapped reveal offset',
-    (tester) => zeroLeading(tester, true),
-  );
-  testWidgets(
-    'review 3: bounded shrink reveal propagates past spacer to ancestor',
-    (tester) => ancestor(tester, listView: false),
-  );
+
   testWidgets(
     'review 4: adding leading invalidates indexed header row cache',
-    (tester) => leadingChange(tester, false),
+    (tester) => leadingChange(tester),
   );
 
   group('parent behavior parity', () {
@@ -340,29 +270,14 @@ void main() {
       'retained code reveal restores anchor after width change',
       (tester) => codeResize(tester, widthChange: true),
     );
-    for (final shrinkWrap in [false, true]) {
-      for (final widthChange in [false, true]) {
-        testWidgets(
-          'patch anchor after ${widthChange ? 'width' : 'font'} change shrink=$shrinkWrap',
-          (tester) => patchResize(tester, shrinkWrap, widthChange),
-        );
-      }
+
+    for (final widthChange in [false, true]) {
+      testWidgets(
+        'patch anchor after ${widthChange ? 'width' : 'font'} change',
+        (tester) => patchResize(tester, widthChange),
+      );
     }
-    testWidgets(
-      'indexed zero-height leading',
-      (tester) => zeroLeading(tester, false),
-    );
-    testWidgets(
-      'bounded shrink leading added and removed',
-      (tester) => leadingChange(tester, true),
-    );
-    testWidgets(
-      'bounded shrink reveal propagates through ListView',
-      (tester) => ancestor(tester, listView: true),
-    );
-    testWidgets(
-      'bounded shrink reveal propagates after an inner jump',
-      (tester) => ancestor(tester, listView: false, distant: true),
-    );
+
+    testWidgets('indexed zero-height leading', (tester) => zeroLeading(tester));
   });
 }

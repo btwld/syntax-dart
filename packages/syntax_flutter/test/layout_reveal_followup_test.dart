@@ -76,116 +76,106 @@ void main() {
     );
   });
 
-  for (final shrinkWrap in [false, true]) {
-    testWidgets(
-      'mounted draft state and focus survive reveal shrink=$shrinkWrap',
-      (tester) async {
-        final file = source(count: 30);
-        final controller = PatchController<void>([file]);
-        addTearDown(controller.dispose);
-        await tester.pumpWidget(
-          app(
-            PatchView<void>.controlled(
-              controller: controller,
-              theme: githubDarkTheme,
-              highlighter: Highlighter(),
-              stickyHeaders: true,
-              shrinkWrap: shrinkWrap,
-              headerBuilder: (_, _, _, _) =>
-                  const SizedBox(height: 60, child: Text('Header')),
-              rowBelowBuilder: (_, row) =>
-                  row.row is DiffLineRow &&
-                      (row.row as DiffLineRow).line.newNumber == 2
-                  ? const _Draft()
-                  : null,
-            ),
-            height: 400,
-          ),
-        );
-        await tester.pumpAndSettle();
-        final before = tester.state<_DraftState>(find.byType(_Draft));
-        before.focus.requestFocus();
-        await tester.pump();
-        expect(before.focus.hasFocus, isTrue);
-        controller.revealLine(file.id, DiffSide.newer, 2, revision: 0);
-        await tester.pumpAndSettle();
-        expect(tester.state<_DraftState>(find.byType(_Draft)), same(before));
-        expect(before.focus.hasFocus, isTrue);
-        controller.select(
-          DiffSelection(
-            fileId: file.id,
-            revision: 0,
-            side: DiffSide.newer,
-            anchor: 2,
-            active: 2,
-          ),
-        );
-        await tester.pumpAndSettle();
-        expect(tester.state<_DraftState>(find.byType(_Draft)), same(before));
-        expect(before.focus.hasFocus, isTrue);
-        expectPlainTree(tester);
-      },
+  testWidgets('mounted draft state and focus survive reveal', (tester) async {
+    final file = source(count: 30);
+    final controller = PatchController<void>([file]);
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(
+      app(
+        PatchView<void>.controlled(
+          controller: controller,
+          theme: githubDarkTheme,
+          highlighter: Highlighter(),
+          stickyHeaders: true,
+          headerBuilder: (_, _, _, _) =>
+              const SizedBox(height: 60, child: Text('Header')),
+          rowBelowBuilder: (_, row) =>
+              row.row is DiffLineRow &&
+                  (row.row as DiffLineRow).line.newNumber == 2
+              ? const _Draft()
+              : null,
+        ),
+        height: 400,
+      ),
     );
+    await tester.pumpAndSettle();
+    final before = tester.state<_DraftState>(find.byType(_Draft));
+    before.focus.requestFocus();
+    await tester.pump();
+    expect(before.focus.hasFocus, isTrue);
+    controller.revealLine(file.id, DiffSide.newer, 2, revision: 0);
+    await tester.pumpAndSettle();
+    expect(tester.state<_DraftState>(find.byType(_Draft)), same(before));
+    expect(before.focus.hasFocus, isTrue);
+    controller.select(
+      DiffSelection(
+        fileId: file.id,
+        revision: 0,
+        side: DiffSide.newer,
+        anchor: 2,
+        active: 2,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.state<_DraftState>(find.byType(_Draft)), same(before));
+    expect(before.focus.hasFocus, isTrue);
+    expectPlainTree(tester);
+  });
 
-    testWidgets(
-      'scaled reveal uses viewport-local offsets shrink=$shrinkWrap',
-      (tester) async {
-        final file = source();
-        final controller = PatchController<void>([file]);
-        addTearDown(controller.dispose);
-        controller.revealLine(file.id, DiffSide.newer, 200, revision: 0);
-        await tester.pumpWidget(
-          app(
-            Align(
-              alignment: Alignment.topLeft,
-              child: Transform.scale(
-                scale: 2,
-                alignment: Alignment.topLeft,
-                child: SizedBox(
-                  key: const ValueKey('viewport'),
-                  width: 280,
-                  height: 200,
-                  child: PatchView<void>.controlled(
-                    controller: controller,
-                    theme: githubDarkTheme,
-                    highlighter: Highlighter(),
-                    stickyHeaders: true,
-                    shrinkWrap: shrinkWrap,
-                    headerBuilder: (_, _, _, _) => const SizedBox(
-                      key: ValueKey('header'),
-                      height: 120,
-                      child: Text('Header'),
-                    ),
-                  ),
+  testWidgets('scaled reveal uses viewport-local offsets', (tester) async {
+    final file = source();
+    final controller = PatchController<void>([file]);
+    addTearDown(controller.dispose);
+    controller.revealLine(file.id, DiffSide.newer, 200, revision: 0);
+    await tester.pumpWidget(
+      app(
+        Align(
+          alignment: Alignment.topLeft,
+          child: Transform.scale(
+            scale: 2,
+            alignment: Alignment.topLeft,
+            child: SizedBox(
+              key: const ValueKey('viewport'),
+              width: 280,
+              height: 200,
+              child: PatchView<void>.controlled(
+                controller: controller,
+                theme: githubDarkTheme,
+                highlighter: Highlighter(),
+                stickyHeaders: true,
+                headerBuilder: (_, _, _, _) => const SizedBox(
+                  key: ValueKey('header'),
+                  height: 120,
+                  child: Text('Header'),
                 ),
               ),
             ),
-            height: 500,
           ),
-        );
-        await tester.pumpAndSettle();
-        final viewport = tester.renderObject<RenderBox>(
-          find.byKey(const ValueKey('viewport')),
-        );
-        Rect localRect(Finder finder) {
-          final box = tester.renderObject<RenderBox>(finder);
-          return MatrixUtils.transformRect(
-            box.getTransformTo(viewport),
-            Offset.zero & box.size,
-          );
-        }
-
-        final header = localRect(
-          find.byKey(const ValueKey('header')).hitTestable(),
-        );
-        final target = localRect(find.text('line 200', findRichText: true));
-        debugPrint('scaled shrink=$shrinkWrap: header=$header target=$target');
-        expect(target.top, greaterThanOrEqualTo(header.bottom));
-        expect(target.bottom, lessThanOrEqualTo(200));
-        expectPlainTree(tester);
-      },
+        ),
+        height: 500,
+      ),
     );
-  }
+    await tester.pumpAndSettle();
+    final viewport = tester.renderObject<RenderBox>(
+      find.byKey(const ValueKey('viewport')),
+    );
+    Rect localRect(Finder finder) {
+      final box = tester.renderObject<RenderBox>(finder);
+      return MatrixUtils.transformRect(
+        box.getTransformTo(viewport),
+        Offset.zero & box.size,
+      );
+    }
+
+    final header = localRect(
+      find.byKey(const ValueKey('header')).hitTestable(),
+    );
+    final target = localRect(find.text('line 200', findRichText: true));
+    debugPrint('scaled: header=$header target=$target');
+    expect(target.top, greaterThanOrEqualTo(header.bottom));
+    expect(target.bottom, lessThanOrEqualTo(200));
+    expectPlainTree(tester);
+  });
 
   testWidgets('cold header is measured at the source row width', (
     tester,
