@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Keep commit mentions and patch-like message lines in mailbox introductions
+  without splitting documents or reporting patch errors for message text.
 - Diagnose excess hunk content in `parsePatchDocuments`, including its
   transport line, and recognize decorated `git log` commit headers so
   adjacent commits keep separate documents and file identities.
