@@ -152,13 +152,21 @@ extension _PatchSelection<T> on _PatchViewState<T> {
     final number = side == DiffSide.old ? line.oldNumber : line.newNumber;
     final source = side == DiffSide.old ? file.oldText : file.newText;
     if (source == null || number == null) return line.sourceLineEnding;
-    final endings = _sourceEndings[(file, side)] ??= [
-      for (final match in RegExp(r'\r\n|\r|\n').allMatches(source))
-        match.group(0)!,
-    ];
-    return number <= endings.length
-        ? endings[number - 1]
-        : line.sourceLineEnding;
+    // Unexpanded layouts contain the original hunk lines, whose terminators
+    // are already known. Do not index full source text to copy those lines.
+    final metadata = _endingLayouts[file] ??= DiffLayout([file]);
+    final index = metadata.rowForLine(0, number, oldSide: side == DiffSide.old);
+    if (index != null) {
+      final row = metadata[index];
+      if (row case DiffLineRow(:final line)) return line.sourceLineEnding;
+    }
+    final lines = side == DiffSide.old ? file.oldLines : file.newLines;
+    if (lines == null || number > lines.length) return line.sourceLineEnding;
+    final endings = _sourceEndings[(file, side)] ??= SourceLineEndings(
+      source,
+      lines,
+    );
+    return endings.endingAt(number);
   }
 
   ({DiffLayout layout, int start, int end})? _boundsFor(

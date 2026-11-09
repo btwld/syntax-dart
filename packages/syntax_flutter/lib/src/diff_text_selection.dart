@@ -262,7 +262,7 @@ final class DiffTextSelection extends RowSelectionDelegate {
     final first = _all ? 0 : positions.first.$1.row;
     final last = _all ? _rowCount - 1 : positions.last.$1.row;
     final buffer = StringBuffer();
-    String? previousEnding;
+    int? previousRow;
     for (var row = first; row <= last; row++) {
       final text = _textAt(
         row,
@@ -275,12 +275,16 @@ final class DiffTextSelection extends RowSelectionDelegate {
       final end = row == last && !_all
           ? positions.last.$2.clamp(start, text.length)
           : text.length;
-      if (previousEnding != null) buffer.write(previousEnding);
+      if (previousRow != null) {
+        buffer.write(
+          _endingAt(
+            previousRow,
+            _split ? activeSide.value ?? DiffSide.newer : null,
+          ),
+        );
+      }
       buffer.write(text.substring(start, end));
-      previousEnding = _endingAt(
-        row,
-        _split ? activeSide.value ?? DiffSide.newer : null,
-      );
+      previousRow = row;
     }
     final text = buffer.toString();
     return text.isEmpty ? null : SelectedContent(plainText: text);

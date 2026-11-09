@@ -1,5 +1,9 @@
 ## Unreleased
 
+- Resolve copied line endings only between selected source rows. Reuse hunk
+  terminators and lazily read expanded context instead of indexing every
+  terminator for a small native selection in a large file.
+
 - Preserve empty native selection endpoints and source line endings when
   copying expanded context. Keep section decoration image painters alive for
   asynchronous resolution, and bound cross-side selection highlighting to
