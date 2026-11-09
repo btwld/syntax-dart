@@ -1,3 +1,4 @@
+import 'dart:collection';
 import 'dart:math' as math;
 
 import '../document.dart';
@@ -252,7 +253,14 @@ final class DiffHighlightCache {
     required this.theme,
     this.language,
     this.inlineDiffMode = InlineDiffMode.mergedWords,
-  });
+    this.maxEntries,
+    this.maxCodeUnits,
+  }) {
+    if ((maxEntries != null && maxEntries! < 1) ||
+        (maxCodeUnits != null && maxCodeUnits! < 1)) {
+      throw ArgumentError('Cache limits must be positive');
+    }
+  }
 
   /// Provides the grammars.
   final Highlighter highlighter;
@@ -266,6 +274,78 @@ final class DiffHighlightCache {
   /// Inline comparison used by all consumers of this cache.
   final InlineDiffMode inlineDiffMode;
 
+  /// Optional limit on retained files, evicting the least recently used first.
+  /// Files explicitly listed by [prepare] are spared.
+  final int? maxEntries;
+
+  /// Optional limit on retained source UTF-16 units. One oversize file is
+  /// allowed alone, and [prepare] can spare listed files. Both syntax and
+  /// word changes are evicted together.
+  final int? maxCodeUnits;
+
+  final _retained = LinkedHashMap<FileDiff, int>.identity();
+  final _listed = Set<FileDiff>.identity();
+
+  /// Keeps [files] through eviction, for consumers that retain all currently
+  /// listed files. Listed entries may exceed the limits. Replaced snapshots
+  /// with the same file ID are discarded, while filtered files remain reusable
+  /// until evicted. Views requiring strict limits can leave this unset.
+  void prepare(Iterable<FileDiff> files) {
+    _listed
+      ..clear()
+      ..addAll(files);
+    final replacements = {for (final file in _listed) file.id: file};
+    for (final file in _retained.keys.toList()) {
+      final replacement = replacements[file.id];
+      if (replacement != null && !identical(replacement, file)) {
+        _retained.remove(file);
+        _highlights.remove(file);
+        _words.remove(file);
+      }
+    }
+    _trim();
+  }
+
+  /// Number of files with retained highlighting or word changes.
+  int get entryCount => _retained.length;
+
+  /// Source size charged to retained files.
+  int get retainedCodeUnits => _retained.values.fold(0, (n, size) => n + size);
+
+  void _touch(FileDiff file) {
+    final cachedCost = _retained.remove(file);
+    int cost(List<String>? lines) =>
+        lines?.fold<int>(0, (n, l) => n + l.length + 1) ?? 0;
+    _retained[file] =
+        cachedCost ??
+        (file.oldText?.length ?? 0) +
+            (file.newText?.length ?? 0) +
+            (file.oldLines == null && file.newLines == null
+                ? file.hunks.fold<int>(
+                    0,
+                    (n, h) =>
+                        n +
+                        h.lines.fold<int>(0, (n, l) => n + l.text.length + 1),
+                  )
+                : cost(file.oldLines) + cost(file.newLines));
+    _trim(keep: file);
+  }
+
+  void _trim({FileDiff? keep}) {
+    while (_retained.length > 1 &&
+        ((maxEntries != null && _retained.length > maxEntries!) ||
+            (maxCodeUnits != null && retainedCodeUnits > maxCodeUnits!))) {
+      final candidates = _retained.keys.where(
+        (file) => !_listed.contains(file) && !identical(file, keep),
+      );
+      if (candidates.isEmpty) break;
+      final oldest = candidates.first;
+      _retained.remove(oldest);
+      _highlights.remove(oldest);
+      _words.remove(oldest);
+    }
+  }
+
   final Map<FileDiff, (Grammar?, HighlightedDiff)> _highlights = Map.identity();
   final Map<FileDiff, WordChanges> _words = Map.identity();
 
@@ -274,6 +354,7 @@ final class DiffHighlightCache {
   /// With a [budget], a file not highlighted yet gets at most that long,
   /// and [tokenize] finishes it. Without one, the file is finished now.
   HighlightedDiff highlighted(FileDiff file, {Duration? budget}) {
+    _touch(file);
     final grammar = HighlightedDiff._grammarFor(file, highlighter, language);
     if (_highlights[file] case (
       final cached,
@@ -307,8 +388,10 @@ final class DiffHighlightCache {
   }
 
   /// [file]'s changed words.
-  WordChanges words(FileDiff file) =>
-      _words[file] ??= WordChanges.of(file, mode: inlineDiffMode);
+  WordChanges words(FileDiff file) {
+    _touch(file);
+    return _words[file] ??= WordChanges.of(file, mode: inlineDiffMode);
+  }
 
   /// [line] of [file] as styled segments, with its changed words marked.
   List<DiffSegment> segmentsFor(FileDiff file, DiffLine line) =>

@@ -15,6 +15,8 @@ export 'src/chrome.dart';
 export 'src/code_rows.dart' show RowSelectionDelegate;
 export 'src/code_view_controller.dart';
 export 'src/highlighted_code.dart';
+export 'src/highlight_scheduler.dart'
+    show HighlightExecutor, HighlightWindowScheduler;
 export 'src/highlighter_scope.dart';
 export 'src/horizontal_scroll.dart';
 export 'src/indexed_viewport.dart';

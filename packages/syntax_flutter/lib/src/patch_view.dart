@@ -6,6 +6,8 @@ import 'package:syntax_core/syntax.dart';
 
 import 'chrome.dart';
 import 'highlighter_scope.dart';
+import 'highlight_scheduler.dart';
+import 'patch_highlights.dart';
 import 'horizontal_scroll.dart';
 import 'indexed_viewport.dart';
 import 'patch_rows.dart';
@@ -30,6 +32,7 @@ class PatchView extends StatefulWidget {
     required List<FileDiff> files,
     required this.theme,
     this.highlighter,
+    this.executor,
     this.language,
     this.mode = DiffMode.unified,
     this.collapsed = const {},
@@ -64,6 +67,7 @@ class PatchView extends StatefulWidget {
     super.key,
     required this.theme,
     this.highlighter,
+    this.executor,
     this.language,
     this.mode = DiffMode.unified,
     this.collapsed = const {},
@@ -102,6 +106,7 @@ class PatchView extends StatefulWidget {
     int contextLines = 3,
     required this.theme,
     this.highlighter,
+    this.executor,
     this.language,
     this.mode = DiffMode.unified,
     this.collapsed = const {},
@@ -139,6 +144,11 @@ class PatchView extends StatefulWidget {
 
   /// Defaults to the nearest [HighlighterScope].
   final Highlighter? highlighter;
+
+  /// Optional executor for visible syntax windows, such as a worker isolate.
+  /// Calls are serialized across files and both sides of parsed/full diffs.
+  /// Without one, large files use cooperative window highlighting.
+  final HighlightExecutor? executor;
 
   /// The language of every file, by name or alias, or `null` to guess from path.
   final String? language;
@@ -230,11 +240,58 @@ class _PatchViewState extends State<PatchView> {
   DiffHighlightCache? _highlights;
   bool _slicing = false;
   PatchPalette? _palette;
+  HighlightWindowScheduler? _windows;
+  PatchWindowHighlights? _windowHighlights;
+  Object? _windowKey;
+  bool _repaintScheduled = false;
+
+  void _highlightChanged() {
+    if (!mounted || _repaintScheduled) return;
+    _repaintScheduled = true;
+    SchedulerBinding.instance
+      ..addPostFrameCallback((_) {
+        _repaintScheduled = false;
+        if (mounted) setState(() {});
+      })
+      ..ensureVisualUpdate();
+  }
+
+  PatchWindowHighlights _windowsFor(Highlighter highlighter) {
+    final key = (
+      highlighter,
+      highlighter.revision,
+      widget.theme,
+      widget.language,
+      widget.inlineDiffMode,
+      widget.executor,
+    );
+    _windows ??= HighlightWindowScheduler(
+      highlighter: highlighter,
+      theme: widget.theme,
+      executor: widget.executor ?? highlightWindowInFrames,
+      onChanged: _highlightChanged,
+      onResult: (result) => _windowHighlights?.accept(result),
+    );
+    _windowHighlights ??= PatchWindowHighlights(_windows!);
+    if (key != _windowKey) {
+      _windowKey = key;
+      _windowHighlights!.clear();
+      _windows!.configure(
+        highlighter: highlighter,
+        theme: widget.theme,
+        executor: widget.executor ?? highlightWindowInFrames,
+      );
+    }
+    return _windowHighlights!;
+  }
 
   void _syncSource() {
     final key = (widget._files, widget._patch, widget._texts);
     if (key == _sourceKey) return;
     _sourceKey = key;
+    // Keep bounded ready output for revisits, but abandon queued work for the
+    // previous snapshot immediately. A late executor still settles serially.
+    _windows?.clear();
     _files = switch (key) {
       (final files?, _, _) => files,
       (_, final patch?, _) => parsePatch(patch),
@@ -244,13 +301,13 @@ class _PatchViewState extends State<PatchView> {
       _ => const [],
     };
     _stickyFile = 0;
-    _highlights = null;
   }
 
   DiffHighlightCache _highlightsFor(Highlighter highlighter) {
     final key = (
       widget.theme,
       highlighter,
+      highlighter.revision,
       widget.language,
       widget.inlineDiffMode,
     );
@@ -261,6 +318,8 @@ class _PatchViewState extends State<PatchView> {
         theme: widget.theme,
         language: widget.language,
         inlineDiffMode: widget.inlineDiffMode,
+        maxEntries: 8,
+        maxCodeUnits: 1024 * 1024,
       );
     }
     return _highlights!;
@@ -331,6 +390,7 @@ class _PatchViewState extends State<PatchView> {
 
   @override
   void dispose() {
+    _windows?.dispose();
     if (widget.scrollController == null) _scroll.dispose();
     super.dispose();
   }
@@ -407,11 +467,14 @@ class _PatchViewState extends State<PatchView> {
       expanded: widget.expanded,
     );
 
+    final windows = _windowsFor(highlighter);
     Widget buildRow(BuildContext context, int index) {
       if (rows.isEmpty) {
         return PatchNoticeBar(text: labels.noFiles, palette: palette);
       }
-      final row = _buildRow(rows[index], palette, highlighter, labels);
+      final row = windows.retain(
+        () => _buildRow(rows[index], palette, highlighter, labels),
+      );
       return index > 0 && rows[index - 1].file != rows[index].file
           ? Padding(padding: const EdgeInsets.only(top: 16), child: row)
           : row;
@@ -582,15 +645,28 @@ class _PatchViewState extends State<PatchView> {
       DiffLineKind.removed => palette.removedText,
       DiffLineKind.context => null,
     };
-    final highlights = _highlightsFor(highlighter);
     final diff = _files[file];
-    final highlighted = highlights.highlighted(diff, budget: _sliceBudget);
-    if (!highlighted.isComplete) _finishLater();
-    return [
-      for (final segment in highlighted.segmentsFor(
+    final large =
+        (diff.oldLines?.length ?? 0) + (diff.newLines?.length ?? 0) > 200 ||
+        diff.hunks.fold<int>(0, (n, h) => n + h.lines.length) > 200;
+    List<DiffSegment> segments;
+    if (widget.executor != null || large) {
+      segments = _windowsFor(highlighter).segments(
+        diff,
         line,
-        highlights.words(diff),
-      ))
+        highlighter,
+        widget.theme,
+        widget.language,
+        widget.inlineDiffMode,
+      );
+    } else {
+      final highlights = _highlightsFor(highlighter);
+      final highlighted = highlights.highlighted(diff, budget: _sliceBudget);
+      if (!highlighted.isComplete) _finishLater();
+      segments = highlighted.segmentsFor(line, highlights.words(diff));
+    }
+    return [
+      for (final segment in segments)
         TextSpan(
           text: segment.text,
           style: segment.changed && emphasis != null

@@ -189,11 +189,14 @@ void main() {
       expect(vertical.maxScrollExtent, 50 * 21 - (100 - 32));
     });
 
-    testWidgets('a large file is colored between frames, top first', (
+    testWidgets('a large file colors visible windows between frames', (
       tester,
     ) async {
       final lines = numberedLines(8000);
       await tester.pumpWidget(app(code(lines)));
+      for (var i = 0; i < 1000 && !colored(shownLines(tester)[0]!); i++) {
+        await tester.pump();
+      }
       expect(colored(shownLines(tester)[0]!), isTrue);
 
       jumpToEnd(tester);

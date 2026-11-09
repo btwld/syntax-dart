@@ -406,6 +406,9 @@ final class CodeSelectionDelegate extends RowSelectionDelegate {
   /// Called when a block starts or stops holding part of the selection.
   VoidCallback? onSelectedBlocksChanged;
 
+  /// Whether any mounted block currently holds part of the selection.
+  bool get hasSelection => _selected.isNotEmpty;
+
   /// Whether [block] is built and holds part of the selection.
   bool isSelected(int block) => _selected.contains(block);
 
