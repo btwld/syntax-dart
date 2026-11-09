@@ -30,6 +30,7 @@ export 'src/diff/diff_layout.dart';
 export 'src/diff/diff_texts.dart';
 export 'src/diff/file_diff.dart';
 export 'src/diff/parse_patch.dart';
+export 'src/diff/patch_document.dart';
 export 'src/diff/word_diff.dart';
 export 'src/document.dart';
 export 'src/grammar/scope_stack.dart' show ScopeStack;
