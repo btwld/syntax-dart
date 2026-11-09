@@ -13,7 +13,9 @@ extension _PatchComposition<T> on _PatchViewState<T> {
     final file = _files[row.file];
     final first = index == 0 || rows[index - 1].file != row.file;
     final last = index == rows.length - 1 || rows[index + 1].file != row.file;
-    final children = <Widget>[_buildRow(row, palette, highlighter, labels)];
+    final children = <Widget>[
+      _buildRow(row, palette, highlighter, labels, index: index),
+    ];
     if (row is DiffLineRow || row is DiffPairRow) {
       final annotations = <DiffAnnotation<T>>[];
       for (final side in DiffSide.values) {
@@ -118,6 +120,7 @@ extension _PatchComposition<T> on _PatchViewState<T> {
   }
 
   Widget _sourceLine(
+    int index,
     int fileIndex,
     DiffLine line,
     DiffSide? side,
@@ -126,13 +129,6 @@ extension _PatchComposition<T> on _PatchViewState<T> {
     DiffLabels labels,
   ) {
     final file = _files[fileIndex];
-    final index = (_layout as DiffLayout).rowForLine(
-      fileIndex,
-      side == DiffSide.old || line.newNumber == null
-          ? line.oldNumber!
-          : line.newNumber!,
-      oldSide: side == DiffSide.old || line.newNumber == null,
-    )!;
     final numberWidth = palette.gutterWidth(file);
     final coordinates = <(DiffSide, int?)>[
       if (side == null || side == DiffSide.old) (DiffSide.old, line.oldNumber),

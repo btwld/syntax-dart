@@ -386,7 +386,6 @@ class _PatchViewState<T> extends State<PatchView<T>>
   final _nativeSelection = DiffTextSelection();
   final _lineFocus = FocusNode();
   final _gutterCells = <(int, DiffSide, int), BuildContext>{};
-  List<DiffRow> _layout = const [];
   final _annotationsByLine =
       <(String, DiffSide, int), List<DiffAnnotation<T>>>{};
   void _rebuild(VoidCallback callback) => setState(callback);
@@ -766,7 +765,6 @@ class _PatchViewState<T> extends State<PatchView<T>>
     if (revealRow != null) {
       _scheduleRevealCompletion(shrinkWrapped: shrinkControlled);
     }
-    _layout = rows;
     _annotationsByLine.clear();
     final revisions = {for (final file in _files) file.id: file.revision};
     for (final annotation
@@ -782,7 +780,7 @@ class _PatchViewState<T> extends State<PatchView<T>>
     }
     _nativeSelection.configure(
       source: (
-        _sourceKey,
+        _files,
         widget.controller?.layout,
         widget.mode,
         Object.hashAllUnordered(widget.collapsed),
@@ -921,7 +919,30 @@ class _PatchViewState<T> extends State<PatchView<T>>
         first: true,
         last: _isCollapsed(index),
       );
-      if (widget.shrinkWrap) {
+      if (widget.controller != null) {
+        // Give the pinned header its measured space outside the scrollable.
+        // Reveals can then align with the viewport's top without being hidden
+        // behind custom headers, labels or section borders.
+        final content = list;
+        list = LayoutBuilder(
+          builder: (context, constraints) => Column(
+            mainAxisSize: widget.shrinkWrap
+                ? MainAxisSize.min
+                : MainAxisSize.max,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (widget.shrinkWrap || _stickyFile != null)
+                header
+              else
+                const SizedBox.shrink(),
+              if (constraints.hasBoundedHeight)
+                Flexible(child: content)
+              else
+                content,
+            ],
+          ),
+        );
+      } else if (widget.shrinkWrap) {
         list = Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -988,8 +1009,9 @@ class _PatchViewState<T> extends State<PatchView<T>>
     DiffRow row,
     PatchPalette palette,
     Highlighter highlighter,
-    DiffLabels labels,
-  ) {
+    DiffLabels labels, {
+    int? index,
+  }) {
     switch (row) {
       case DiffFileHeaderRow(:final file, :final collapsed):
         void toggle() {
@@ -1046,7 +1068,15 @@ class _PatchViewState<T> extends State<PatchView<T>>
           ),
         );
       case DiffLineRow(:final file, :final line):
-        return _sourceLine(file, line, null, palette, highlighter, labels);
+        return _sourceLine(
+          index!,
+          file,
+          line,
+          null,
+          palette,
+          highlighter,
+          labels,
+        );
       case DiffPairRow(:final file, :final left, :final right):
         return IntrinsicHeight(
           child: Row(
@@ -1056,6 +1086,7 @@ class _PatchViewState<T> extends State<PatchView<T>>
                 child: left == null
                     ? ColoredBox(color: palette.emptySide)
                     : _sourceLine(
+                        index!,
                         file,
                         left,
                         DiffSide.old,
@@ -1069,6 +1100,7 @@ class _PatchViewState<T> extends State<PatchView<T>>
                 child: right == null
                     ? ColoredBox(color: palette.emptySide)
                     : _sourceLine(
+                        index!,
                         file,
                         right,
                         DiffSide.newer,
