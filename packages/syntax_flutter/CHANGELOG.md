@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Keep patch selection handles and magnifiers working on Flutter 3.38.1 by
+  matching the code text's root style to its spans for consistent caret metrics.
 - Preserve the theme cursor color in patch selection handles and focus rings.
 - Restore mobile touch-handle magnification with a widgets-only loupe. Add
   `SyntaxSelectionChrome.magnifierConfiguration` for host magnifiers or explicit
