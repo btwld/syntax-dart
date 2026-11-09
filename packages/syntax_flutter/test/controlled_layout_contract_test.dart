@@ -38,6 +38,10 @@ import 'patch_composition_test.dart' show app;
 // * Restoration resolves the owning scrollable's currently attached position.
 //   Replacing ScrollPhysics during font/layout changes must never jump a detached
 //   ScrollPosition. The follow-up probes below enforce these three rules.
+// * Scrolling and source replacement in the same frame validate continuity
+//   against the current reader anchor, even when the last measured reader was
+//   deleted. Geometry history captures that current identity with the anchor.
+//   The follow-up 2 probes cover both measured-height and fixed-height rows.
 // * Initial scroll offsets belong to the caller. Never restore an anchor from
 //   purely estimated geometry. Measurement precedes restoration, active reveal
 //   precedes visible-range notification, and unrelated callbacks cannot retire
@@ -57,6 +61,60 @@ FileDiff _file() => diffTexts(
 );
 
 void main() {
+  group('follow-up 2', () {
+    for (final fixed in [false, true]) {
+      testWidgets(
+        'same-frame scroll and replacement preserve current reader fixed=$fixed',
+        (tester) async {
+          final scroll = ScrollController();
+          addTearDown(scroll.dispose);
+          var ids = List.generate(300, (i) => 'row-$i');
+          var revision = 0;
+          late StateSetter update;
+          await tester.pumpWidget(
+            app(
+              StatefulBuilder(
+                builder: (_, setState) {
+                  update = setState;
+                  return IndexedCodeViewport(
+                    controller: scroll,
+                    count: ids.length,
+                    layoutKey: revision,
+                    fixedHeight: fixed,
+                    estimatedHeight: 24,
+                    identity: (i) => ids[i],
+                    indexOf: (id) {
+                      final i = ids.indexOf(id as String);
+                      return i < 0 ? null : i;
+                    },
+                    onLayout: (_) {},
+                    onVisibleRange: (_, _) {},
+                    builder: (_, i) =>
+                        SizedBox(height: 24, child: Text(ids[i])),
+                  );
+                },
+              ),
+            ),
+          );
+          await tester.pumpAndSettle(); // Establish measured geometry at row 0.
+          expect(tester.getTopLeft(find.text('row-0')).dy, 0);
+          scroll.jumpTo(
+            1200,
+          ); // Current anchor is row 50; no post-frame capture.
+          expect(scroll.offset, 1200);
+          update(() {
+            ids = ids.sublist(10); // Delete row 0, retain the current reader.
+            revision++;
+          }); // Deliberately no pump between scrolling and source replacement.
+          await tester.pumpAndSettle();
+          expect(scroll.offset, 960);
+          expect(tester.getTopLeft(find.text('row-50')).dy, closeTo(0, .1));
+          expectPlainTree(tester);
+        },
+      );
+    }
+  });
+
   group('follow-up 1', () {
     for (final fixed in [false, true]) {
       for (final countChange in [false, true]) {

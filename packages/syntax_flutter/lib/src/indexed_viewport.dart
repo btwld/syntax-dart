@@ -164,7 +164,7 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
   static const double _cache = 300;
   double _extent = 600;
   double? _width;
-  Object? _anchor;
+  Object? get _anchor => _measuredLayout.reader;
   double _within = 0;
   bool _programmaticScroll = false;
   ({int row, double within})? _restoringAnchor;
@@ -183,15 +183,16 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
   (int, int)? _lastReveal;
   _IndexedReveal? _activeReveal;
   bool _layoutQueued = false;
-  // Keep the provenance of the last measured layout across index resets. A
-  // changed layout key can still describe the same source through row identity.
-  ({Object key, Object? reader})? _measuredLayout;
+  // Retain measured provenance across resets, but capture the current reader
+  // synchronously with the anchor. There is only one reader identity, so a
+  // scroll before the next post-frame callback cannot leave continuity stale.
+  ({Object? key, Object? reader}) _measuredLayout = (key: null, reader: null);
 
   bool get _hasPriorGeometry {
     final measured = _measuredLayout;
-    if (measured == null) return false;
+    if (measured.key == null) return false;
     if (measured.key == widget.layoutKey) return true;
-    final reader = measured.reader;
+    final reader = _anchor;
     final row = reader == null ? null : widget.indexOf(reader);
     return row != null && row >= 0 && row < widget.count;
   }
@@ -235,7 +236,10 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
     }
     _rebase = false;
     _rangeOffset = offset;
-    _anchor = widget.identity(_visible);
+    _measuredLayout = (
+      key: _hasPriorGeometry ? _measuredLayout.key : null,
+      reader: widget.identity(_visible),
+    );
     _within = _offset - _heights.offsetFor(_visible);
     _queueLayout();
   }
