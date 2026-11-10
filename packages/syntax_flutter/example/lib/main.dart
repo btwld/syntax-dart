@@ -10,6 +10,10 @@ void main() => runApp(const SyntaxDemo());
 
 final _highlighter = Highlighter(languages: bundledLanguages.values);
 
+// Replace this with an application worker to move window work off the UI
+// isolate. The widgets serialize calls and discard cancelled or stale results.
+final HighlightExecutor _executor = highlightWindow;
+
 /// What the pane shows.
 enum _View { preview, diff, patch }
 
@@ -29,6 +33,16 @@ class _SyntaxDemoState extends State<SyntaxDemo> {
   final Set<DiffGapId> _expandedDiff = {};
   final Set<int> _collapsedPatch = {};
   final Set<DiffGapId> _expandedPatch = {};
+  late final _source = CodeViewController(
+    sourceId: 'sample',
+    code: _sampleText,
+  );
+
+  @override
+  void dispose() {
+    _source.dispose();
+    super.dispose();
+  }
 
   SyntaxTheme get _theme => bundledThemes[_themeName]!;
 
@@ -55,6 +69,7 @@ class _SyntaxDemoState extends State<SyntaxDemo> {
   void _selectLanguage(String language) {
     setState(() {
       _language = language;
+      _source.setCode(_sampleText, revision: _source.revision + 1);
       _collapsedDiff.clear();
       _expandedDiff.clear();
     });
@@ -116,6 +131,14 @@ class _SyntaxDemoState extends State<SyntaxDemo> {
                       },
                       theme: theme,
                       actions: [
+                        if (_view == _View.preview && _source.lineCount > 1)
+                          TextButton(
+                            onPressed: () {
+                              _source.selectLines(1, 1);
+                              _source.revealLine(1);
+                            },
+                            child: const Text('Reveal line 2'),
+                          ),
                         if (_view != _View.preview)
                           _ModeToggle(
                             mode: _mode,
@@ -139,12 +162,28 @@ class _SyntaxDemoState extends State<SyntaxDemo> {
   }
 
   Widget _contentPane(SyntaxTheme theme, TextStyle code) => switch (_view) {
-    _View.preview => HighlightedCode(
-      _sampleText,
+    _View.preview => HighlightedCode.controlled(
+      controller: _source,
       language: _language,
       theme: theme,
+      executor: _executor,
       textStyle: code,
       lineNumbers: true,
+      gutterBuilder: (context, line) => line == 1
+          ? Semantics(
+              label: 'Example source marker',
+              child: Center(
+                child: Container(
+                  width: 6,
+                  height: 6,
+                  decoration: BoxDecoration(
+                    color: theme.cursorColor,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+            )
+          : null,
     ),
     _View.diff => PatchView.fromTexts(
       oldText: _sampleText,
@@ -152,6 +191,7 @@ class _SyntaxDemoState extends State<SyntaxDemo> {
       path: _samplePath,
       language: _language,
       theme: theme,
+      executor: _executor,
       mode: _mode,
       collapsed: _collapsedDiff,
       expanded: _expandedDiff,
@@ -164,6 +204,7 @@ class _SyntaxDemoState extends State<SyntaxDemo> {
     _View.patch => PatchView.fromPatch(
       samplePatch,
       theme: theme,
+      executor: _executor,
       mode: _mode,
       collapsed: _collapsedPatch,
       expanded: _expandedPatch,

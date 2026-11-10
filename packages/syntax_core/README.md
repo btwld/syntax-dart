@@ -52,6 +52,32 @@ final ranges = document.ranges(githubDarkTheme); // StyledRange(start, end, styl
 included. `highlighter.highlightRanges(code, ...)` returns the same ranges
 in one call.
 
+### Viewport highlighting
+
+`highlightWindow` advances grammar state to a zero-based, half-open line
+window without retaining styled output for the preceding lines. It yields
+between bounded slices and checks cancellation before each line. Ranges use
+whole-source UTF-16 offsets, including CRLF breaks in their positions.
+
+```dart
+final cancellation = HighlightCancellation();
+final result = await highlightWindow(
+  HighlightWindowRequest(
+    fileId: 'lib/main.dart', revision: 3, code: source, language: 'dart',
+    startLine: 900, endLine: 940,
+  ),
+  highlighter: highlighter, theme: githubDarkTheme,
+  cancellation: cancellation,
+);
+// cancellation.cancel() stops obsolete work with HighlightCancelled.
+```
+
+Calls share bounded raw tokens and grammar checkpoints per highlighter. Exact
+content, source revision, language and grammar registration revision identify
+cached input; changing only the theme reuses raw tokens. Use
+`HighlightWindowCache` for explicit limits, work counters and `clear()`.
+Cancellation cannot interrupt a single synchronous regex match.
+
 ### Bundled grammars and themes
 
 Each grammar and theme is its own library, so unused ones are tree-shaken:
@@ -88,6 +114,16 @@ strings, takes `injectTo: ['source.js']`.
 // From git, or any unified diff.
 final files = parsePatch(gitDiffOutput);
 
+// Keep commit introductions and diagnostics from git log -p or format-patch.
+final documents = parsePatchDocuments(mailbox);
+for (final document in documents) {
+  print(document.introduction);
+  for (final diagnostic in document.diagnostics) {
+    print('Line ${diagnostic.line}: ${diagnostic.message}');
+  }
+}
+// Use strict: true to reject malformed patches with FormatException.
+
 // Or between two versions of a file. This keeps both texts, so viewers
 // can expand unchanged lines and highlight exactly.
 final diff = diffTexts(before, after, path: 'lib/main.dart');
@@ -119,6 +155,38 @@ To show a diff, `layoutDiff` turns files into the rows a view paints:
 
 `HighlightedDiff.segmentsFor(line, words)` returns a line's styled pieces,
 with the changed words marked.
+
+### Selection and annotations
+
+Use a file's stable `id` and content `revision` to address inclusive, one-based
+source lines. A selection keeps its direction, including when it crosses sides:
+
+```dart
+final selection = DiffSelection(
+  fileId: diff.id,
+  revision: diff.revision,
+  side: DiffSide.old,
+  anchor: 2,
+  active: 3,
+  activeSide: DiffSide.newer,
+);
+final annotation = DiffAnnotation<String>(
+  id: 'note',
+  fileId: diff.id,
+  revision: diff.revision,
+  side: DiffSide.newer,
+  line: 3,
+  data: 'Check this change',
+  sourceSelection: selection,
+);
+```
+
+`activeSide` defaults to `side`. `start` and `end` are the smaller and larger
+line numbers; across sides they do not describe diff row order. An annotation's
+display line and side are independent of its optional original selection, whose
+file and revision must match. Both types reject nonpositive line numbers and
+compare by value, including direction, revision and annotation data. Before
+using either value, consumers must check its revision against the current file.
 
 ## Writing a renderer
 

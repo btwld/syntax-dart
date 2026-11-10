@@ -24,16 +24,20 @@ export 'src/grammar/grammar.dart'
         StateStack,
         Token,
         splitLines;
+export 'src/diff/diff_annotation.dart';
 export 'src/diff/diff_highlight.dart';
 export 'src/diff/diff_labels.dart';
 export 'src/diff/diff_layout.dart';
+export 'src/diff/diff_selection.dart';
 export 'src/diff/diff_texts.dart';
 export 'src/diff/file_diff.dart';
 export 'src/diff/parse_patch.dart';
+export 'src/diff/patch_document.dart';
 export 'src/diff/word_diff.dart';
 export 'src/document.dart';
 export 'src/grammar/scope_stack.dart' show ScopeStack;
 export 'src/highlighter.dart';
+export 'src/highlight_window.dart';
 export 'src/presentation.dart';
 export 'src/regex/engine.dart'
     show

@@ -23,10 +23,11 @@ final class RowHeightIndex {
   /// Number of rows for which the renderer has supplied a measurement.
   int get measuredCount => _measured.length;
 
-  /// Sets an actual row height and returns its change in pixels or cells.
+  /// Sets a non-negative row height and returns its change in pixels or cells.
+  /// Zero-height rows share an offset with the following row.
   double measure(int row, double height) {
     RangeError.checkValidIndex(row, _tree, 'row', length);
-    if (!height.isFinite || height <= 0) throw ArgumentError.value(height);
+    if (!height.isFinite || height < 0) throw ArgumentError.value(height);
     final delta = height - (_measured[row] ?? estimatedHeight);
     _measured[row] = height;
     for (var index = row + 1; index <= length; index += index & -index) {

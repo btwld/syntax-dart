@@ -142,6 +142,83 @@ void main() {
   });
 
   testWidgets(
+    'a folded-row fallback restores the header across a distant rebase',
+    (tester) async {
+      final scroll = ScrollController();
+      addTearDown(scroll.dispose);
+      var folded = false;
+      late StateSetter update;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Align(
+            alignment: Alignment.topLeft,
+            child: SizedBox(
+              height: 600,
+              child: StatefulBuilder(
+                builder: (context, setState) {
+                  update = setState;
+                  final ids = [
+                    'a header',
+                    if (!folded) ...[
+                      'a hunk',
+                      for (var i = 1; i <= 300; i++) 'a $i',
+                    ],
+                    'b header',
+                    'b hunk',
+                    for (var i = 1; i <= 300; i++) 'b $i',
+                  ];
+                  return IndexedCodeViewport(
+                    controller: scroll,
+                    count: ids.length,
+                    layoutKey: folded,
+                    estimatedHeight: 21,
+                    padding: const EdgeInsets.all(12),
+                    identity: (index) => ids[index],
+                    indexOf: (identity) {
+                      final index = ids.indexOf(identity as String);
+                      return index >= 0
+                          ? index
+                          : identity.startsWith('a ')
+                          ? 0
+                          : null;
+                    },
+                    builder: (context, index) => SizedBox(
+                      height: ids[index] == 'a header'
+                          ? 35
+                          : ids[index] == 'b header'
+                          ? 51
+                          : ids[index].endsWith('hunk')
+                          ? 27
+                          : 21,
+                      child: Text(
+                        ids[index],
+                        style: const TextStyle(fontSize: 14),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      scroll.jumpTo(3191);
+      await tester.pumpAndSettle();
+      expect(find.text('a 150'), findsOneWidget);
+      update(() => folded = true);
+      await tester.pumpAndSettle();
+      expect(find.text('a header'), findsOneWidget);
+      expect(
+        tester.getTopLeft(find.text('a header')).dy,
+        inInclusiveRange(0, 24),
+      );
+      expect(scroll.offset, closeTo(0, 1));
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
     'a repeated reveal reaches the heading of a tall row after a layout reset',
     (tester) async {
       final revision = ValueNotifier(0);

@@ -3,6 +3,10 @@
 A read-only preview of `HighlightedCode` and `PatchView`, with a picker for
 every bundled language and theme.
 
+The code preview uses `CodeViewController` with a gutter marker on line 2.
+Choose **Reveal line 2** to select and reveal it, or drag its line numbers
+to select complete source lines.
+
 Every push to `main` deploys it to <https://btwld.github.io/syntax-dart/>.
 
 ```bash
@@ -16,3 +20,20 @@ pub.dev, the example resolves it from there.
 
 It also runs on macOS with `flutter run -d macos`. Fonts load from Google
 Fonts, so the first run needs network access.
+
+## Plain WidgetsApp demo
+
+```bash
+flutter run -t lib/widgets_app.dart -d chrome
+```
+
+This target uses only the widgets layer: no Material theme, localizations or
+icon font. It demonstrates selectable code, keyboard folding, the default
+selection menu and an injected missing-newline marker. Its patch uses a
+caller-owned `PatchController<void>` and `PatchView.controlled`; file folding
+and context expansion need no local index sets. The main demo retains
+its Material application controls; the syntax surfaces support either host.
+
+Touch selection handles show a widgets-only magnifier on Android and iOS.
+`SyntaxSelectionChrome.magnifierConfiguration` lets the host replace it with
+its own controls or disable it with `TextMagnifierConfiguration.disabled`.

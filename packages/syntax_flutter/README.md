@@ -35,13 +35,123 @@ PatchView.fromTexts(
 );
 ```
 
+## Controlled patches
+
+Own a `PatchController<T>` when folding, selection, annotations or navigation
+must outlive the mounted view. Dispose it when its owner is finished:
+
+```dart
+final file = diffTexts(before, after, path: 'lib/main.dart')
+    .copyWith(identity: 'main', revision: 7);
+final patch = PatchController<String>([file], mode: DiffMode.split);
+
+PatchView<String>.controlled(
+  controller: patch,
+  theme: githubDarkTheme,
+  selectionChrome: chrome, // Optional host controls; widgets-only by default.
+);
+
+patch.select(DiffSelection(
+  fileId: 'main', revision: 7, side: DiffSide.newer, anchor: 12, active: 9,
+));
+patch.setAnnotations([
+  DiffAnnotation(
+    id: 'note', fileId: 'main', revision: 7, side: DiffSide.newer,
+    line: 9, data: 'Check this', sourceSelection: patch.selection,
+  ),
+]);
+patch.setHunkCollapsed('main', 0, true);
+patch.setCollapsed('main', true);
+final revealed = patch.revealLine('main', DiffSide.newer, 9, revision: 7);
+```
+
+Patch coordinates are **one-based**, inclusive and revision-bound. Selection
+preserves direction and may cross sides; applications decide which selections
+can create comments. The controller stores selection and application payloads;
+custom row composition and selection actions are separate rendering concerns.
+Stale annotations and unavailable annotation lines are ignored. Duplicate IDs
+within one file and stale or unavailable selection endpoints throw
+`ArgumentError`.
+
+`revealLine` returns false for stale revisions, unknown files or unavailable
+source lines, including context omitted from partial patches. A successful
+request opens only the enclosing hunk or context gap and its file. Requests
+can precede mounting, and repeating a request scrolls to the same line again.
+Controlled views forward requests to `IndexedCodeViewport` and require a
+bounded height. The controlled constructor has no `shrinkWrap` option.
+
+`setFiles` takes an immutable snapshot of the file list and requires unique
+stable file IDs. File folding follows IDs across reordering. Replacing a
+source revision clears its selection, annotations, pending navigation and
+hunk/context folding. Annotation-only updates preserve layout and scroll.
+The controlled constructor takes mode and folding from the controller;
+caller-owned `collapsed`, `expanded`, `onToggleFile` and `onExpandGap` are
+available on the existing source constructors. Both forms use the same
+highlight executor and selection chrome.
+
 `PatchView` parses or diffs its input when it changes, so for very large
 changes build the `FileDiff`s ahead of time and pass them to
 `PatchView(files: ...)`. The language comes from each file's path unless
 `language` is set. Copying a selection takes only the code, without line
 numbers, markers or headers. Its words come from `DiffLabels`;
-extend it to translate them. `PatchView` uses Material widgets and icons,
-so it expects a `MaterialApp`.
+extend it to translate them.
+
+Compose a review surface without introducing application models:
+
+```dart
+PatchView<MyDraft>(
+  files: files,
+  theme: githubDarkTheme,
+  annotations: drafts, // List<DiffAnnotation<MyDraft>>, owned by the app.
+  leading: const Text('Review introduction'),
+  stickyHeaders: true,
+  canvasColor: const Color(0xff101010),
+  sectionDecoration: BoxDecoration(
+    border: Border.all(color: const Color(0xff444444)),
+    borderRadius: BorderRadius.circular(8),
+  ),
+  fileLabelBuilder: (context, file) => Text(file.language ?? 'plain text'),
+  fileFooterBuilder: (context, file, collapsed) => Text('End of ${file.path}'),
+  gutterBuilder: (context, line) => markers[line.line],
+  rowBelowBuilder: (context, row) => buildDrafts(row.annotations),
+  selectionActionBuilder: (context, details) => buildAction(details),
+  onSelectionChanged: (selection) => selectedLines = selection,
+  onVisibleRange: (start, end) => recordVisibleRows(start, end),
+);
+```
+
+Every constructor accepts these slots. `DiffLineContext` uses a one-based
+line number and an explicit `DiffSide`. Gutter drags and Shift-clicks report
+inclusive `DiffSelection` endpoints with their original direction, file ID and
+revision; crossing sides is allowed. `DiffSelectionDetails.selectedText` gives
+the corresponding source in diff order. Character selection stays on the split
+side where the drag began, retains only endpoint rows across scrolling, and
+clears the gutter selection. Control+C and Command+C copy source only.
+
+`DiffRowContext<T>` supplies a source row and immutable annotations matching
+that file's revision. Anchor a draft using `DiffAnnotation<T>` (optionally with
+its original `sourceSelection`); changing live selection does not move it.
+Stale revisions are excluded. The application owns draft state, persistence
+and any eligibility policy. Slots can be unmounted offscreen, so keep editing
+controllers in the application.
+
+A gutter builder reserves 24 logical pixels even when it returns null. Labels,
+footers, inserted rows and actions are excluded from source copying. Inserted
+content shares its source row's stable identity and measured height. Updating
+annotations keeps the viewport's source anchor. Footers also render on binary
+and collapsed files. Section borders and rounded corners join individual rows
+and pinned headers while keeping files virtualized; gradients and images are
+painted per row. The leading widget scrolls before the first pinned header.
+Visible ranges are half-open logical viewport indices, including the leading
+row when supplied. Source constructors retain their existing `shrinkWrap`
+nonvirtual list behavior; their extra header is static.
+
+Both views render under a routed `WidgetsApp`, with no Material theme,
+localizations, ancestor or icon font. File headers and context gaps support
+pointer, Enter and Space activation and expose button semantics. Default
+chevrons, expansion glyphs and missing-newline markers are painted; the
+missing-newline marker announces `DiffLabels.noNewlineAtEnd` to assistive
+technology and stays outside copied code.
 
 Code always reads left to right, also in right-to-left apps.
 `HighlightedCode` shows a language the highlighter doesn't know as plain
@@ -55,9 +165,101 @@ content.
 
 - `textStyle` for the font;
 - `padding`;
-- `selectable`, which uses `SelectionArea`;
+- `selectable`, which uses the widgets-layer `SelectableRegion`;
+- `selectionChrome` for selection controls and menus;
 - `softWrap`;
 - `borderRadius`.
+
+To use your host's selection controls or action widgets, pass the same
+`SyntaxSelectionChrome` to either view:
+
+```dart
+final chrome = SyntaxSelectionChrome(
+  selectionControls: mySelectionControls,
+  contextMenuBuilder: mySelectionMenu,
+  magnifierConfiguration: myMagnifierConfiguration,
+  actionBuilder: (context, action, child) => MyButton(
+    label: action.label,
+    onPressed: action.onInvoke,
+    child: child,
+  ),
+  noNewlineMarkerBuilder: (context, message) => MyMarker(message: message),
+);
+
+HighlightedCode(source, language: 'dart', theme: githubDarkTheme,
+    selectionChrome: chrome);
+PatchView.fromPatch(gitDiffOutput, theme: githubDarkTheme,
+    selectionChrome: chrome);
+```
+
+`selectionControls` is required on the configuration. Controls that mix in
+`TextSelectionHandleControls` use `contextMenuBuilder`; legacy Flutter controls
+manage their own toolbar. A null menu builder uses the plain Copy/Select all
+menu, localized through `WidgetsLocalizations`. Omit `selectionChrome` to use
+`SyntaxSelectionChrome.plain`, including painted draggable handles and a
+widgets-only magnifier during touch-handle drags on Android and iOS. Use
+`magnifierConfiguration` for your host's magnifier configuration, or pass
+`TextMagnifierConfiguration.disabled` to disable magnification. Custom
+`actionBuilder` controls own focus, keyboard activation and semantics;
+`action` supplies `kind`, `label`, `enabled`, `onInvoke` and `expanded`.
+`noNewlineMarkerBuilder` replaces the visual marker while preserving its
+accessible description. Callers can supply their design system's tooltip here.
+
+`SyntaxChrome` applies palette colors with `DefaultTextStyle`, `IconTheme`,
+`DefaultSelectionStyle` and a `ColoredBox`; it does not install an application
+theme or restyle application buttons.
+
+For source navigation, own a controller and dispose it with your view:
+
+```dart
+final source = CodeViewController(sourceId: 'lib/main.dart', code: code);
+source.selectLines(12, 9); // Inclusive, directed, zero-based source lines.
+source.revealLine(9); // Can be requested before mounting.
+
+HighlightedCode.controlled(
+  controller: source,
+  language: 'dart',
+  theme: githubDarkTheme,
+  lineNumbers: true,
+  softWrap: true,
+  lineBackgroundBuilder: (line) => line == 9 ? const Color(0x223399ff) : null,
+  gutterBuilder: (context, line) => line == 9 ? const Text('!') : null,
+);
+
+source.setCode(updatedCode, revision: 1); // Clears selection and reveal.
+```
+
+Gutter clicks and drags select whole lines; Shift extends from the anchor.
+Control+C and Command+C copy the selected source with its original line
+breaks. Native character selection takes precedence over line selection.
+An empty source has one line, and a trailing newline adds an empty final
+line. Invalid selection or reveal indices throw `RangeError`.
+
+Both constructors accept `lineBackgroundBuilder` and `gutterBuilder`.
+Backgrounds cover each source line's wrapped continuations, with controller
+line selection painted over them. A gutter builder reserves 24 logical pixels
+before the line number, even for `null` markers;
+markers stay fixed during horizontal scrolling and are excluded from copying.
+Line slots and controlled views use individual virtualized source rows,
+so line numbers remain aligned when wrapping. Give large sources a bounded
+height to keep layout limited to visible rows.
+
+Large bounded views request only built line windows. They paint plain text
+while colors arrive, advance grammar state before each window, and bound
+retained work. Small sources keep incremental highlighting by default.
+Unbounded code layouts still tokenize synchronously because every row is laid
+out; give large sources a bounded height.
+
+Both widgets accept `executor:`, a `HighlightExecutor` function with the same
+signature as `highlightWindow`. This allows an application-owned isolate or
+worker, which creates its own highlighter inside its isolate. Calls are
+serialized, including cancelled calls that have not settled;
+results must echo the exact request, theme and grammar revision. Source and
+grammar changes invalidate old colors, and disposal ignores late results.
+`HighlightWindowScheduler` exposes this scheduling contract and retention
+counters for custom views. One oversize input is allowed alone. Executors
+should honor cancellation between lines; a single regex match cannot be
+interrupted by cooperative cancellation.
 
 `SyntaxThemeColors` exposes the theme's editor colors: `backgroundColor`,
 `lineNumberColor`, `selectionColor` and `cursorColor`.
@@ -66,7 +268,8 @@ For your own widgets, `TokenTextStyles` converts `TokenStyle` to
 `TextStyle`, and `highlightedTextSpan` builds a span tree.
 
 See [`example/`](example) for a live preview with every bundled language
-and theme.
+and theme. The [plain widgets demo](example/lib/widgets_app.dart) runs with
+`flutter run -t lib/widgets_app.dart` from the example directory.
 
 ## License
 
