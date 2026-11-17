@@ -6,6 +6,9 @@ import 'package:syntax_core/syntax.dart';
 
 import 'chrome.dart';
 import 'highlighter_scope.dart';
+import 'highlight_scheduler.dart';
+import 'patch_highlights.dart';
+import 'mounted_window_highlights.dart';
 import 'horizontal_scroll.dart';
 import 'indexed_viewport.dart';
 import 'patch_rows.dart';
@@ -28,6 +31,7 @@ class PatchView extends StatefulWidget {
     required List<FileDiff> files,
     required this.theme,
     this.highlighter,
+    this.executor,
     this.language,
     this.mode = DiffMode.unified,
     this.collapsed = const {},
@@ -61,6 +65,7 @@ class PatchView extends StatefulWidget {
     super.key,
     required this.theme,
     this.highlighter,
+    this.executor,
     this.language,
     this.mode = DiffMode.unified,
     this.collapsed = const {},
@@ -98,6 +103,7 @@ class PatchView extends StatefulWidget {
     int contextLines = 3,
     required this.theme,
     this.highlighter,
+    this.executor,
     this.language,
     this.mode = DiffMode.unified,
     this.collapsed = const {},
@@ -134,6 +140,11 @@ class PatchView extends StatefulWidget {
 
   /// Defaults to the nearest [HighlighterScope].
   final Highlighter? highlighter;
+
+  /// Optional executor for visible syntax windows, such as a worker isolate.
+  /// Calls are serialized across files and both sides of parsed/full diffs.
+  /// Without one, large files use cooperative window highlighting.
+  final HighlightExecutor? executor;
 
   /// The language of every file, by name or alias, or `null` to guess from path.
   final String? language;
@@ -217,14 +228,64 @@ class _PatchViewState extends State<PatchView> {
   Object? _sourceKey, _highlightKey;
   List<FileDiff> _files = const [];
   final _horizontal = HorizontalCodeGroup();
-  DiffHighlightCache? _highlights;
+  final _highlights = MountedResourceCache<DiffHighlightCache>(
+    maxCodeUnits: 1024 * 1024,
+    codeUnits: (cache) => cache.retainedCodeUnits,
+  );
   bool _slicing = false;
   PatchPalette? _palette;
+  HighlightWindowScheduler? _windows;
+  PatchWindowHighlights? _windowHighlights;
+  Object? _windowKey;
+  bool _repaintScheduled = false;
+
+  void _highlightChanged() {
+    if (!mounted || _repaintScheduled) return;
+    _repaintScheduled = true;
+    // Rebuild in the next frame's build phase, rather than waiting until its
+    // end and leaving ready syntax colors plain for another frame.
+    SchedulerBinding.instance.scheduleFrameCallback((_) {
+      _repaintScheduled = false;
+      if (mounted) setState(() {});
+    });
+  }
+
+  PatchWindowHighlights _windowsFor(Highlighter highlighter) {
+    final key = (
+      highlighter,
+      highlighter.revision,
+      widget.theme,
+      widget.language,
+      widget.inlineDiffMode,
+      widget.executor,
+    );
+    _windows ??= HighlightWindowScheduler(
+      highlighter: highlighter,
+      theme: widget.theme,
+      executor: widget.executor ?? highlightWindowInFrames,
+      onChanged: _highlightChanged,
+      onResult: (result) => _windowHighlights?.accept(result),
+    );
+    _windowHighlights ??= PatchWindowHighlights(_windows!);
+    if (key != _windowKey) {
+      _windowKey = key;
+      _windowHighlights!.clear();
+      _windows!.configure(
+        highlighter: highlighter,
+        theme: widget.theme,
+        executor: widget.executor ?? highlightWindowInFrames,
+      );
+    }
+    return _windowHighlights!;
+  }
 
   void _syncSource() {
     final key = (widget._files, widget._patch, widget._texts);
     if (key == _sourceKey) return;
     _sourceKey = key;
+    // Keep bounded ready output for revisits, but abandon queued work for the
+    // previous snapshot immediately. A late executor still settles serially.
+    _windows?.clear();
     _files = switch (key) {
       (final files?, _, _) => files,
       (_, final patch?, _) => parsePatch(patch),
@@ -234,26 +295,29 @@ class _PatchViewState extends State<PatchView> {
       _ => const [],
     };
     _stickyFile = 0;
-    _highlights = null;
   }
 
-  DiffHighlightCache _highlightsFor(Highlighter highlighter) {
+  DiffHighlightCache _highlightsFor(Highlighter highlighter, FileDiff file) {
     final key = (
       widget.theme,
       highlighter,
+      highlighter.revision,
       widget.language,
       widget.inlineDiffMode,
     );
-    if (key != _highlightKey || _highlights == null) {
+    if (key != _highlightKey) {
       _highlightKey = key;
-      _highlights = DiffHighlightCache(
+      _highlights.clear();
+    }
+    return _highlights.resourceFor(
+      file,
+      () => DiffHighlightCache(
         highlighter: highlighter,
         theme: widget.theme,
         language: widget.language,
         inlineDiffMode: widget.inlineDiffMode,
-      );
-    }
-    return _highlights!;
+      ),
+    )!;
   }
 
   void _finishLater() {
@@ -266,7 +330,15 @@ class _PatchViewState extends State<PatchView> {
 
   void _slice(Duration _) {
     if (!mounted) return;
-    final done = _highlights?.tokenize(budget: _sliceBudget) ?? true;
+    final clock = Stopwatch()..start();
+    var done = true;
+    for (final cache in _highlights.values) {
+      final left = _sliceBudget - clock.elapsed;
+      if (!cache.tokenize(budget: left.isNegative ? Duration.zero : left)) {
+        done = false;
+        break;
+      }
+    }
     setState(() {});
     if (done) {
       _slicing = false;
@@ -321,6 +393,7 @@ class _PatchViewState extends State<PatchView> {
 
   @override
   void dispose() {
+    _windows?.dispose();
     if (widget.scrollController == null) _scroll.dispose();
     super.dispose();
   }
@@ -397,11 +470,15 @@ class _PatchViewState extends State<PatchView> {
       expanded: widget.expanded,
     );
 
+    final windows = _windowsFor(highlighter);
     Widget buildRow(BuildContext context, int index) {
       if (rows.isEmpty) {
         return PatchNoticeBar(text: labels.noFiles, palette: palette);
       }
-      final row = _buildRow(rows[index], palette, highlighter, labels);
+      final row = windows.retain(
+        () => _buildRow(rows[index], palette, highlighter, labels),
+        also: [_highlights],
+      );
       return index > 0 && rows[index - 1].file != rows[index].file
           ? Padding(padding: const EdgeInsets.only(top: 16), child: row)
           : row;
@@ -565,15 +642,28 @@ class _PatchViewState extends State<PatchView> {
       DiffLineKind.removed => palette.removedText,
       DiffLineKind.context => null,
     };
-    final highlights = _highlightsFor(highlighter);
     final diff = _files[file];
-    final highlighted = highlights.highlighted(diff, budget: _sliceBudget);
-    if (!highlighted.isComplete) _finishLater();
-    return [
-      for (final segment in highlighted.segmentsFor(
+    final large =
+        (diff.oldLines?.length ?? 0) + (diff.newLines?.length ?? 0) > 200 ||
+        diff.hunks.fold<int>(0, (n, h) => n + h.lines.length) > 200;
+    List<DiffSegment> segments;
+    if (widget.executor != null || large) {
+      segments = _windowsFor(highlighter).segments(
+        diff,
         line,
-        highlights.words(diff),
-      ))
+        highlighter,
+        widget.theme,
+        widget.language,
+        widget.inlineDiffMode,
+      );
+    } else {
+      final highlights = _highlightsFor(highlighter, diff);
+      final highlighted = highlights.highlighted(diff, budget: _sliceBudget);
+      if (!highlighted.isComplete) _finishLater();
+      segments = highlighted.segmentsFor(line, highlights.words(diff));
+    }
+    return [
+      for (final segment in segments)
         TextSpan(
           text: segment.text,
           style: segment.changed && emphasis != null

@@ -1,3 +1,24 @@
+## Unreleased
+
+- Keep unselected cached paragraphs frozen through scrolling while a code
+  selection is active; release their held output when the selection clears.
+
+- Retain mounted code-window output so small-font viewports larger than the
+  scheduler cache settle. Index patch change blocks once per hunk so default
+  inline highlighting no longer scans offscreen changes for each visible row.
+
+- Keep syntax output for mounted patch rows so large stationary layouts settle,
+  preserve inline emphasis for equal line pairs in different files, and reuse
+  parsed hunk indexes without scanning the hunk side for every row.
+
+- Add `HighlightExecutor` injection to `HighlightedCode` and all `PatchView`
+  constructors. Large sources highlight built windows first with serialized,
+  bounded work; content/grammar changes cancel stale work and disposal ignores
+  late results. Parsed hunks keep independent grammar state on both sides.
+- Add `HighlightWindowScheduler` for application-owned window workers and
+  visible-line word comparisons for large diffs.
+- Preserve native selections during deferred recoloring, including drag scrolling.
+
 ## 0.0.10
 
 - Requires `syntax_core` 0.0.3, whose themes start from the editor colors and

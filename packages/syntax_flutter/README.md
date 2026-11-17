@@ -59,6 +59,27 @@ content.
 - `softWrap`;
 - `borderRadius`.
 
+Large bounded views request only built line windows. They paint plain text
+while colors arrive, advance grammar state before each window, and bound
+retained work. Mounted diff rows retain their source indexes and small-file
+incremental highlights until unmounted, preventing eviction during stationary
+repaints. Unmounted source working sets retain at most eight entries and 1 Mi
+UTF-16 units, with one oversized entry allowed alone. Small sources keep
+incremental highlighting by default.
+Unbounded code layouts still tokenize synchronously because every row is laid
+out; give large sources a bounded height.
+
+Both widgets accept `executor:`, a `HighlightExecutor` function with the same
+signature as `highlightWindow`. This allows an application-owned isolate or
+worker, which creates its own highlighter inside its isolate. Calls are
+serialized, including cancelled calls that have not settled;
+results must echo the exact request, theme and grammar revision. Source and
+grammar changes invalidate old colors, and disposal ignores late results.
+`HighlightWindowScheduler` exposes this scheduling contract and retention
+counters for custom views. One oversize input is allowed alone. Executors
+should honor cancellation between lines; a single regex match cannot be
+interrupted by cooperative cancellation.
+
 `SyntaxThemeColors` exposes the theme's editor colors: `backgroundColor`,
 `lineNumberColor`, `selectionColor` and `cursorColor`.
 
