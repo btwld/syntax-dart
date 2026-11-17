@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:syntax_core/langs/dart.dart';
 import 'package:syntax_core/themes/github_dark.dart';
 import 'package:syntax_flutter/src/patch_highlights.dart';
+import 'package:syntax_flutter/src/mounted_window_highlights.dart';
 import 'package:syntax_flutter/syntax_flutter.dart';
 
 class _CountingLines extends ListBase<DiffLine> {
@@ -27,6 +28,25 @@ class _CountingLines extends ListBase<DiffLine> {
 
   @override
   void operator []=(int index, DiffLine value) =>
+      throw UnsupportedError('read only');
+}
+
+class _CountingText extends ListBase<String> {
+  _CountingText(this.values);
+  final List<String> values;
+  int reads = 0;
+  @override
+  int get length => values.length;
+  @override
+  set length(int value) => throw UnsupportedError('read only');
+  @override
+  String operator [](int index) {
+    reads++;
+    return values[index];
+  }
+
+  @override
+  void operator []=(int index, String value) =>
       throw UnsupportedError('read only');
 }
 
@@ -126,6 +146,132 @@ void main() {
         );
     expect(colored, hasLength(20));
     await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  for (final smallFiles in [false, true]) {
+    testWidgets(
+      smallFiles
+          ? 'mounted small files retain completed highlights across repaints'
+          : 'mounted oversized split sides retain source indexes across repaints',
+      (tester) async {
+        final sources = <_CountingText>[];
+        final files = List.generate(smallFiles ? 10 : 1, (fileIndex) {
+          final old = _CountingText(
+            List.filled(
+              smallFiles ? 100 : 300,
+              'final value = "${'a' * (smallFiles ? 100 : 4000)}";',
+            ),
+          );
+          final newer = _CountingText(
+            [...old.values]..[old.length - 1] = 'final changed = 2;',
+          );
+          sources.addAll([old, newer]);
+          return FileDiff(
+            oldPath: '$fileIndex.dart',
+            newPath: '$fileIndex.dart',
+            kind: FileDiffKind.modified,
+            oldLines: old,
+            newLines: newer,
+            hunks: [
+              DiffHunk(
+                oldStart: old.length,
+                oldCount: 1,
+                newStart: old.length,
+                newCount: 1,
+                lines: [
+                  DiffLine(
+                    DiffLineKind.removed,
+                    old.values.last,
+                    oldNumber: old.length,
+                  ),
+                  DiffLine(
+                    DiffLineKind.added,
+                    newer.values.last,
+                    newNumber: newer.length,
+                  ),
+                ],
+              ),
+            ],
+          );
+        });
+        late StateSetter rebuild;
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: StatefulBuilder(
+                builder: (context, setState) {
+                  rebuild = setState;
+                  return SingleChildScrollView(
+                    child: PatchView(
+                      files: files,
+                      theme: githubDarkTheme,
+                      highlighter: highlighter,
+                      mode: DiffMode.split,
+                      shrinkWrap: true,
+                      selectable: false,
+                      inlineDiffMode: InlineDiffMode.none,
+                      wrap: false,
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle(
+          const Duration(milliseconds: 16),
+          EnginePhase.sendSemanticsUpdate,
+          const Duration(seconds: 5),
+        );
+        for (final source in sources) {
+          source.reads = 0;
+        }
+        for (var frame = 0; frame < 3; frame++) {
+          rebuild(() {});
+          await tester.pump();
+        }
+        await tester.pumpAndSettle();
+        expect(
+          sources.fold<int>(0, (n, source) => n + source.reads),
+          0,
+          reason: 'Stationary mounted rows reuse indexes and completed colors',
+        );
+        expect(tester.binding.hasScheduledFrame, isFalse);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+  }
+
+  testWidgets('unmounting releases retained source working sets', (
+    tester,
+  ) async {
+    final cache = MountedResourceCache<String>(
+      maxCodeUnits: 10,
+      codeUnits: (source) => source.length,
+    );
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: Column(
+          children: [
+            for (var i = 0; i < 12; i++)
+              cache.retain(() {
+                cache.resourceFor(i, () => '$i' * 20);
+                return const SizedBox.shrink();
+              }),
+          ],
+        ),
+      ),
+    );
+    expect(cache.mountedEntries, 12);
+    expect(cache.values.length, 12);
+    await tester.pumpWidget(const SizedBox.shrink());
+    expect(cache.mountedEntries, 0);
+    expect(
+      cache.values.length,
+      1,
+      reason: 'Only one oversized unmounted source may remain',
+    );
   });
 
   test('equal pairs in distinct files both retain changed-word emphasis', () {

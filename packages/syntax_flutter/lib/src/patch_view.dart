@@ -12,6 +12,7 @@ import 'diff_text_selection.dart';
 import 'highlighter_scope.dart';
 import 'highlight_scheduler.dart';
 import 'patch_highlights.dart';
+import 'mounted_window_highlights.dart';
 import 'horizontal_scroll.dart';
 import 'indexed_viewport.dart';
 import 'patch_rows.dart';
@@ -409,7 +410,10 @@ class _PatchViewState<T> extends State<PatchView<T>>
   Object? _sourceKey, _highlightKey;
   List<FileDiff> _files = const [];
   final _horizontal = HorizontalCodeGroup();
-  DiffHighlightCache? _highlights;
+  final _highlights = MountedResourceCache<DiffHighlightCache>(
+    maxCodeUnits: 1024 * 1024,
+    codeUnits: (cache) => cache.retainedCodeUnits,
+  );
   bool _slicing = false;
   PatchPalette? _palette;
   HighlightWindowScheduler? _windows;
@@ -550,7 +554,7 @@ class _PatchViewState<T> extends State<PatchView<T>>
     // Release derived source indexes and abandon queued work for the previous
     // snapshot immediately. A late executor still settles serially.
     _windowHighlights?.clear();
-    _highlights = null;
+    _highlights.clear();
     _lineEndings.clear();
     _crossKey = null;
     _crossBounds = null;
@@ -574,7 +578,7 @@ class _PatchViewState<T> extends State<PatchView<T>>
     _gutterCells.clear();
   }
 
-  DiffHighlightCache _highlightsFor(Highlighter highlighter) {
+  DiffHighlightCache _highlightsFor(Highlighter highlighter, FileDiff file) {
     final key = (
       widget.theme,
       highlighter,
@@ -582,18 +586,19 @@ class _PatchViewState<T> extends State<PatchView<T>>
       widget.language,
       widget.inlineDiffMode,
     );
-    if (key != _highlightKey || _highlights == null) {
+    if (key != _highlightKey) {
       _highlightKey = key;
-      _highlights = DiffHighlightCache(
+      _highlights.clear();
+    }
+    return _highlights.resourceFor(
+      file,
+      () => DiffHighlightCache(
         highlighter: highlighter,
         theme: widget.theme,
         language: widget.language,
         inlineDiffMode: widget.inlineDiffMode,
-        maxEntries: 8,
-        maxCodeUnits: 1024 * 1024,
-      );
-    }
-    return _highlights!;
+      ),
+    )!;
   }
 
   void _finishLater() {
@@ -606,7 +611,15 @@ class _PatchViewState<T> extends State<PatchView<T>>
 
   void _slice(Duration _) {
     if (!mounted) return;
-    final done = _highlights?.tokenize(budget: _sliceBudget) ?? true;
+    final clock = Stopwatch()..start();
+    var done = true;
+    for (final cache in _highlights.values) {
+      final left = _sliceBudget - clock.elapsed;
+      if (!cache.tokenize(budget: left.isNegative ? Duration.zero : left)) {
+        done = false;
+        break;
+      }
+    }
     setState(() {});
     if (done) {
       _slicing = false;
@@ -846,6 +859,7 @@ class _PatchViewState<T> extends State<PatchView<T>>
       }
       Widget row = windows.retain(
         () => _composedRow(context, index, rows, palette, highlighter, labels),
+        also: [_highlights],
       );
       if (index > 0 && rows[index - 1].file != rows[index].file) {
         row = Padding(padding: const EdgeInsets.only(top: 16), child: row);
@@ -1197,7 +1211,7 @@ class _PatchViewState<T> extends State<PatchView<T>>
         widget.inlineDiffMode,
       );
     } else {
-      final highlights = _highlightsFor(highlighter);
+      final highlights = _highlightsFor(highlighter, diff);
       final highlighted = highlights.highlighted(diff, budget: _sliceBudget);
       if (!highlighted.isComplete) _finishLater();
       segments = highlighted.segmentsFor(line, highlights.words(diff));

@@ -13,14 +13,20 @@ class PatchWindowHighlights {
 
   /// Serializes source windows and bounds their retained results.
   final HighlightWindowScheduler scheduler;
-  final _sources = <Object, WindowSource>{};
+  final _sources = MountedResourceCache<WindowSource>(
+    maxCodeUnits: 1024 * 1024,
+    codeUnits: (source) => source.codeUnits,
+  );
   final _words = <_WordPair, WordChanges>{};
   int _wordUnits = 0;
   final _output = MountedWindowHighlights();
   var _changeIndexes = Expando<PatchChangeIndex>();
 
   /// Retains output requested by mounted rows, including unbounded layouts.
-  Widget retain(Widget Function() builder) => _output.retain(builder);
+  Widget retain(
+    Widget Function() builder, {
+    List<MountedResourceCache<Object>> also = const [],
+  }) => _output.retain(builder, also: [_sources, ...also]);
 
   final _identities = Expando<int>();
   int _nextIdentity = 0;
@@ -77,25 +83,19 @@ class PatchWindowHighlights {
     }
     final snapshot = _identities[file] ??= _nextIdentity++;
     final key = (snapshot, old, hunkIndex);
-    final source =
-        _sources.remove(key) ??
-        WindowSource.lines(
-          full ??
-              [
-                for (final l in hunk?.lines ?? const <DiffLine>[])
-                  if (old
-                      ? l.kind != DiffLineKind.added
-                      : l.kind != DiffLineKind.removed)
-                    l.text,
-              ],
-        );
-    _sources[key] = source;
-    while (_sources.length > 1 &&
-        (_sources.length > 8 ||
-            _sources.values.fold<int>(0, (n, s) => n + s.codeUnits) >
-                1024 * 1024)) {
-      _sources.remove(_sources.keys.first);
-    }
+    final source = _sources.resourceFor(
+      key,
+      () => WindowSource.lines(
+        full ??
+            [
+              for (final l in hunk?.lines ?? const <DiffLine>[])
+                if (old
+                    ? l.kind != DiffLineKind.added
+                    : l.kind != DiffLineKind.removed)
+                  l.text,
+            ],
+      ),
+    )!;
     final index = number == null
         ? -1
         : full != null

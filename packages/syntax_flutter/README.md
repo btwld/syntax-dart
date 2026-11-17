@@ -246,7 +246,11 @@ height to keep layout limited to visible rows.
 
 Large bounded views request only built line windows. They paint plain text
 while colors arrive, advance grammar state before each window, and bound
-retained work. Small sources keep incremental highlighting by default.
+retained work. Mounted diff rows retain their source indexes and small-file
+incremental highlights until unmounted, preventing eviction during stationary
+repaints. Unmounted source working sets retain at most eight entries and 1 Mi
+UTF-16 units, with one oversized entry allowed alone. Small sources keep
+incremental highlighting by default.
 Unbounded code layouts still tokenize synchronously because every row is laid
 out; give large sources a bounded height.
 
