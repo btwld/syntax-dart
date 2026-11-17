@@ -3,30 +3,58 @@ import 'package:syntax_core/syntax.dart';
 
 /// View-owned styled output, independent of the scheduler's input LRU.
 /// Mounted rows pin their windows; at most eight unmounted windows are kept.
-class MountedWindowHighlights {
-  final _ready = <Object, List<StyledRange>>{};
+class MountedWindowHighlights extends MountedResourceCache<List<StyledRange>> {
+  /// Number of distinct windows needed by mounted rows.
+  int get mountedWindows => mountedEntries;
+
+  /// Returns retained output before requesting work from [load].
+  List<StyledRange>? rangesFor(
+    Object key,
+    List<StyledRange>? Function() load,
+  ) => resourceFor(key, load);
+}
+
+/// Resources follow mounted row lifetimes, with bounded unmounted retention.
+/// Mounting is the retention contract; the scheduler still bounds input work.
+class MountedResourceCache<T extends Object> {
+  /// [codeUnits] measures unmounted resources when a size limit is supplied.
+  MountedResourceCache({this.maxCodeUnits, this.codeUnits})
+    : assert(maxCodeUnits == null || codeUnits != null);
+
+  /// Maximum UTF-16 size of the unmounted working set.
+  final int? maxCodeUnits;
+
+  /// Computes the source size retained by a resource.
+  final int Function(T)? codeUnits;
+  final _ready = <Object, T>{};
   final _unpinned = <Object>{};
   final _pins = <Object, int>{};
   Set<Object>? _building;
 
-  /// Number of distinct windows needed by mounted rows.
-  int get mountedWindows => _pins.length;
+  /// Number of distinct resources needed by mounted rows.
+  int get mountedEntries => _pins.length;
 
-  /// Retains the windows used by [builder] until its row is unmounted.
-  Widget retain(Widget Function() builder) =>
-      _RetainedHighlights(cache: this, builder: builder);
+  /// Includes mounted resources and the bounded unmounted working set.
+  Iterable<T> get values => _ready.values;
 
-  /// Returns retained output before requesting work from [load].
-  List<StyledRange>? rangesFor(Object key, List<StyledRange>? Function() load) {
+  /// Retains resources used by [builder] until its row is unmounted.
+  /// [also] shares this exact build scope across related caches.
+  Widget retain(
+    Widget Function() builder, {
+    List<MountedResourceCache<Object>> also = const [],
+  }) => _RetainedResources(caches: [this, ...also], builder: builder);
+
+  /// Returns a retained resource before requesting it from [load].
+  T? resourceFor(Object key, T? Function() load) {
     _building?.add(key);
-    final ranges = _ready[key] ?? load();
-    if (ranges != null) remember(key, ranges);
-    return ranges;
+    final resource = _ready[key] ?? load();
+    if (resource != null) remember(key, resource);
+    return resource;
   }
 
-  /// Accepts output without retaining the request's complete source.
-  void remember(Object key, List<StyledRange> ranges) {
-    _ready[key] = ranges;
+  /// Retains a resource, evicting only unmounted working-set entries.
+  void remember(Object key, T resource) {
+    _ready[key] = resource;
     if (!_pins.containsKey(key)) {
       _unpinned.remove(key);
       _unpinned.add(key);
@@ -58,54 +86,69 @@ class MountedWindowHighlights {
   }
 
   void _trim() {
-    while (_unpinned.length > 8) {
-      final oldest = _unpinned.first;
+    while (_unpinned.length > 8 ||
+        (maxCodeUnits != null &&
+            _unpinned.length > 1 &&
+            _unpinned.fold<int>(0, (n, key) => n + codeUnits!(_ready[key]!)) >
+                maxCodeUnits!)) {
+      final candidates = _unpinned.where(
+        (key) => !(_building?.contains(key) ?? false),
+      );
+      if (candidates.isEmpty) break;
+      final oldest = candidates.first;
       _unpinned.remove(oldest);
       _ready.remove(oldest);
     }
   }
 }
 
-class _RetainedHighlights extends StatefulWidget {
-  const _RetainedHighlights({required this.cache, required this.builder});
+class _RetainedResources extends StatefulWidget {
+  const _RetainedResources({required this.caches, required this.builder});
 
-  final MountedWindowHighlights cache;
+  final List<MountedResourceCache<Object>> caches;
   final Widget Function() builder;
 
   @override
-  State<_RetainedHighlights> createState() => _RetainedHighlightsState();
+  State<_RetainedResources> createState() => _RetainedResourcesState();
 }
 
-class _RetainedHighlightsState extends State<_RetainedHighlights> {
-  Set<Object> _keys = {};
+class _RetainedResourcesState extends State<_RetainedResources> {
+  final _keys = <MountedResourceCache<Object>, Set<Object>>{};
 
   @override
-  void didUpdateWidget(_RetainedHighlights oldWidget) {
+  void didUpdateWidget(_RetainedResources oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!identical(oldWidget.cache, widget.cache)) {
-      oldWidget.cache._updatePins(_keys, const {});
-      _keys = {};
+    for (final cache in _keys.keys.toList()) {
+      if (!widget.caches.contains(cache)) {
+        cache._updatePins(_keys.remove(cache)!, const {});
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final cache = widget.cache;
-    final keys = <Object>{};
-    final previous = cache._building;
-    cache._building = keys;
+    final current = <MountedResourceCache<Object>, Set<Object>>{};
+    final previous = <MountedResourceCache<Object>, Set<Object>?>{};
+    for (final cache in widget.caches) {
+      previous[cache] = cache._building;
+      cache._building = current[cache] = <Object>{};
+    }
     try {
       return widget.builder();
     } finally {
-      cache._building = previous;
-      cache._updatePins(_keys, keys);
-      _keys = keys;
+      for (final cache in widget.caches) {
+        cache._building = previous[cache];
+        cache._updatePins(_keys[cache] ?? const {}, current[cache]!);
+        _keys[cache] = current[cache]!;
+      }
     }
   }
 
   @override
   void dispose() {
-    widget.cache._updatePins(_keys, const {});
+    for (final entry in _keys.entries) {
+      entry.key._updatePins(entry.value, const {});
+    }
     super.dispose();
   }
 }
