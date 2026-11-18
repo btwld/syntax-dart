@@ -465,7 +465,7 @@ new mode 100755
       tester,
       PatchView.fromTexts(oldText: 'a\n', newText: 'b', theme: githubDarkTheme),
     );
-    expect(find.byTooltip('No newline at end of file'), findsOneWidget);
+    expect(find.bySemanticsLabel('No newline at end of file'), findsOneWidget);
   });
 
   testWidgets('headers fit narrow widths', (tester) async {
@@ -608,10 +608,8 @@ new mode 100755
   testWidgets('a long parsed patch colors its rows between frames', (
     tester,
   ) async {
-    // The first frame tokenizes one slice, the new side first, and at least
-    // one line of each side: the first added line has its colors while the
-    // second removed line is still plain. The rest is tokenized between
-    // frames.
+    // Both sides are initially readable plain text. Visible windows are
+    // highlighted serially between frames, without completing offscreen hunks.
     final patch = [
       '--- a/a.dart',
       '+++ b/a.dart',
@@ -626,7 +624,7 @@ new mode 100755
         .map((t) => t.textSpan)
         .whereType<TextSpan>()
         .firstWhere((s) => s.toPlainText().contains(text));
-    expect(hasRun(row('final v0 = 0;'), 'final'), isTrue);
+    expect(row('final v0 = 0;').toPlainText(), contains('final v0 = 0;'));
     // Not tokenized yet: one plain run with the whole line.
     expect(hasRun(row('removedSecond'), 'final'), isFalse);
     expect(
@@ -638,6 +636,10 @@ new mode 100755
       await tester.pump();
     }
     expect(hasRun(row('removedSecond'), 'final'), isTrue);
+    for (var i = 0; i < 1000 && !hasRun(row('final v0 = 0;'), 'final'); i++) {
+      await tester.pump();
+    }
+    expect(hasRun(row('final v0 = 0;'), 'final'), isTrue);
   });
 
   testWidgets(

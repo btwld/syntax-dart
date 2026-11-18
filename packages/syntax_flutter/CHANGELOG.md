@@ -1,3 +1,92 @@
+## Unreleased
+
+- Remove `shrinkWrap` from `PatchView.controlled` and its controlled layout
+  subsystem. A future caller must bring a consumer sketch before reintroducing
+  this mode. Source constructors retain their existing shrink-wrap support.
+
+- Keep folded file anchors visible on the minimum Flutter SDK by preserving
+  the viewport's leading cache across distant row rebases.
+- Anchor collapsed files to their file header when the reader was at a hunk
+  header, rather than retaining an offset into a later file.
+- Preserve the reader's position when folding or reordering files after a
+  completed reveal, and honor pending reveals when replacing the controller.
+- Add `PatchController<T>` and `PatchView<T>.controlled` for stable-ID folding,
+  revision-bound selection and annotations, and queued, repeatable line reveal.
+  Annotation changes preserve layout and scrolling; replaced sources release
+  cached state and reject obsolete coordinates.
+- Measure patch gutter widths without retaining replaced file revisions.
+
+- Index hunk source-line ranges once per file so native and gutter copies
+  resolve recorded separators by binary search instead of rescanning layout
+  blocks for every copied line. Synthesized context keeps lazy source lookup.
+
+- Resolve copied line endings only between selected source rows. Reuse hunk
+  terminators and lazily read expanded context instead of indexing every
+  terminator for a small native selection in a large file.
+
+- Preserve empty native selection endpoints and source line endings when
+  copying expanded context. Keep section decoration image painters alive for
+  asynchronous resolution, and bound cross-side selection highlighting to
+  indexed coordinates instead of materializing the selected source per cell.
+
+- Add typed `PatchView<T>` composition slots for scrolling introductions,
+  file labels and footers, gutters, application-owned annotations and selection
+  actions, plus canvas colors, joined section decorations and visible ranges.
+- Support directed gutter drag and Shift-click selection across diff sides,
+  and native character selection across virtualized rows with exact endpoint
+  retention. Copied source excludes inserted content and stays on the starting
+  side of a split text drag.
+- Keep annotation-only updates anchored in the measured viewport; reject stale
+  annotation revisions and pin file headers after scrolling introductions.
+- Keep patch selection handles and magnifiers working on Flutter 3.38.1 by
+  matching the code text's root style to its spans for consistent caret metrics.
+- Preserve the theme cursor color in patch selection handles and focus rings.
+- Restore mobile touch-handle magnification with a widgets-only loupe. Add
+  `SyntaxSelectionChrome.magnifierConfiguration` for host magnifiers or explicit
+  disabling.
+- Keep plain selection menus compact in application overlays and fit their
+  actions within narrow viewports, including larger text and localized labels.
+- Render `PatchView`, `HighlightedCode` and `SyntaxChrome` without Material
+  widgets, localizations, themes or icon fonts, including selection menus.
+- Add optional `selectionChrome` to both views and `SyntaxChrome`, with
+  `SyntaxSelectionChrome` for selection controls, menus, action widgets and
+  missing-newline markers. Existing constructors keep their defaults.
+- File and context-gap controls support keyboard activation, focus indication
+  and button semantics. Default glyphs and selection handles are painted.
+- Keep line selection visible over custom source-line background colors.
+- Reveal enclosing vertical scroll views after a virtualized source-line jump.
+- Reveal source lines inside shared two-dimensional viewports without changing
+  horizontal scroll positions.
+
+- Keep collapsed native clicks from copying separators, and preserve horizontal
+  offsets when revealing through intervening horizontal viewports.
+
+- Preserve native selection separators between source rows, reveal vertically
+  inside enclosing scroll views, and allow gutter selection and autoscroll
+  beside wrapped continuations and nested source views.
+
+- Add `CodeViewController` and `HighlightedCode.controlled` for revisioned
+  source, directed line selection and queued distant reveal requests.
+- Add per-line backgrounds and gutter slots, aligned with wrapped source
+  lines while retaining virtualization and exact source copying.
+- Keep unselected cached paragraphs frozen through scrolling while a code
+  selection is active; release their held output when the selection clears.
+
+- Retain mounted code-window output so small-font viewports larger than the
+  scheduler cache settle. Index patch change blocks once per hunk so default
+  inline highlighting no longer scans offscreen changes for each visible row.
+- Keep syntax output for mounted patch rows so large stationary layouts settle,
+  preserve inline emphasis for equal line pairs in different files, and reuse
+  parsed hunk indexes without scanning the hunk side for every row.
+
+- Add `HighlightExecutor` injection to `HighlightedCode` and all `PatchView`
+  constructors. Large sources highlight built windows first with serialized,
+  bounded work; content/grammar changes cancel stale work and disposal ignores
+  late results. Parsed hunks keep independent grammar state on both sides.
+- Add `HighlightWindowScheduler` for application-owned window workers and
+  visible-line word comparisons for large diffs.
+- Preserve native selections during deferred recoloring, including drag scrolling.
+
 ## 0.0.10
 
 - Requires `syntax_core` 0.0.3, whose themes start from the editor colors and

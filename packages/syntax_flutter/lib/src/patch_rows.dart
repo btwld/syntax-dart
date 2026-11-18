@@ -1,9 +1,13 @@
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:flutter/widgets.dart';
 import 'package:syntax_core/syntax.dart';
 
+import 'chrome_action.dart';
+import 'chrome_glyph.dart';
+import 'chrome_scope.dart';
 import 'horizontal_scroll.dart';
+import 'selection_chrome.dart';
 import 'styles.dart';
 
 /// Colors and text styles derived from the theme, shared by every row of a
@@ -143,17 +147,18 @@ final class PatchPalette {
 
   /// Height of one line of code.
   double get lineHeight => _digitMetrics.$1;
-  final Map<FileDiff, double> _gutterWidths = Map.identity();
+  // A palette outlives source revisions; measured widths must not retain them.
+  final _gutterWidths = Expando<double>();
 
   /// Width of one line-number column, sized for [file]'s largest line number
   /// using the widest digit (`0`–`9`).
-  double gutterWidth(FileDiff file) => _gutterWidths.putIfAbsent(file, () {
+  double gutterWidth(FileDiff file) => _gutterWidths[file] ??= (() {
     final digits = '${math.max(file.maxLineNumber, 1)}'.length;
     final painter = _measure(_digitMetrics.$2 * digits);
     final width = painter.width + 16;
     painter.dispose();
     return width;
-  });
+  })();
 }
 
 /// A notice row shown when there are no files or a file has no lines.
@@ -218,64 +223,68 @@ class PatchFileHeaderBar extends StatelessWidget {
     final radius = collapsed
         ? BorderRadius.circular(6)
         : const BorderRadius.vertical(top: Radius.circular(6));
-    return Material(
-      color: palette.headerBackground,
-      borderRadius: radius,
-      child: InkWell(
+    return Container(
+      decoration: BoxDecoration(
+        color: palette.headerBackground,
         borderRadius: radius,
-        onTap: onToggle,
-        child: Semantics(
-          button: true,
-          expanded: !collapsed,
+      ),
+      child: buildSyntaxAction(
+        context,
+        SyntaxChromeScope.of(context),
+        SyntaxChromeAction(
+          kind: SyntaxChromeActionKind.toggleFile,
           label: labels.fileHeader(file),
-          excludeSemantics: true,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(6, 7, 12, 7),
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final width = constraints.maxWidth;
-                final counts = !file.isBinary && width >= 180;
-                return Row(
-                  children: [
-                    Icon(
-                      collapsed ? Icons.chevron_right : Icons.expand_more,
-                      size: 18,
-                      color: palette.muted,
-                    ),
-                    const SizedBox(width: 4),
-                    if (label != null && width >= 260) ...[
-                      PatchStatusBadge(label: label, color: color, style: code),
-                      const SizedBox(width: 8),
-                    ],
-                    Expanded(
-                      child: PatchPathText(file: file, palette: palette),
-                    ),
-                    if (counts) ...[
-                      const SizedBox(width: 12),
-                      Text(
-                        '+$additions',
-                        style: code.copyWith(
-                          color: palette.inserted,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        '−$deletions',
-                        style: code.copyWith(
-                          color: palette.removed,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                    if (counts && width >= 400) ...[
-                      const SizedBox(width: 8),
-                      PatchDiffStat(file: file, palette: palette),
-                    ],
+          onInvoke: onToggle,
+          expanded: !collapsed,
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(6, 7, 12, 7),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final width = constraints.maxWidth;
+              final counts = !file.isBinary && width >= 180;
+              return Row(
+                children: [
+                  SyntaxGlyph(
+                    kind: collapsed
+                        ? SyntaxGlyphKind.collapsed
+                        : SyntaxGlyphKind.expanded,
+                    size: 18,
+                    color: palette.muted,
+                  ),
+                  const SizedBox(width: 4),
+                  if (label != null && width >= 260) ...[
+                    PatchStatusBadge(label: label, color: color, style: code),
+                    const SizedBox(width: 8),
                   ],
-                );
-              },
-            ),
+                  Expanded(
+                    child: PatchPathText(file: file, palette: palette),
+                  ),
+                  if (counts) ...[
+                    const SizedBox(width: 12),
+                    Text(
+                      '+$additions',
+                      style: code.copyWith(
+                        color: palette.inserted,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      '−$deletions',
+                      style: code.copyWith(
+                        color: palette.removed,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                  if (counts && width >= 400) ...[
+                    const SizedBox(width: 8),
+                    PatchDiffStat(file: file, palette: palette),
+                  ],
+                ],
+              );
+            },
           ),
         ),
       ),
@@ -488,242 +497,38 @@ class PatchGapBar extends StatelessWidget {
   final VoidCallback? onExpand;
 
   @override
-  Widget build(BuildContext context) => Material(
-    color: palette.hunkBackground,
-    child: Semantics(
-      button: true,
-      child: InkWell(
-        onTap: onExpand,
-        child: Padding(
-          padding: EdgeInsets.symmetric(
-            horizontal: 12,
-            vertical: style == HunkSeparatorStyle.compact ? 1 : 4,
-          ),
-          child: Row(
-            children: [
-              Icon(Icons.unfold_more, size: 16, color: palette.muted),
-              const SizedBox(width: 8),
-              Flexible(
-                child: Text(
-                  style == HunkSeparatorStyle.minimal ? '⋯' : text,
-                  style: palette.mutedText,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    ),
-  );
-}
-
-/// Line numbers and `+`/`−` change indicator, excluded from text selection.
-class PatchGutter extends StatelessWidget {
-  /// Creates a gutter cell.
-  const PatchGutter({
-    super.key,
-    required this.numbers,
-    required this.kind,
-    required this.width,
-    required this.palette,
-    required this.labels,
-  });
-
-  /// Old and new line numbers in unified mode, or a single side in split mode.
-  final List<int?> numbers;
-
-  /// Line kind.
-  final DiffLineKind kind;
-
-  /// Width of each line-number column.
-  final double width;
-
-  /// Shared palette.
-  final PatchPalette palette;
-
-  /// Accessibility labels.
-  final DiffLabels labels;
-
-  @override
-  Widget build(BuildContext context) {
-    final style = palette.numberText;
-    final (marker, markerColor) = switch (kind) {
-      DiffLineKind.added => ('+', palette.inserted),
-      DiffLineKind.removed => ('−', palette.removed),
-      DiffLineKind.context => (' ', palette.muted),
-    };
-    final number = kind == DiffLineKind.removed ? numbers.first : numbers.last;
-    return Semantics(
-      label: kind == DiffLineKind.context
-          ? null
-          : labels.changedLine(kind, number),
-      excludeSemantics: true,
-      child: SelectionContainer.disabled(
-        child: ColoredBox(
-          color: palette.gutterBackground(kind),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (palette.lineNumbers)
-                for (final n in numbers)
-                  SizedBox(
-                    width: width,
-                    child: Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: Text(
-                        n?.toString() ?? '',
-                        textAlign: TextAlign.right,
-                        style: style,
-                      ),
-                    ),
-                  ),
-              SizedBox(
-                width: 20,
-                child: Text(
-                  palette.indicators == DiffIndicators.classic
-                      ? marker
-                      : palette.indicators == DiffIndicators.bars &&
-                            kind != DiffLineKind.context
-                      ? '┃'
-                      : ' ',
-                  textAlign: TextAlign.center,
-                  style: style.copyWith(color: markerColor),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// One diff row in [DiffMode.unified].
-class PatchUnifiedLine extends StatelessWidget {
-  /// Creates a unified diff line row.
-  const PatchUnifiedLine({
-    super.key,
-    required this.line,
-    required this.spans,
-    required this.gutterWidth,
-    required this.palette,
-    required this.labels,
-  });
-
-  /// The diff line.
-  final DiffLine line;
-
-  /// Highlighted code spans.
-  final List<InlineSpan> spans;
-
-  /// Width of each line-number column.
-  final double gutterWidth;
-
-  /// Shared palette.
-  final PatchPalette palette;
-
-  /// Accessibility labels.
-  final DiffLabels labels;
-
-  @override
   Widget build(BuildContext context) => ColoredBox(
-    color: palette.lineBackground(line.kind),
-    child: IntrinsicHeight(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          PatchGutter(
-            numbers: [line.oldNumber, line.newNumber],
-            kind: line.kind,
-            width: gutterWidth,
-            palette: palette,
-            labels: labels,
-          ),
-          Expanded(
-            child: PatchCodeCell(
-              line: line,
-              spans: spans,
-              palette: palette,
-              labels: labels,
-            ),
-          ),
-        ],
+    color: palette.hunkBackground,
+    child: buildSyntaxAction(
+      context,
+      SyntaxChromeScope.of(context),
+      SyntaxChromeAction(
+        kind: SyntaxChromeActionKind.expandGap,
+        label: text,
+        onInvoke: onExpand,
       ),
-    ),
-  );
-}
-
-/// One diff row in [DiffMode.split].
-class PatchSplitLine extends StatelessWidget {
-  /// Creates a split diff line row.
-  const PatchSplitLine({
-    super.key,
-    required this.left,
-    required this.right,
-    required this.leftSpans,
-    required this.rightSpans,
-    required this.gutterWidth,
-    required this.palette,
-    required this.labels,
-  });
-
-  /// Left (old) diff line, or `null` when empty.
-  final DiffLine? left;
-
-  /// Right (new) diff line, or `null` when empty.
-  final DiffLine? right;
-
-  /// Highlighted spans for [left].
-  final List<InlineSpan>? leftSpans;
-
-  /// Highlighted spans for [right].
-  final List<InlineSpan>? rightSpans;
-
-  /// Width of each line-number column.
-  final double gutterWidth;
-
-  /// Shared palette.
-  final PatchPalette palette;
-
-  /// Accessibility labels.
-  final DiffLabels labels;
-
-  Widget _side(DiffLine? line, List<InlineSpan>? spans, {required bool old}) {
-    if (line == null) return ColoredBox(color: palette.emptySide);
-    return ColoredBox(
-      color: palette.lineBackground(line.kind),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          PatchGutter(
-            numbers: [old ? line.oldNumber : line.newNumber],
-            kind: line.kind,
-            width: gutterWidth,
-            palette: palette,
-            labels: labels,
-          ),
-          Expanded(
-            child: PatchCodeCell(
-              line: line,
-              spans: spans!,
-              palette: palette,
-              labels: labels,
+      Padding(
+        padding: EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: style == HunkSeparatorStyle.compact ? 1 : 4,
+        ),
+        child: Row(
+          children: [
+            SyntaxGlyph(
+              kind: SyntaxGlyphKind.gap,
+              size: 16,
+              color: palette.muted,
             ),
-          ),
-        ],
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                style == HunkSeparatorStyle.minimal ? '⋯' : text,
+                style: palette.mutedText,
+              ),
+            ),
+          ],
+        ),
       ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) => IntrinsicHeight(
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Expanded(child: _side(left, leftSpans, old: true)),
-        SizedBox(width: 1, child: ColoredBox(color: palette.divider)),
-        Expanded(child: _side(right, rightSpans, old: false)),
-      ],
     ),
   );
 }
@@ -749,13 +554,16 @@ class PatchCodeCell extends StatelessWidget {
   /// Shared palette.
   final PatchPalette palette;
 
-  /// Labels for tooltips.
+  /// Labels for accessibility.
   final DiffLabels labels;
 
   @override
   Widget build(BuildContext context) {
     Widget text = Text.rich(
       TextSpan(style: palette.code, children: spans),
+      // Text's root style must match its spans: older Flutter versions use it
+      // for caret metrics and otherwise hide the end handle outside the row.
+      style: palette.code,
       softWrap: palette.wrap,
     );
     if (!palette.wrap) text = HorizontalCode(child: text);
@@ -791,22 +599,30 @@ class PatchNoNewlineMarker extends StatelessWidget {
   /// Shared palette.
   final PatchPalette palette;
 
-  /// Tooltip message.
+  /// Accessible description of the missing line break.
   final String message;
 
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.only(left: 6),
-    child: Tooltip(
-      message: message,
-      child: SizedBox(
-        height: palette.lineHeight,
-        child: Icon(
-          Icons.do_not_disturb_on_outlined,
-          size: palette.lineHeight * 0.6,
-          color: palette.removed,
-        ),
-      ),
+    child: Semantics(
+      container: true,
+      label: message,
+      excludeSemantics: true,
+      child:
+          SyntaxChromeScope.of(
+            context,
+          ).noNewlineMarkerBuilder?.call(context, message) ??
+          SizedBox(
+            height: palette.lineHeight,
+            child: Center(
+              child: SyntaxGlyph(
+                kind: SyntaxGlyphKind.noNewline,
+                size: palette.lineHeight * 0.6,
+                color: palette.removed,
+              ),
+            ),
+          ),
     ),
   );
 }

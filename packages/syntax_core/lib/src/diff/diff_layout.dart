@@ -308,6 +308,10 @@ final class DiffLayout extends ListBase<DiffRow> {
 
   /// Finds a visible one-based source line, or null if it is hidden.
   int? rowForLine(int file, int number, {bool oldSide = false}) {
+    assert(() {
+      _debugRowForLineCalls++;
+      return true;
+    }());
     for (final block in _blocks) {
       if (block.file != file) continue;
       final start = oldSide ? block.oldStart : block.newStart;
@@ -318,6 +322,13 @@ final class DiffLayout extends ListBase<DiffRow> {
     }
     return null;
   }
+
+  /// Coordinate lookups performed while assertions are enabled.
+  ///
+  /// Diagnostic counter for detecting redundant scans during row rendering.
+  /// Remains zero when assertions are disabled.
+  int get debugRowForLineCalls => _debugRowForLineCalls;
+  int _debugRowForLineCalls = 0;
 
   /// Finds the header row for a zero-based file index.
   int? rowForFile(int file) {

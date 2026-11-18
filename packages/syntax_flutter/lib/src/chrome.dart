@@ -1,12 +1,21 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/widgets.dart';
 import 'package:syntax_core/syntax.dart';
 
+import 'chrome_scope.dart';
+import 'selection_chrome.dart';
 import 'styles.dart';
 
-/// Keeps native controls legible when the code palette differs from the app.
+/// Keeps controls legible when the code palette differs from the app.
+///
+/// Uses only widgets-layer inherited styles and paints the code background.
 class SyntaxChrome extends StatelessWidget {
   /// Applies the code palette to inherited controls and text.
-  const SyntaxChrome({super.key, required this.theme, required this.child});
+  const SyntaxChrome({
+    super.key,
+    required this.theme,
+    required this.child,
+    this.selectionChrome,
+  });
 
   /// Palette used by the surrounding code surface.
   final SyntaxTheme theme;
@@ -14,62 +23,25 @@ class SyntaxChrome extends StatelessWidget {
   /// Native controls and code content.
   final Widget child;
 
+  /// Optional selection and action rendering; defaults to plain widgets.
+  final SyntaxSelectionChrome? selectionChrome;
+
   @override
-  Widget build(BuildContext context) {
-    final parent = Theme.of(context);
-    final foreground = theme.foregroundColor;
-    final background = theme.backgroundColor;
-    final brightness = ThemeData.estimateBrightnessForColor(background);
-    final scheme =
-        (parent.brightness == brightness
-                ? parent.colorScheme
-                : ColorScheme.fromSeed(
-                    seedColor: theme.cursorColor,
-                    brightness: brightness,
-                  ))
-            .copyWith(surface: background, onSurface: foreground);
-    return Theme(
-      data: parent.copyWith(
-        colorScheme: scheme,
-        textTheme: parent.textTheme.apply(
-          bodyColor: foreground,
-          displayColor: foreground,
-        ),
-        iconTheme: parent.iconTheme.copyWith(color: foreground),
-        textButtonTheme: TextButtonThemeData(
-          style: (parent.textButtonTheme.style ?? const ButtonStyle()).copyWith(
-            foregroundColor: WidgetStateProperty.resolveWith(
-              (states) => foreground.withValues(
-                alpha: states.contains(WidgetState.disabled) ? .38 : 1,
-              ),
-            ),
-          ),
-        ),
-        iconButtonTheme: IconButtonThemeData(
-          style: (parent.iconButtonTheme.style ?? const ButtonStyle()).copyWith(
-            foregroundColor: WidgetStateProperty.resolveWith(
-              (states) => foreground.withValues(
-                alpha: states.contains(WidgetState.disabled) ? .38 : 1,
-              ),
-            ),
-          ),
-        ),
-        textSelectionTheme: TextSelectionThemeData(
-          cursorColor: theme.cursorColor,
-          selectionColor: theme.selectionColor,
-          selectionHandleColor: theme.cursorColor,
-        ),
-      ),
-      child: Material(
-        color: background,
-        child: DefaultTextStyle.merge(
-          style: TextStyle(color: foreground),
-          child: IconTheme.merge(
-            data: IconThemeData(color: foreground),
+  Widget build(BuildContext context) => SyntaxChromeScope(
+    chrome: selectionChrome ?? SyntaxSelectionChrome.plain,
+    child: ColoredBox(
+      color: theme.backgroundColor,
+      child: DefaultTextStyle.merge(
+        style: TextStyle(color: theme.foregroundColor),
+        child: IconTheme.merge(
+          data: IconThemeData(color: theme.foregroundColor),
+          child: DefaultSelectionStyle(
+            cursorColor: theme.cursorColor,
+            selectionColor: theme.selectionColor,
             child: child,
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
 }

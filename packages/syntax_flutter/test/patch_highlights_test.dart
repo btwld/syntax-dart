@@ -1,0 +1,580 @@
+import 'dart:collection';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:syntax_core/langs/dart.dart';
+import 'package:syntax_core/themes/github_dark.dart';
+import 'package:syntax_flutter/src/patch_highlights.dart';
+import 'package:syntax_flutter/src/mounted_window_highlights.dart';
+import 'package:syntax_flutter/syntax_flutter.dart';
+
+class _CountingList<T> extends ListBase<T> {
+  _CountingList(this.values);
+
+  final List<T> values;
+  int reads = 0;
+
+  @override
+  int get length => values.length;
+
+  @override
+  set length(int value) => throw UnsupportedError('read only');
+
+  @override
+  T operator [](int index) {
+    reads++;
+    return values[index];
+  }
+
+  @override
+  void operator []=(int index, T value) => throw UnsupportedError('read only');
+}
+
+class _CountingText extends ListBase<String> {
+  _CountingText(this.values);
+  final List<String> values;
+  int reads = 0;
+  @override
+  int get length => values.length;
+  @override
+  set length(int value) => throw UnsupportedError('read only');
+  @override
+  String operator [](int index) {
+    reads++;
+    return values[index];
+  }
+
+  @override
+  void operator []=(int index, String value) =>
+      throw UnsupportedError('read only');
+}
+
+void main() {
+  late Highlighter highlighter;
+  setUp(() => highlighter = Highlighter(languages: [dartLanguage]));
+
+  PatchWindowHighlights cache() {
+    final scheduler = HighlightWindowScheduler(
+      highlighter: highlighter,
+      theme: githubDarkTheme,
+      onChanged: () {},
+    );
+    addTearDown(scheduler.dispose);
+    return PatchWindowHighlights(scheduler);
+  }
+
+  testWidgets('20 stationary built windows finish once and stay ready', (
+    tester,
+  ) async {
+    final calls = <String, int>{};
+    Future<HighlightWindowResult> worker(
+      HighlightWindowRequest request, {
+      required Highlighter highlighter,
+      required SyntaxTheme theme,
+      required HighlightCancellation cancellation,
+    }) async {
+      calls.update(request.fileId, (count) => count + 1, ifAbsent: () => 1);
+      return HighlightWindowResult(
+        request: request,
+        grammarRevision: highlighter.revision,
+        theme: theme,
+        ranges: [
+          StyledRange(
+            0,
+            request.code.length,
+            const TokenStyle(foreground: 0xFF00FF00),
+          ),
+        ],
+      );
+    }
+
+    final file = parsePatch(
+      '--- a/a.dart\n+++ b/a.dart\n'
+      '${List.generate(20, (i) => '@@ -0,0 +${i * 10 + 1} @@\n+final value$i = $i;\n').join()}',
+    ).single;
+    late StateSetter rebuild;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) {
+              rebuild = setState;
+              return SingleChildScrollView(
+                child: PatchView(
+                  files: [file],
+                  theme: githubDarkTheme,
+                  highlighter: highlighter,
+                  executor: worker,
+                  shrinkWrap: true,
+                  selectable: false,
+                  inlineDiffMode: InlineDiffMode.none,
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+    // A fixed frame count makes a repeating job loop fail deterministically,
+    // rather than waiting for pumpAndSettle to time out.
+    for (var frame = 0; frame < 100; frame++) {
+      await tester.pump();
+    }
+    expect(calls, hasLength(20));
+    expect(calls.values, everyElement(1));
+    for (var frame = 0; frame < 30; frame++) {
+      rebuild(() {});
+      await tester.pump();
+    }
+    for (var frame = 0; frame < 10; frame++) {
+      await tester.pump();
+    }
+    expect(calls.values, everyElement(1));
+    expect(tester.binding.hasScheduledFrame, isFalse);
+    final colored = tester
+        .widgetList<Text>(find.byType(Text))
+        .where(
+          (text) =>
+              text.textSpan is TextSpan &&
+              (text.textSpan! as TextSpan).children?.any(
+                    (span) =>
+                        span is TextSpan &&
+                        span.style?.color?.toARGB32() == 0xFF00FF00,
+                  ) ==
+                  true,
+        );
+    expect(colored, hasLength(20));
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  for (final smallFiles in [false, true]) {
+    testWidgets(
+      smallFiles
+          ? 'mounted small files retain completed highlights across repaints'
+          : 'mounted oversized split sides retain source indexes across repaints',
+      (tester) async {
+        final sources = <_CountingText>[];
+        final files = List.generate(smallFiles ? 10 : 1, (fileIndex) {
+          final old = _CountingText(
+            List.filled(
+              smallFiles ? 100 : 300,
+              'final value = "${'a' * (smallFiles ? 100 : 4000)}";',
+            ),
+          );
+          final newer = _CountingText(
+            [...old.values]..[old.length - 1] = 'final changed = 2;',
+          );
+          sources.addAll([old, newer]);
+          return FileDiff(
+            oldPath: '$fileIndex.dart',
+            newPath: '$fileIndex.dart',
+            kind: FileDiffKind.modified,
+            oldLines: old,
+            newLines: newer,
+            hunks: [
+              DiffHunk(
+                oldStart: old.length,
+                oldCount: 1,
+                newStart: old.length,
+                newCount: 1,
+                lines: [
+                  DiffLine(
+                    DiffLineKind.removed,
+                    old.values.last,
+                    oldNumber: old.length,
+                  ),
+                  DiffLine(
+                    DiffLineKind.added,
+                    newer.values.last,
+                    newNumber: newer.length,
+                  ),
+                ],
+              ),
+            ],
+          );
+        });
+        late StateSetter rebuild;
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: StatefulBuilder(
+                builder: (context, setState) {
+                  rebuild = setState;
+                  return SingleChildScrollView(
+                    child: PatchView(
+                      files: files,
+                      theme: githubDarkTheme,
+                      highlighter: highlighter,
+                      mode: DiffMode.split,
+                      shrinkWrap: true,
+                      selectable: false,
+                      inlineDiffMode: InlineDiffMode.none,
+                      wrap: false,
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle(
+          const Duration(milliseconds: 16),
+          EnginePhase.sendSemanticsUpdate,
+          const Duration(seconds: 5),
+        );
+        for (final source in sources) {
+          source.reads = 0;
+        }
+        for (var frame = 0; frame < 3; frame++) {
+          rebuild(() {});
+          await tester.pump();
+        }
+        await tester.pumpAndSettle();
+        expect(
+          sources.fold<int>(0, (n, source) => n + source.reads),
+          0,
+          reason: 'Stationary mounted rows reuse indexes and completed colors',
+        );
+        expect(tester.binding.hasScheduledFrame, isFalse);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+  }
+
+  testWidgets('unmounting releases retained source working sets', (
+    tester,
+  ) async {
+    final cache = MountedResourceCache<String>(
+      maxCodeUnits: 10,
+      codeUnits: (source) => source.length,
+    );
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: Column(
+          children: [
+            for (var i = 0; i < 12; i++)
+              cache.retain(() {
+                cache.resourceFor(i, () => '$i' * 20);
+                return const SizedBox.shrink();
+              }),
+          ],
+        ),
+      ),
+    );
+    expect(cache.mountedEntries, 12);
+    expect(cache.values.length, 12);
+    await tester.pumpWidget(const SizedBox.shrink());
+    expect(cache.mountedEntries, 0);
+    expect(
+      cache.values.length,
+      1,
+      reason: 'Only one oversized unmounted source may remain',
+    );
+  });
+
+  test('equal pairs in distinct files both retain changed-word emphasis', () {
+    final highlights = cache();
+    FileDiff file(String id) =>
+        diffTexts('final x = 1;', 'final x = 2;', path: '$id.dart');
+    final a = file('a'), b = file('b');
+    final first = a.hunks.single.lines.last;
+    final second = b.hunks.single.lines.last;
+    expect(first, second);
+    expect(identical(first, second), isFalse);
+    for (final file in [a, b]) {
+      for (final line in file.hunks.single.lines) {
+        final segments = highlights.segments(
+          file,
+          line,
+          highlighter,
+          githubDarkTheme,
+          null,
+          InlineDiffMode.mergedWords,
+        );
+        expect(
+          segments
+              .where((segment) => segment.changed)
+              .map((s) => s.text)
+              .join(),
+          line.kind == DiffLineKind.removed ? '1' : '2',
+        );
+      }
+    }
+  });
+
+  test(
+    'cached parsed-side lookup does no work proportional to hunk lines per row',
+    () {
+      final highlights = cache();
+      final lines = _CountingList(
+        List.generate(
+          100000,
+          (i) => DiffLine(DiffLineKind.added, 'line $i', newNumber: 500 + i),
+        ),
+      );
+      final file = FileDiff(
+        oldPath: 'a.txt',
+        newPath: 'a.txt',
+        kind: FileDiffKind.modified,
+        hunks: [
+          DiffHunk(
+            oldStart: 0,
+            oldCount: 0,
+            newStart: 500,
+            newCount: lines.length,
+            lines: lines,
+          ),
+        ],
+      );
+      highlights.segments(
+        file,
+        lines.values[99970],
+        highlighter,
+        githubDarkTheme,
+        null,
+        InlineDiffMode.none,
+      );
+      lines.reads = 0;
+      for (var repaint = 0; repaint < 2; repaint++) {
+        for (final line in lines.values.skip(99970)) {
+          highlights.segments(
+            file,
+            line,
+            highlighter,
+            githubDarkTheme,
+            null,
+            InlineDiffMode.none,
+          );
+        }
+      }
+      expect(
+        lines.reads,
+        0,
+        reason:
+            'Reuse the side index and derive each line index from its source number',
+      );
+    },
+  );
+
+  test('rendering near the end of a parsed patch reuses the hunk index', () {
+    final highlights = cache();
+    final parsed = parsePatch(
+      '--- a/a.dart\n+++ b/a.dart\n'
+      '${List.generate(10000, (i) => '@@ -${i * 2 + 1} +${i * 2 + 1} @@\n-x=1\n+x=2\n').join()}',
+    ).single;
+    final hunks = _CountingList(parsed.hunks);
+    final file = parsed.copyWith(hunks: hunks);
+    final visible = parsed.hunks.skip(9950).expand((hunk) => hunk.lines);
+
+    void paint() {
+      for (final line in visible) {
+        final segments = highlights.segments(
+          file,
+          line,
+          highlighter,
+          githubDarkTheme,
+          null,
+          InlineDiffMode.mergedWords,
+        );
+        expect(
+          segments.where((segment) => segment.changed).single.text,
+          line.kind == DiffLineKind.removed ? '1' : '2',
+        );
+      }
+    }
+
+    paint();
+    hunks.reads = 0;
+    paint();
+    expect(hunks.reads, lessThanOrEqualTo(100));
+  });
+
+  testWidgets('selection actions read offscreen text only on demand', (
+    tester,
+  ) async {
+    final old = ['old', for (var i = 1; i < 1000; i++) 'line $i'];
+    final newer = ['new', ...old.skip(1)];
+    final source = _CountingList(newer);
+    final file = diffTexts(
+      old.join('\n'),
+      newer.join('\n'),
+      path: 'a.txt',
+      contextLines: 0,
+    ).copyWith(newLines: source);
+    final controller = PatchController<void>([file]);
+    addTearDown(controller.dispose);
+    DiffSelectionDetails? details;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PatchView<void>.controlled(
+            controller: controller,
+            theme: githubDarkTheme,
+            highlighter: highlighter,
+            selectionActionBuilder: (_, selection) {
+              details = selection;
+              return const Text('Action');
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    source.reads = 0;
+    controller.select(
+      DiffSelection(
+        fileId: file.id,
+        revision: file.revision,
+        side: DiffSide.newer,
+        anchor: newer.length,
+        active: 1,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Action'), findsOneWidget);
+    expect(source.reads, lessThan(newer.length));
+    expect(details!.selectedText, newer.join('\n'));
+    expect(source.reads, greaterThanOrEqualTo(newer.length));
+  });
+
+  for (final replacement in [false, true]) {
+    test(
+      'default word lookup reuses 100000-line ${replacement ? 'replacement' : 'addition'} boundaries',
+      () {
+        final highlights = cache();
+        const count = 100000;
+        final values = [
+          if (replacement)
+            for (var i = 0; i < count; i++)
+              DiffLine(DiffLineKind.removed, 'x=1', oldNumber: 100 + i),
+          for (var i = 0; i < count; i++)
+            DiffLine(DiffLineKind.added, 'x=2', newNumber: 500 + i),
+        ];
+        final lines = _CountingList(values);
+        final file = FileDiff(
+          oldPath: 'a.txt',
+          newPath: 'a.txt',
+          kind: FileDiffKind.modified,
+          hunks: [
+            DiffHunk(
+              oldStart: 100,
+              oldCount: replacement ? count : 0,
+              newStart: 500,
+              newCount: count,
+              lines: lines,
+            ),
+          ],
+        );
+        List<DiffSegment> render(DiffLine line) => highlights.segments(
+          file,
+          line,
+          highlighter,
+          githubDarkTheme,
+          null,
+          InlineDiffMode.mergedWords,
+        );
+        if (replacement) render(values[99970]);
+        render(values[(replacement ? count : 0) + 99970]);
+        expect(
+          lines.reads,
+          lessThanOrEqualTo(8 * lines.length + 20),
+          reason:
+              'Build indexes once, rather than rescanning change blocks per side',
+        );
+        lines.reads = 0;
+        var rendered = 0;
+        for (var repaint = 0; repaint < 2; repaint++) {
+          for (var i = 99970; i < count; i++) {
+            if (replacement) {
+              expect(
+                render(
+                  values[i],
+                ).where((s) => s.changed).map((s) => s.text).join(),
+                '1',
+              );
+              rendered++;
+            }
+            final segments = render(values[(replacement ? count : 0) + i]);
+            expect(
+              segments.where((s) => s.changed).map((s) => s.text).join(),
+              replacement ? '2' : '',
+            );
+            rendered++;
+          }
+        }
+        expect(
+          lines.reads,
+          lessThanOrEqualTo(2 * rendered),
+          reason:
+              'Only the chosen pair may be read per row, independent of offscreen lines',
+        );
+      },
+    );
+  }
+  test(
+    'indexed pairs match word changes across mixed and unbalanced blocks',
+    () {
+      final highlights = cache();
+      var oldNumber = 100, newNumber = 500;
+      final lines = [
+        for (final (kind, text) in [
+          (DiffLineKind.removed, 'final a=1;'),
+          (DiffLineKind.added, 'final a=2;'),
+          (DiffLineKind.context, 'stable1'),
+          (DiffLineKind.removed, 'only removed'),
+          (DiffLineKind.context, 'stable2'),
+          (DiffLineKind.added, 'only added'),
+          (DiffLineKind.context, 'stable3'),
+          (DiffLineKind.removed, 'final b=1;'),
+          (DiffLineKind.removed, 'final c=1;'),
+          (DiffLineKind.added, 'final b=2;'),
+          (DiffLineKind.context, 'stable4'),
+          (DiffLineKind.removed, 'final d=1;'),
+          (DiffLineKind.added, 'final d=2;'),
+          (DiffLineKind.added, 'extra added'),
+        ])
+          DiffLine(
+            kind,
+            text,
+            oldNumber: kind == DiffLineKind.added ? null : oldNumber++,
+            newNumber: kind == DiffLineKind.removed ? null : newNumber++,
+          ),
+      ];
+      final file = FileDiff(
+        oldPath: 'a.txt',
+        newPath: 'a.txt',
+        kind: FileDiffKind.modified,
+        hunks: [
+          DiffHunk(
+            oldStart: 100,
+            oldCount: oldNumber - 100,
+            newStart: 500,
+            newCount: newNumber - 500,
+            lines: lines,
+          ),
+        ],
+      );
+      for (final mode in InlineDiffMode.values) {
+        final expected = WordChanges.of(file, mode: mode);
+        for (final line in [...lines, ...lines.reversed]) {
+          final actual = highlights.segments(
+            file,
+            line,
+            highlighter,
+            githubDarkTheme,
+            null,
+            mode,
+          );
+          expect(
+            actual.where((s) => s.changed).map((s) => s.text).join(),
+            expected
+                .rangesFor(line)
+                .map((r) => line.text.substring(r.start, r.end))
+                .join(),
+          );
+        }
+      }
+    },
+  );
+}

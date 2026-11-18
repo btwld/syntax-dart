@@ -1,3 +1,26 @@
+## Unreleased
+
+- Add `DiffSide`, directed, revision-bearing `DiffSelection` ranges and
+  `DiffAnnotation<T>` payloads with value equality. Selections retain cross-side
+  endpoints for copying; annotations reject mismatched source files/revisions
+  and invalid coordinates.
+- Keep commit mentions and patch-like message lines in mailbox introductions
+  without splitting documents or reporting patch errors for message text.
+- Diagnose excess hunk content in `parsePatchDocuments`, including its
+  transport line, and recognize decorated `git log` commit headers so
+  adjacent commits keep separate documents and file identities.
+- Add `PatchDocument`, `PatchDiagnostic` and `parsePatchDocuments` to retain
+  introductions and original patch transport, split concatenated commits,
+  qualify file IDs by commit, and report recoverable parsing problems.
+  Strict mode throws `FormatException` on the first diagnostic.
+- Count each diff source once toward `DiffHighlightCache.maxCodeUnits`, using
+  exact full-text lengths when available instead of also charging split lines.
+- Add cancellable `highlightWindow` requests with exact source and grammar
+  identity, bounded raw-token/checkpoint reuse, and cooperative continuation.
+  Styled output covers only the requested half-open line window.
+- Add opt-in file/count source-size limits to `DiffHighlightCache`, evicting
+  syntax and word changes together. `prepare` can spare explicitly listed files.
+
 ## 0.0.3
 
 - `SyntaxTheme.background` and `foreground` start from the editor colors. A

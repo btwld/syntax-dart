@@ -119,7 +119,7 @@ final class TokenizedDocument {
         _lines.addAll(old.skip(oldIndex));
         break;
       }
-      final line = DocumentLine._tokenize(_grammar, lines[i], pending.state);
+      final line = DocumentLine.tokenize(_grammar, lines[i], pending.state);
       _lines.add(line);
       // Kept current, so a line that throws is retried, not skipped.
       pending
@@ -193,7 +193,9 @@ final class DocumentLine {
     this.endState,
   );
 
-  factory DocumentLine._tokenize(
+  /// Tokenizes one raw LF-delimited line, excluding a trailing CR from tokens.
+  /// [state] is the preceding line's end state, or null at document start.
+  factory DocumentLine.tokenize(
     Grammar grammar,
     String raw,
     StateStack? state,
