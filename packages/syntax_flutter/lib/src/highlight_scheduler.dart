@@ -21,7 +21,8 @@ typedef HighlightExecutor =
 /// reused until evicted. Source, content, grammar, palette and executor changes
 /// cancel obsolete work. A stale active call still counts against the limits
 /// until it settles. One oversize input is allowed alone; additional requests
-/// are retried by the view after [onChanged]. Failures stay plain until cleared.
+/// are retried by the view after [onChanged]. Recently failed windows stay
+/// plain even after their source is evicted.
 final class HighlightWindowScheduler {
   /// Creates a scheduler. Limits must be positive.
   HighlightWindowScheduler({
@@ -66,6 +67,20 @@ final class HighlightWindowScheduler {
   bool _disposed = false, _scheduled = false;
   _Job? _active;
   final _entries = <Object, _Job>{};
+  final _failedWindows = <Object>{};
+
+  // Keep failure metadata without retaining the source outside the code-unit
+  // budget. Otherwise a repaint can continuously requeue a failed window and
+  // evict another visible window before the other window runs.
+  Object _failureKey(HighlightWindowRequest request) => (
+    request.fileId,
+    request.revision,
+    request.language,
+    request.startLine,
+    request.endLine,
+    request.code.length,
+    request.code.hashCode,
+  );
 
   /// Number of retained windows, including inflight calls.
   int get entryCount => _entries.length;
@@ -134,6 +149,13 @@ final class HighlightWindowScheduler {
       _entries[key] = existing;
       return existing.result?.ranges;
     }
+    if (_failedWindows.isNotEmpty) {
+      final failure = _failureKey(request);
+      if (_failedWindows.remove(failure)) {
+        _failedWindows.add(failure);
+        return null;
+      }
+    }
     int additionalUnits() =>
         _entries.values.any((job) => job.request.code == request.code)
         ? 0
@@ -160,6 +182,7 @@ final class HighlightWindowScheduler {
   /// Discards ready and queued work; an active executor is cancelled but is
   /// awaited before any subsequent call can start.
   void clear() {
+    _failedWindows.clear();
     for (final key in _entries.keys.toList()) {
       _discard(key);
     }
@@ -201,6 +224,10 @@ final class HighlightWindowScheduler {
       if (!_disposed &&
           !job.cancellation.isCancelled &&
           error is! HighlightCancelled) {
+        _failedWindows.add(_failureKey(job.request));
+        if (_failedWindows.length > maxEntries) {
+          _failedWindows.remove(_failedWindows.first);
+        }
         onError?.call(error, stack);
       }
     } finally {
@@ -234,6 +261,7 @@ final class HighlightWindowScheduler {
       job.cancellation.cancel();
     }
     _entries.clear();
+    _failedWindows.clear();
   }
 }
 

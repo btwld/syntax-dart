@@ -46,10 +46,10 @@ extension _PatchComposition<T> on _PatchViewState<T> {
           _rowAddresses(row, selection.activeSide, selection.active)) {
         final action = widget.selectionActionBuilder?.call(
           context,
-          DiffSelectionDetails(
+          DiffSelectionDetails.lazy(
             file: file,
             selection: selection,
-            selectedText: _selectedText(selection),
+            readSelectedText: () => _selectedText(file, selection),
           ),
         );
         if (action != null) {

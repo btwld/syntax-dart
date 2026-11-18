@@ -400,7 +400,7 @@ class _PatchViewState<T> extends State<PatchView<T>>
       widget.collapsed.contains(index);
   (FileDiff, DiffSelection)? _crossKey;
   ({DiffLayout layout, int start, int end})? _crossBounds;
-  DiffSelection? _copiedSelection;
+  (FileDiff, DiffSelection)? _copiedSelection;
   String? _copiedText;
   final _lineEndings = <FileDiff, PatchLineEndings>{};
   DiffLineContext? _dragAnchor;
@@ -409,6 +409,7 @@ class _PatchViewState<T> extends State<PatchView<T>>
   Duration _lastTick = Duration.zero;
   Object? _sourceKey, _highlightKey;
   List<FileDiff> _files = const [];
+  final _largeDiffs = Expando<bool>();
   final _horizontal = HorizontalCodeGroup();
   final _highlights = MountedResourceCache<DiffHighlightCache>(
     maxCodeUnits: 1024 * 1024,
@@ -1197,11 +1198,11 @@ class _PatchViewState<T> extends State<PatchView<T>>
       DiffLineKind.context => null,
     };
     final diff = _files[file];
-    final large =
-        (diff.oldLines?.length ?? 0) + (diff.newLines?.length ?? 0) > 200 ||
-        diff.hunks.fold<int>(0, (n, h) => n + h.lines.length) > 200;
     List<DiffSegment> segments;
-    if (widget.executor != null || large) {
+    if (widget.executor != null ||
+        (_largeDiffs[diff] ??=
+            (diff.oldLines?.length ?? 0) + (diff.newLines?.length ?? 0) > 200 ||
+            diff.hunks.fold<int>(0, (n, h) => n + h.lines.length) > 200)) {
       segments = _windowsFor(highlighter).segments(
         diff,
         line,

@@ -169,6 +169,37 @@ void main() {
     expect(text('new bytes'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('controller selection preserves focus in a sibling editor', (
+    tester,
+  ) async {
+    final controller = CodeViewController(sourceId: 'a', code: 'one\ntwo');
+    final editor = FocusNode();
+    final text = TextEditingController();
+    addTearDown(controller.dispose);
+    addTearDown(editor.dispose);
+    addTearDown(text.dispose);
+    await tester.pumpWidget(
+      app(
+        Scaffold(
+          body: Column(
+            children: [
+              TextField(focusNode: editor, controller: text),
+              Expanded(child: view(controller)),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.byType(TextField));
+    await tester.pumpAndSettle();
+    expect(editor.hasPrimaryFocus, isTrue);
+
+    controller.selectLines(1, 1);
+    await tester.pumpAndSettle();
+    expect(editor.hasPrimaryFocus, isTrue);
+    expect(controller.selection, (anchor: 1, active: 1));
+  });
   testWidgets(
     'markers stay in gutters and backgrounds span wrapped source lines',
     (tester) async {

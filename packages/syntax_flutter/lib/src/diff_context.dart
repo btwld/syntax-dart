@@ -44,8 +44,17 @@ final class DiffSelectionDetails {
   const DiffSelectionDetails({
     required this.file,
     required this.selection,
-    required this.selectedText,
-  });
+    required String selectedText,
+  }) : _selectedText = selectedText,
+       _readSelectedText = null;
+
+  /// Describes a selection whose text is resolved only when read.
+  const DiffSelectionDetails.lazy({
+    required this.file,
+    required this.selection,
+    required String Function() readSelectedText,
+  }) : _selectedText = null,
+       _readSelectedText = readSelectedText;
 
   /// The file containing the selection.
   final FileDiff file;
@@ -53,6 +62,9 @@ final class DiffSelectionDetails {
   /// Inclusive source endpoints, with their original direction and sides.
   final DiffSelection selection;
 
+  final String? _selectedText;
+  final String Function()? _readSelectedText;
+
   /// Source text in diff order, excluding presentation widgets.
-  final String selectedText;
+  String get selectedText => _selectedText ?? _readSelectedText!();
 }

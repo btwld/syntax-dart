@@ -307,8 +307,18 @@ class _IndexedCodeViewportState extends State<IndexedCodeViewport> {
         _completeReveal(cancelled: false);
       }
     }
-    final end = (_rowAt(_offset + _extent) + 1).clamp(0, widget.count);
-    final range = (_visible, end);
+    final bottom = _offset + _extent;
+    var low = _visible;
+    var high = widget.count;
+    while (low < high) {
+      final middle = (low + high) ~/ 2;
+      if (_rowOffset(middle) < bottom) {
+        low = middle + 1;
+      } else {
+        high = middle;
+      }
+    }
+    final range = (_visible, low);
     if (range != _reportedRange) {
       _reportedRange = range;
       widget.onVisibleRange?.call(range.$1, range.$2);

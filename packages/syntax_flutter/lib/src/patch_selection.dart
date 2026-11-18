@@ -193,15 +193,7 @@ extension _PatchSelection<T> on _PatchViewState<T> {
           );
   }
 
-  List<DiffLine> _selectedLines(DiffSelection selection) {
-    final file = _files
-        .where(
-          (file) =>
-              file.id == selection.fileId &&
-              file.revision == selection.revision,
-        )
-        .firstOrNull;
-    if (file == null) return [];
+  List<DiffLine> _selectedLines(FileDiff file, DiffSelection selection) {
     if (!selection.crossesSides) {
       final full = selection.side == DiffSide.old
           ? file.oldLines
@@ -236,19 +228,12 @@ extension _PatchSelection<T> on _PatchViewState<T> {
     ];
   }
 
-  String _selectedText(DiffSelection selection) {
-    if (_copiedSelection == selection && _copiedText != null) {
+  String _selectedText(FileDiff file, DiffSelection selection) {
+    final key = (file, selection);
+    if (_copiedSelection == key && _copiedText != null) {
       return _copiedText!;
     }
-    final file = _files
-        .where(
-          (file) =>
-              file.id == selection.fileId &&
-              file.revision == selection.revision,
-        )
-        .firstOrNull;
-    if (file == null) return '';
-    final lines = _selectedLines(selection);
+    final lines = _selectedLines(file, selection);
     final buffer = StringBuffer();
     for (var i = 0; i < lines.length; i++) {
       buffer.write(lines[i].text);
@@ -262,7 +247,7 @@ extension _PatchSelection<T> on _PatchViewState<T> {
         );
       }
     }
-    _copiedSelection = selection;
+    _copiedSelection = key;
     return _copiedText = buffer.toString();
   }
 
@@ -303,9 +288,18 @@ extension _PatchSelection<T> on _PatchViewState<T> {
   }
 
   void _copy() {
-    final native = _nativeSelection.getSelectedContent()?.plainText;
-    final text =
-        native ?? (_selection == null ? null : _selectedText(_selection!));
+    var text = _nativeSelection.getSelectedContent()?.plainText;
+    final selection = _selection;
+    if (text == null && selection != null) {
+      final file = _files
+          .where(
+            (file) =>
+                file.id == selection.fileId &&
+                file.revision == selection.revision,
+          )
+          .firstOrNull;
+      text = file == null ? '' : _selectedText(file, selection);
+    }
     if (text != null) Clipboard.setData(ClipboardData(text: text));
   }
 }

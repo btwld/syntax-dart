@@ -209,7 +209,16 @@ class _CodeLinesState extends State<_CodeLines>
       if (controller?.selection != null && view.selectable) {
         owner._selection.dispatchSelectionEvent(const ClearSelectionEvent());
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _focus.requestFocus();
+          if (!mounted || selection != _selection) return;
+          final active = FocusManager.instance.primaryFocus;
+          final nativeFocus = context
+              .findAncestorWidgetOfExactType<SelectableRegion>()
+              ?.focusNode;
+          if (active == null ||
+              active is FocusScopeNode ||
+              active == nativeFocus) {
+            _focus.requestFocus();
+          }
         });
       }
     }

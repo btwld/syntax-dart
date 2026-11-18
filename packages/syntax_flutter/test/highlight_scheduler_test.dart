@@ -253,6 +253,39 @@ void main() {
   );
 
   test(
+    'an evicted failure does not displace another visible oversize window',
+    () async {
+      final old = request('old', code: 'a' * 100);
+      final newer = request('new', code: 'b' * 100);
+      late final HighlightWindowScheduler scheduler;
+      void paint() {
+        scheduler.rangesFor(old);
+        scheduler.rangesFor(newer);
+      }
+
+      scheduler = cache(entries: 1, units: 10, changed: paint);
+      paint();
+      await _tick();
+      expect(executor.requests, [newer]);
+      executor.jobs.single.completeError(StateError('invalid grammar'));
+      await _tick();
+      expect(executor.requests, [newer, old]);
+      expect(scheduler.retainedCodeUnits, old.code.length);
+      executor.complete(1);
+      await _tick();
+      expect(scheduler.rangesFor(old), isNotNull);
+      expect(scheduler.rangesFor(newer), isNull);
+      await _tick();
+      expect(executor.requests, [newer, old]);
+
+      final replacement = request('new', code: 'c' * 100);
+      scheduler.rangesFor(replacement);
+      await _tick();
+      expect(executor.requests.last, same(replacement));
+    },
+  );
+
+  test(
     'clearing rejects inflight cache population; mismatched identity stays plain',
     () async {
       final scheduler = cache();

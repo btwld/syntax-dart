@@ -8,10 +8,10 @@ import 'package:syntax_flutter/src/patch_highlights.dart';
 import 'package:syntax_flutter/src/mounted_window_highlights.dart';
 import 'package:syntax_flutter/syntax_flutter.dart';
 
-class _CountingLines extends ListBase<DiffLine> {
-  _CountingLines(this.values);
+class _CountingList<T> extends ListBase<T> {
+  _CountingList(this.values);
 
-  final List<DiffLine> values;
+  final List<T> values;
   int reads = 0;
 
   @override
@@ -21,14 +21,13 @@ class _CountingLines extends ListBase<DiffLine> {
   set length(int value) => throw UnsupportedError('read only');
 
   @override
-  DiffLine operator [](int index) {
+  T operator [](int index) {
     reads++;
     return values[index];
   }
 
   @override
-  void operator []=(int index, DiffLine value) =>
-      throw UnsupportedError('read only');
+  void operator []=(int index, T value) => throw UnsupportedError('read only');
 }
 
 class _CountingText extends ListBase<String> {
@@ -308,7 +307,7 @@ void main() {
     'cached parsed-side lookup does no work proportional to hunk lines per row',
     () {
       final highlights = cache();
-      final lines = _CountingLines(
+      final lines = _CountingList(
         List.generate(
           100000,
           (i) => DiffLine(DiffLineKind.added, 'line $i', newNumber: 500 + i),
@@ -357,6 +356,88 @@ void main() {
       );
     },
   );
+
+  test('rendering near the end of a parsed patch reuses the hunk index', () {
+    final highlights = cache();
+    final parsed = parsePatch(
+      '--- a/a.dart\n+++ b/a.dart\n'
+      '${List.generate(10000, (i) => '@@ -${i * 2 + 1} +${i * 2 + 1} @@\n-x=1\n+x=2\n').join()}',
+    ).single;
+    final hunks = _CountingList(parsed.hunks);
+    final file = parsed.copyWith(hunks: hunks);
+    final visible = parsed.hunks.skip(9950).expand((hunk) => hunk.lines);
+
+    void paint() {
+      for (final line in visible) {
+        final segments = highlights.segments(
+          file,
+          line,
+          highlighter,
+          githubDarkTheme,
+          null,
+          InlineDiffMode.mergedWords,
+        );
+        expect(
+          segments.where((segment) => segment.changed).single.text,
+          line.kind == DiffLineKind.removed ? '1' : '2',
+        );
+      }
+    }
+
+    paint();
+    hunks.reads = 0;
+    paint();
+    expect(hunks.reads, lessThanOrEqualTo(100));
+  });
+
+  testWidgets('selection actions read offscreen text only on demand', (
+    tester,
+  ) async {
+    final old = ['old', for (var i = 1; i < 1000; i++) 'line $i'];
+    final newer = ['new', ...old.skip(1)];
+    final source = _CountingList(newer);
+    final file = diffTexts(
+      old.join('\n'),
+      newer.join('\n'),
+      path: 'a.txt',
+      contextLines: 0,
+    ).copyWith(newLines: source);
+    final controller = PatchController<void>([file]);
+    addTearDown(controller.dispose);
+    DiffSelectionDetails? details;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PatchView<void>.controlled(
+            controller: controller,
+            theme: githubDarkTheme,
+            highlighter: highlighter,
+            selectionActionBuilder: (_, selection) {
+              details = selection;
+              return const Text('Action');
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    source.reads = 0;
+    controller.select(
+      DiffSelection(
+        fileId: file.id,
+        revision: file.revision,
+        side: DiffSide.newer,
+        anchor: newer.length,
+        active: 1,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Action'), findsOneWidget);
+    expect(source.reads, lessThan(newer.length));
+    expect(details!.selectedText, newer.join('\n'));
+    expect(source.reads, greaterThanOrEqualTo(newer.length));
+  });
+
   for (final replacement in [false, true]) {
     test(
       'default word lookup reuses 100000-line ${replacement ? 'replacement' : 'addition'} boundaries',
@@ -370,7 +451,7 @@ void main() {
           for (var i = 0; i < count; i++)
             DiffLine(DiffLineKind.added, 'x=2', newNumber: 500 + i),
         ];
-        final lines = _CountingLines(values);
+        final lines = _CountingList(values);
         final file = FileDiff(
           oldPath: 'a.txt',
           newPath: 'a.txt',
