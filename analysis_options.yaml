@@ -1,0 +1,14 @@
+include:
+  - package:bitwild_analysis/dart.yaml
+  - package:bitwild_analysis/plugin.yaml
+
+# The regex engine and grammar code follow vscode-textmate and Oniguruma,
+# whose signatures pass flags positionally. Keep them comparable with upstream.
+plugins:
+  bitwild_lints:
+    git:
+      url: https://github.com/btwld/lints.git
+      path: packages/bitwild_lints
+      ref: v0.3.0
+    diagnostics:
+      prefer_named_boolean_parameters: false

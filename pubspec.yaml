@@ -7,4 +7,8 @@ workspace:
   - packages/syntax_flutter
   - packages/syntax_noir
 dev_dependencies:
-  lints: ^6.0.0
+  bitwild_analysis:
+    git:
+      url: https://github.com/btwld/lints.git
+      path: packages/bitwild_analysis
+      ref: v0.3.0

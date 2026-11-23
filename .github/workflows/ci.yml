@@ -132,6 +132,10 @@ jobs:
       - name: Install example dependencies
         working-directory: packages/syntax_flutter/example
         run: flutter pub get
+      # bitwild_analysis only configures analysis and needs Dart 3.11.
+      # This job runs tests, not the analyzer, so drop it before resolving.
+      - name: Drop the lint presets
+        run: sed -i '/^  bitwild_analysis:/,/^      ref:/d' pubspec.yaml
       - name: Install dependencies
         run: flutter pub get
       - name: Test syntax_core
