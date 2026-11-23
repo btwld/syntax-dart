@@ -365,7 +365,7 @@ void main() {
   ) async {
     await pump(
       tester,
-      PatchView.fromTexts(
+      const PatchView.fromTexts(
         oldText: 'keep\nold one\nold two\n',
         newText: 'keep\nnew one\n',
         theme: githubDarkTheme,
@@ -425,7 +425,7 @@ void main() {
   testWidgets('language overrides the path', (tester) async {
     await pump(
       tester,
-      PatchView.fromTexts(
+      const PatchView.fromTexts(
         oldText: 'var a;\n',
         newText: 'final a = 1;\n',
         language: 'dart',
@@ -455,7 +455,11 @@ new mode 100755
     expect(find.text('No content changes'), findsOneWidget);
     await pump(
       tester,
-      PatchView.fromTexts(oldText: 'a', newText: 'a', theme: githubDarkTheme),
+      const PatchView.fromTexts(
+        oldText: 'a',
+        newText: 'a',
+        theme: githubDarkTheme,
+      ),
     );
     expect(find.text('No changes'), findsOneWidget);
   });
@@ -463,7 +467,11 @@ new mode 100755
   testWidgets('a missing final newline is marked', (tester) async {
     await pump(
       tester,
-      PatchView.fromTexts(oldText: 'a\n', newText: 'b', theme: githubDarkTheme),
+      const PatchView.fromTexts(
+        oldText: 'a\n',
+        newText: 'b',
+        theme: githubDarkTheme,
+      ),
     );
     expect(find.byTooltip('No newline at end of file'), findsOneWidget);
   });
@@ -717,7 +725,7 @@ new mode 100755
   ) async {
     await pump(
       tester,
-      SingleChildScrollView(
+      const SingleChildScrollView(
         child: PatchView.fromPatch(
           patch,
           theme: githubDarkTheme,

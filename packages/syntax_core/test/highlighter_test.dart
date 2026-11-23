@@ -1,7 +1,7 @@
-import 'package:syntax_core/syntax.dart';
 import 'package:syntax_core/langs/dart.dart';
 import 'package:syntax_core/langs/json.dart';
 import 'package:syntax_core/langs/markdown.dart';
+import 'package:syntax_core/syntax.dart';
 import 'package:syntax_core/themes/all.dart';
 import 'package:test/test.dart';
 

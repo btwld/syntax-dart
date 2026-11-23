@@ -286,7 +286,7 @@ void main() {
       final horizontal = scrollable(tester, AxisDirection.right).position;
       // 200 characters, in an 800 px screen less padding and a 1-digit
       // gutter.
-      final viewport = 800 - 32 - (14 + 16);
+      const viewport = 800 - 32 - (14 + 16);
       expect(horizontal.maxScrollExtent, 200 * 14 - viewport);
 
       await tester.drag(find.byType(HighlightedCode), const Offset(-300, 0));
