@@ -10,5 +10,9 @@ plugins:
       url: https://github.com/btwld/lints.git
       path: packages/bitwild_lints
       ref: v0.3.0
+    # This block replaces the one in plugin.yaml, so it repeats the other
+    # opt-in rules.
     diagnostics:
+      avoid_barrel_imports_in_src: true
+      avoid_deeply_nested_conditionals: true
       prefer_named_boolean_parameters: false
