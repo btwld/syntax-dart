@@ -3,8 +3,8 @@
 //   dart compile exe benchmark/tokenize.dart -o /tmp/bench && /tmp/bench <file>
 import 'dart:io';
 
-import 'package:syntax_core/syntax.dart';
 import 'package:syntax_core/langs/dart.dart';
+import 'package:syntax_core/syntax.dart';
 import 'package:syntax_core/themes/github_dark.dart';
 
 void main(List<String> args) {
@@ -12,7 +12,7 @@ void main(List<String> args) {
   final kb = code.length / 1024;
 
   var sw = Stopwatch()..start();
-  var highlighter = Highlighter(languages: [dartLanguage]);
+  final highlighter = Highlighter(languages: [dartLanguage]);
   highlighter.highlight(code, language: 'dart', theme: githubDarkTheme);
   final cold = sw.elapsedMilliseconds;
 
