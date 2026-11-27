@@ -34,6 +34,7 @@ export 'src/grammar/grammar.dart'
         splitLines;
 export 'src/grammar/scope_stack.dart' show ScopeStack;
 export 'src/highlighter.dart';
+export 'src/highlight_window.dart';
 export 'src/presentation.dart';
 export 'src/regex/engine.dart'
     show
