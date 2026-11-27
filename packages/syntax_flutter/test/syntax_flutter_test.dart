@@ -181,7 +181,9 @@ void main() {
       expect('$error', contains('No HighlighterScope found'));
     });
 
-    testWidgets('selectable wraps the code in a SelectionArea', (tester) async {
+    testWidgets('selectable wraps the code in a SelectableRegion', (
+      tester,
+    ) async {
       Widget build({required bool selectable}) => MaterialApp(
         home: HighlightedCode(
           'var x;',
@@ -192,9 +194,9 @@ void main() {
         ),
       );
       await tester.pumpWidget(build(selectable: true));
-      expect(find.byType(SelectionArea), findsOneWidget);
+      expect(find.byType(SelectableRegion), findsOneWidget);
       await tester.pumpWidget(build(selectable: false));
-      expect(find.byType(SelectionArea), findsNothing);
+      expect(find.byType(SelectableRegion), findsNothing);
     });
   });
 }

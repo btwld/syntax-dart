@@ -1,3 +1,21 @@
+## Unreleased
+
+- Keep patch selection handles and magnifiers working on Flutter 3.38.1 by
+  matching the code text's root style to its spans for consistent caret metrics.
+- Preserve the theme cursor color in patch selection handles and focus rings.
+- Restore mobile touch-handle magnification with a widgets-only loupe. Add
+  `SyntaxSelectionChrome.magnifierConfiguration` for host magnifiers or explicit
+  disabling.
+- Keep plain selection menus compact in application overlays and fit their
+  actions within narrow viewports, including larger text and localized labels.
+- Render `PatchView`, `HighlightedCode` and `SyntaxChrome` without Material
+  widgets, localizations, themes or icon fonts, including selection menus.
+- Add optional `selectionChrome` to both views and `SyntaxChrome`, with
+  `SyntaxSelectionChrome` for selection controls, menus, action widgets and
+  missing-newline markers. Existing constructors keep their defaults.
+- File and context-gap controls support keyboard activation, focus indication
+  and button semantics. Default glyphs and selection handles are painted.
+
 ## 0.0.10
 
 - Requires `syntax_core` 0.0.3, whose themes start from the editor colors and

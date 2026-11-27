@@ -20,7 +20,7 @@ theme.
 | Package | What it is |
 |---|---|
 | [`packages/syntax_core`](packages/syntax_core) | Pure Dart, zero dependencies. Contains the tokenizer, themes, HTML/ANSI rendering, diff tools (patch parsing, line diffs, word-level changes), and the renderer-neutral pieces other renderers build on. It runs on the VM, AOT, the web and inside Flutter. |
-| [`packages/syntax_flutter`](packages/syntax_flutter) | Contains `HighlightedCode` (read-only highlighted code), `PatchView` (a highlighted diff or patch, unified or split) and `HighlighterScope`. |
+| [`packages/syntax_flutter`](packages/syntax_flutter) | Contains `HighlightedCode` (read-only highlighted code), `PatchView` (a highlighted diff or patch, unified or split) and `HighlighterScope`. Renders under `WidgetsApp` without Material. |
 | [`packages/syntax_flutter/example`](packages/syntax_flutter/example) | A read-only code, diff and patch preview with a picker for every bundled language and theme. |
 | [`packages/syntax_noir`](packages/syntax_noir) | Terminal widgets on [noir](https://github.com/btwld/noir): a `CodeHighlighter` for noir's `CodeView` and a `PatchView`. Needs Dart 3.10. It is a workspace member and resolves `syntax_core` from this repo. |
 
